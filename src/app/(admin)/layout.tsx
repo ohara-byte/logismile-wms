@@ -36,6 +36,9 @@ export default async function AdminLayout({
               <a href="/imports" className="text-gray-700 hover:text-blue-600">
                 CSV取込
               </a>
+              <a href="/notices" className="text-gray-700 hover:text-blue-600">
+                連絡事項
+              </a>
             </nav>
           </div>
           <div className="flex items-center gap-3 text-sm">

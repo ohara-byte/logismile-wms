@@ -13,6 +13,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
 
@@ -45,4 +46,41 @@ export async function GET(req: Request) {
   });
 
   return NextResponse.json({ data: { items }, message: 'OK' });
+}
+
+const PostBody = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  title: z.string().min(1),
+  body: z.string().nullable().optional(),
+  targetType: z.enum(['all', 'group', 'table']).default('all'),
+  targetId: z.string().nullable().optional(),
+  priority: z.number().int().min(0).max(100).default(50),
+});
+
+export async function POST(req: Request) {
+  const guard = await requireRole('admin', 'manager');
+  if (!guard.ok) return guard.response;
+
+  const json = await req.json();
+  const parsed = PostBody.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'VALIDATION', message: parsed.error.issues.map((i) => i.message).join(', ') },
+      { status: 422 },
+    );
+  }
+
+  const created = await prisma.notice.create({
+    data: {
+      date: new Date(parsed.data.date),
+      title: parsed.data.title,
+      body: parsed.data.body ?? null,
+      targetType: parsed.data.targetType,
+      targetId: parsed.data.targetId ?? null,
+      priority: parsed.data.priority,
+      active: true,
+    },
+  });
+
+  return NextResponse.json({ data: created, message: 'OK' });
 }
