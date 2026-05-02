@@ -42,6 +42,9 @@ export default async function AdminLayout({
               <a href="/shift" className="text-gray-700 hover:text-blue-600">
                 シフト
               </a>
+              <a href="/assignment" className="text-gray-700 hover:text-blue-600">
+                割当
+              </a>
             </nav>
           </div>
           <div className="flex items-center gap-3 text-sm">
