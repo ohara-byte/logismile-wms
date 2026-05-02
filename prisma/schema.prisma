@@ -1,6 +1,6 @@
-// Prisma schema for 大江ノ郷自然牧場 WMS
+// 大江ノ郷自然牧場 WMS — Prisma schema
 // 詳細なテーブル定義は docs/DB設計書.md を参照
-// Phase 1 タスク 1-4 で全27テーブルを定義する（マスタ16 + トランザクション9 + システム2）
+// 全27テーブル：マスタ16 + トランザクション9 + システム2
 
 generator client {
   provider = "prisma-client-js"
@@ -9,4 +9,525 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// =====================================================
+// マスタ系（16テーブル）
+// =====================================================
+
+/// 1. 構成商品マスタ
+model Product {
+  code      String   @id @db.VarChar(20)
+  jan       String?  @db.VarChar(13)
+  name      String   @db.VarChar(100)
+  cat       String   @db.VarChar(20)
+  pkg       String   @default("箱") @db.VarChar(20)
+  price     Int      @default(0)
+  leadDays  Int      @default(0) @map("lead_days")
+  stdSec    Int      @default(0) @map("std_sec")
+  frozen    Boolean  @default(false)
+  special   Boolean  @default(false)
+  noshi     Boolean  @default(false)
+  active    Boolean  @default(true)
+  note      String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  auxAttr            ProductAuxAttr?
+  shippingOrderItems ShippingOrderItem[]
+
+  @@index([jan])
+  @@index([cat])
+  @@map("products")
+}
+
+/// 2. 商品属性補助マスタ
+model ProductAuxAttr {
+  id          Int     @id @default(autoincrement())
+  productCode String  @unique @map("product_code") @db.VarChar(20)
+  dispName    String? @map("disp_name") @db.VarChar(100)
+  tempZone    String  @default("ambient") @map("temp_zone") @db.VarChar(10)
+  specialPkg  String? @map("special_pkg") @db.VarChar(30)
+  stdSec      Int     @default(0) @map("std_sec")
+  transferred Boolean @default(false)
+  wMm         Int     @default(0) @map("w_mm")
+  dMm         Int     @default(0) @map("d_mm")
+  hMm         Int     @default(0) @map("h_mm")
+  note        String? @db.Text
+
+  product Product @relation(fields: [productCode], references: [code], onDelete: Cascade)
+
+  @@map("product_aux_attrs")
+}
+
+/// 3. 構成品/同梱物マスタ
+model SetComp {
+  id           String   @id @db.VarChar(30)
+  parentCode   String   @map("parent_code") @db.VarChar(20)
+  parentName   String   @map("parent_name") @db.VarChar(100)
+  type         String   @db.VarChar(20)
+  fixedBoxCode String?  @map("fixed_box_code") @db.VarChar(30)
+  packingNote  String?  @map("packing_note") @db.Text
+  note         String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  fixedBox Box?           @relation(fields: [fixedBoxCode], references: [code])
+  children SetCompChild[]
+
+  @@map("set_comps")
+}
+
+/// 4. 構成品明細
+model SetCompChild {
+  id        Int     @id @default(autoincrement())
+  setCompId String  @map("set_comp_id") @db.VarChar(30)
+  childCode String  @map("child_code") @db.VarChar(20)
+  childName String? @map("child_name") @db.VarChar(100)
+  qty       Int     @default(1)
+  sortOrder Int     @default(0) @map("sort_order")
+
+  setComp SetComp @relation(fields: [setCompId], references: [id], onDelete: Cascade)
+
+  @@map("set_comp_children")
+}
+
+/// 5. 箱マスタ
+model Box {
+  code           String   @id @db.VarChar(30)
+  name           String   @db.VarChar(100)
+  type           String   @db.VarChar(20)
+  sizeRank       Int      @map("size_rank")
+  wMm            Int      @default(0) @map("w_mm")
+  dMm            Int      @default(0) @map("d_mm")
+  hMm            Int      @default(0) @map("h_mm")
+  innerWMm       Int      @default(0) @map("inner_w_mm")
+  innerDMm       Int      @default(0) @map("inner_d_mm")
+  innerHMm       Int      @default(0) @map("inner_h_mm")
+  frozen         Boolean  @default(false)
+  noshi          Boolean  @default(false)
+  targetProducts String[] @default([]) @map("target_products")
+  priority       Int      @default(50)
+  note           String?  @db.Text
+
+  setComps     SetComp[]
+  inspSessions InspSession[]
+
+  @@map("boxes")
+}
+
+/// 6. 運送会社マスタ
+model Carrier {
+  code     String  @id @db.VarChar(20)
+  name     String  @db.VarChar(50)
+  short    String? @db.VarChar(20)
+  priority Int     @default(99)
+  cutoff   String? @db.VarChar(5)
+  pickup   String? @db.VarChar(5)
+  cool     Boolean @default(false)
+  wbType   String? @map("wb_type") @db.VarChar(30)
+  contact  String? @db.VarChar(100)
+  active   Boolean @default(true)
+  note     String? @db.Text
+
+  shippingOrders ShippingOrder[]
+
+  @@map("carriers")
+}
+
+/// 7. 担当者マスタ
+model Staff {
+  code                String    @id @db.VarChar(10)
+  empCode             String    @unique @map("emp_code") @db.VarChar(20)
+  name                String    @db.VarChar(30)
+  kana                String?   @db.VarChar(40)
+  role                String    @default("staff") @db.VarChar(20)
+  employmentTypeCode  String?   @map("employment_type_code") @db.VarChar(20)
+  groupId             String?   @map("group_id") @db.VarChar(10)
+  defaultShiftPattern String?   @map("default_shift_pattern") @db.VarChar(10)
+  tel                 String?   @db.VarChar(20)
+  joined              DateTime? @db.Date
+  assignable          Boolean   @default(true)
+  active              Boolean   @default(true)
+  note                String?   @db.Text
+
+  employmentType    EmploymentType?    @relation(fields: [employmentTypeCode], references: [code])
+  group             InspectionGroup?   @relation(fields: [groupId], references: [id])
+  defaultPattern    ShiftPattern?      @relation(fields: [defaultShiftPattern], references: [code])
+  shifts            Shift[]
+  inspSessions      InspSession[]
+  memberAssignments MemberAssignment[]
+  user              User?
+  thomasImports     ThomasImport[]
+  printLogs         PrintLog[]
+  orderAuditLogs    OrderAuditLog[]
+
+  @@index([empCode])
+  @@map("staff")
+}
+
+/// 8. 端末マスタ
+model Device {
+  code     String  @id @db.VarChar(20)
+  name     String  @db.VarChar(50)
+  type     String  @db.VarChar(20)
+  model    String? @db.VarChar(50)
+  location String? @db.VarChar(50)
+  active   Boolean @default(true)
+
+  printerMap   DevicePrinterMap?
+  inspSessions InspSession[]
+  printLogs    PrintLog[]
+
+  @@map("devices")
+}
+
+/// 9. 検品グループマスタ
+model InspectionGroup {
+  id        String   @id @db.VarChar(10)
+  name      String   @db.VarChar(20)
+  tables    String[] @default([])
+  category  String   @db.VarChar(20)
+  needStaff Int      @default(1) @map("need_staff")
+  note      String?  @db.Text
+
+  staff             Staff[]
+  stdTimes          StdTime[]
+  memberAssignments MemberAssignment[]
+
+  @@map("inspection_groups")
+}
+
+/// 10. 標準梱包時間マスタ
+model StdTime {
+  code      String   @id @db.VarChar(20)
+  groupId   String   @map("group_id") @db.VarChar(10)
+  tableId   String   @map("table_id") @db.VarChar(5)
+  stdMin    Decimal  @default(2.00) @map("std_min") @db.Decimal(5, 2)
+  source    String   @default("manual") @db.VarChar(10)
+  updatedAt DateTime @map("updated_at") @db.Date
+  note      String?  @db.Text
+
+  group InspectionGroup @relation(fields: [groupId], references: [id])
+
+  @@map("std_times")
+}
+
+/// 11. シフトパターンマスタ
+model ShiftPattern {
+  code      String  @id @db.VarChar(10)
+  name      String  @db.VarChar(50)
+  startTime String? @map("start_time") @db.VarChar(5)
+  endTime   String? @map("end_time") @db.VarChar(5)
+  breakMin  Int     @default(0) @map("break_min")
+  isOff     Boolean @default(false) @map("is_off")
+  sortOrder Int     @default(0) @map("sort_order")
+  active    Boolean @default(true)
+
+  defaultStaff Staff[]
+  shifts       Shift[]
+
+  @@map("shift_patterns")
+}
+
+/// 12. 雇用区分マスタ
+model EmploymentType {
+  code       String  @id @db.VarChar(20)
+  name       String  @db.VarChar(50)
+  dailyHours Decimal @default(8.00) @map("daily_hours") @db.Decimal(4, 2)
+  sortOrder  Int     @default(0) @map("sort_order")
+  active     Boolean @default(true)
+
+  staff Staff[]
+
+  @@map("employment_types")
+}
+
+/// 13. シフトマスタ（日次）
+model Shift {
+  id          Int       @id @default(autoincrement())
+  date        DateTime  @db.Date
+  staffCode   String    @map("staff_code") @db.VarChar(10)
+  patternCode String    @map("pattern_code") @db.VarChar(10)
+  startTime   String?   @map("start_time") @db.VarChar(5)
+  endTime     String?   @map("end_time") @db.VarChar(5)
+  source      String    @default("manual") @db.VarChar(10)
+  importedAt  DateTime? @map("imported_at") @db.Timestamptz
+  note        String?   @db.Text
+
+  staff   Staff        @relation(fields: [staffCode], references: [code])
+  pattern ShiftPattern @relation(fields: [patternCode], references: [code])
+
+  @@unique([date, staffCode])
+  @@index([date])
+  @@map("shifts")
+}
+
+/// 14. プリンターマスタ
+model Printer {
+  code      String  @id @db.VarChar(20)
+  name      String  @db.VarChar(50)
+  ipAddress String  @unique @map("ip_address") @db.VarChar(15)
+  port      Int     @default(9100)
+  model     String  @default("SCeaTa CT4-LX") @db.VarChar(50)
+  location  String? @db.VarChar(50)
+  labelSize String  @default("30x40") @map("label_size") @db.VarChar(20)
+  active    Boolean @default(true)
+  note      String? @db.Text
+
+  deviceMap DevicePrinterMap[]
+  printLogs PrintLog[]
+
+  @@map("printers")
+}
+
+/// 15. 端末×既定プリンター
+model DevicePrinterMap {
+  id          Int      @id @default(autoincrement())
+  deviceCode  String   @unique @map("device_code") @db.VarChar(20)
+  printerCode String   @map("printer_code") @db.VarChar(20)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy   String?  @map("updated_by") @db.VarChar(10)
+
+  device  Device  @relation(fields: [deviceCode], references: [code], onDelete: Cascade)
+  printer Printer @relation(fields: [printerCode], references: [code])
+
+  @@map("device_printer_map")
+}
+
+/// 16. 連絡事項
+model Notice {
+  id         Int      @id @default(autoincrement())
+  date       DateTime @db.Date
+  title      String   @db.VarChar(100)
+  body       String?  @db.Text
+  targetType String   @default("all") @map("target_type") @db.VarChar(10)
+  targetId   String?  @map("target_id") @db.VarChar(20)
+  priority   Int      @default(50)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("notices")
+}
+
+// =====================================================
+// トランザクション系（9テーブル）
+// =====================================================
+
+/// 17. 出荷指示ヘッダ（論理削除対応）
+model ShippingOrder {
+  id           String    @id @default(uuid()) @db.Uuid
+  pkNo         String    @unique @map("pk_no") @db.VarChar(30)
+  importId     Int?      @map("import_id")
+  shipDate     DateTime  @map("ship_date") @db.Date
+  carrierCode  String    @map("carrier_code") @db.VarChar(20)
+  status       String    @default("pending") @db.VarChar(20)
+  qrPrintFlag  Boolean   @default(false) @map("qr_print_flag")
+  noshiName    String?   @map("noshi_name") @db.VarChar(50)
+  destZip      String?   @map("dest_zip") @db.VarChar(8)
+  destAddr     String?   @map("dest_addr") @db.VarChar(200)
+  destName     String?   @map("dest_name") @db.VarChar(100)
+  invoiceNo    String?   @map("invoice_no") @db.VarChar(30)
+  holdReason   String?   @map("hold_reason") @db.Text
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
+  deletedBy    String?   @map("deleted_by") @db.VarChar(10)
+  deleteReason String?   @map("delete_reason") @db.Text
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  carrier        Carrier             @relation(fields: [carrierCode], references: [code])
+  import         ThomasImport?       @relation(fields: [importId], references: [id])
+  items          ShippingOrderItem[]
+  inspSession    InspSession?
+  printLogs      PrintLog[]
+  orderAuditLogs OrderAuditLog[]
+
+  @@index([shipDate, status])
+  @@index([deletedAt])
+  @@map("shipping_orders")
+}
+
+/// 18. 出荷指示明細
+model ShippingOrderItem {
+  id          Int     @id @default(autoincrement())
+  orderId     String  @map("order_id") @db.Uuid
+  productCode String  @map("product_code") @db.VarChar(20)
+  productName String  @map("product_name") @db.VarChar(100)
+  qty         Int
+  scannedQty  Int     @default(0) @map("scanned_qty")
+  forceOk     Boolean @default(false) @map("force_ok")
+  forceReason String? @map("force_reason") @db.Text
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  order   ShippingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product       @relation(fields: [productCode], references: [code])
+
+  @@unique([orderId, productCode])
+  @@map("shipping_order_items")
+}
+
+/// 19. 検品セッション
+model InspSession {
+  id           String    @id @default(uuid()) @db.Uuid
+  orderId      String    @unique @map("order_id") @db.Uuid
+  staffCode    String    @map("staff_code") @db.VarChar(10)
+  deviceCode   String?   @map("device_code") @db.VarChar(20)
+  startedAt    DateTime  @default(now()) @map("started_at") @db.Timestamptz
+  completedAt  DateTime? @map("completed_at") @db.Timestamptz
+  boxCode      String?   @map("box_code") @db.VarChar(30)
+  forceOkCount Int       @default(0) @map("force_ok_count")
+  durationSec  Int?      @map("duration_sec")
+
+  order  ShippingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  staff  Staff         @relation(fields: [staffCode], references: [code])
+  device Device?       @relation(fields: [deviceCode], references: [code])
+  box    Box?          @relation(fields: [boxCode], references: [code])
+  logs   InspLog[]
+
+  @@map("insp_sessions")
+}
+
+/// 20. 検品操作ログ
+model InspLog {
+  id        Int      @id @default(autoincrement())
+  sessionId String   @map("session_id") @db.Uuid
+  type      String   @db.VarChar(20)
+  itemCode  String?  @map("item_code") @db.VarChar(20)
+  qty       Int?
+  note      String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  session InspSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("insp_logs")
+}
+
+/// 21. 基幹取込履歴
+model ThomasImport {
+  id            Int      @id @default(autoincrement())
+  filename      String   @db.VarChar(200)
+  fileType      String   @map("file_type") @db.VarChar(20)
+  importedAt    DateTime @default(now()) @map("imported_at") @db.Timestamptz
+  totalRows     Int      @default(0) @map("total_rows")
+  successCount  Int      @default(0) @map("success_count")
+  errorCount    Int      @default(0) @map("error_count")
+  janErrorCount Int      @default(0) @map("jan_error_count")
+  unmapCount    Int      @default(0) @map("unmap_count")
+  importedBy    String?  @map("imported_by") @db.VarChar(10)
+  note          String?  @db.Text
+
+  importer       Staff?          @relation(fields: [importedBy], references: [code])
+  shippingOrders ShippingOrder[]
+
+  @@map("thomas_imports")
+}
+
+/// 22. アラート管理
+model Alert {
+  id         Int       @id @default(autoincrement())
+  type       String    @db.VarChar(30)
+  severity   String    @default("warn") @db.VarChar(10)
+  title      String    @db.VarChar(100)
+  body       String?   @db.Text
+  refCode    String?   @map("ref_code") @db.VarChar(50)
+  resolved   Boolean   @default(false)
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz
+  resolvedBy String?   @map("resolved_by") @db.VarChar(10)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("alerts")
+}
+
+/// 23. メンバー割当（Gantt）
+model MemberAssignment {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @db.Date
+  staffCode String   @map("staff_code") @db.VarChar(10)
+  groupId   String   @map("group_id") @db.VarChar(10)
+  startTime String   @map("start_time") @db.VarChar(5)
+  endTime   String   @map("end_time") @db.VarChar(5)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy String?  @map("created_by") @db.VarChar(10)
+
+  staff Staff           @relation(fields: [staffCode], references: [code])
+  group InspectionGroup @relation(fields: [groupId], references: [id])
+
+  @@index([date, staffCode])
+  @@index([date, groupId])
+  @@map("member_assignments")
+}
+
+/// 24. QR印刷履歴
+model PrintLog {
+  id          Int      @id @default(autoincrement())
+  orderId     String   @map("order_id") @db.Uuid
+  pkNo        String   @map("pk_no") @db.VarChar(30)
+  invoiceNo   String?  @map("invoice_no") @db.VarChar(30)
+  printerCode String   @map("printer_code") @db.VarChar(20)
+  deviceCode  String?  @map("device_code") @db.VarChar(20)
+  staffCode   String?  @map("staff_code") @db.VarChar(10)
+  printedAt   DateTime @default(now()) @map("printed_at") @db.Timestamptz
+  isReprint   Boolean  @default(false) @map("is_reprint")
+  status      String   @default("success") @db.VarChar(10)
+  errorMsg    String?  @map("error_msg") @db.Text
+
+  order   ShippingOrder @relation(fields: [orderId], references: [id])
+  printer Printer       @relation(fields: [printerCode], references: [code])
+  device  Device?       @relation(fields: [deviceCode], references: [code])
+  staff   Staff?        @relation(fields: [staffCode], references: [code])
+
+  @@map("print_logs")
+}
+
+/// 25. 伝票監査ログ（削除/復活/編集）
+model OrderAuditLog {
+  id      Int      @id @default(autoincrement())
+  orderId String   @map("order_id") @db.Uuid
+  pkNo    String   @map("pk_no") @db.VarChar(30)
+  action  String   @db.VarChar(20)
+  actedBy String   @map("acted_by") @db.VarChar(10)
+  actedAt DateTime @default(now()) @map("acted_at") @db.Timestamptz
+  reason  String?  @db.Text
+  diff    Json?
+
+  order ShippingOrder @relation(fields: [orderId], references: [id])
+  staff Staff         @relation(fields: [actedBy], references: [code])
+
+  @@index([orderId])
+  @@index([actedAt])
+  @@map("order_audit_logs")
+}
+
+// =====================================================
+// システム系（2テーブル）
+// =====================================================
+
+/// 26. 認証ユーザー（管理PC用）
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  staffCode    String?   @unique @map("staff_code") @db.VarChar(10)
+  email        String    @unique @db.VarChar(100)
+  passwordHash String    @map("password_hash") @db.VarChar(200)
+  role         String    @default("staff") @db.VarChar(20)
+  active       Boolean   @default(true)
+  lastLogin    DateTime? @map("last_login") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  staff    Staff?    @relation(fields: [staffCode], references: [code])
+  sessions Session[]
+
+  @@map("users")
+}
+
+/// 27. NextAuth セッション
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  sessionToken String   @unique @map("session_token") @db.VarChar(255)
+  userId       String   @map("user_id") @db.Uuid
+  expires      DateTime @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
 }
