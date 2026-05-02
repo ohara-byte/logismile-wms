@@ -1,21 +1,25 @@
 'use client';
 
 /**
- * 検品メイン画面（Client Component）
+ * 検品メイン画面（タブレット / ハンディ共通）
  *
+ * - 連絡事項モーダル（モバイル端末で起動時に1回）
+ * - のし確認モーダル（qrPrintFlag=true の伝票で開始時）
+ * - 同梱物確認モーダル（完了直前）
  * - 商品スキャン（JAN または 商品コード）
  * - 強制OK / 保留
  * - QR印刷フラグ手動切替
+ * - 箱選定（提案 + ドロップダウン）
+ * - 縦表示トグル
  * - 完了（納品書№スキャン → packed + 自動印刷）
- *
- * フロー:
- *  1. mount 時に POST /api/inspect/start で session を取得
- *  2. スキャン: POST /api/inspect/scan → matched なら scannedQty++
- *  3. 完了: 全アイテム済なら 納品書№入力 → POST /api/inspect/complete
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { NoticesModal } from './notices-modal';
+import { NoshiConfirmationModal } from './noshi-confirmation-modal';
+import { AccompaniesModal } from './accompanies-modal';
+import { BoxSuggestion } from './box-suggestion';
 
 export interface InspectionItem {
   id: number;
@@ -35,6 +39,7 @@ export interface InspectionOrder {
   status: string;
   qrPrintFlag: boolean;
   invoiceNo: string | null;
+  noshiName: string | null;
   destName: string | null;
   destZip: string | null;
   destAddr: string | null;
@@ -50,17 +55,20 @@ interface Props {
     name: string;
     deviceCode: string;
   } | null;
+  /** 端末バリアント。UI 密度・モーダルの出し方を切り替え。 */
+  variant: 'tablet' | 'handy';
 }
 
 type ScanResult = 'matched' | 'over_scan' | 'not_found' | 'already_done';
 
-export function InspectionScreen({ order: initialOrder, employee }: Props) {
+export function InspectionScreen({ order: initialOrder, employee, variant }: Props) {
   const router = useRouter();
   const [order, setOrder] = useState(initialOrder);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [scanInput, setScanInput] = useState('');
   const [invoiceNo, setInvoiceNo] = useState('');
+  const [boxCode, setBoxCode] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<{ result: ScanResult; itemId: number | null } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [completed, setCompleted] = useState(false);
@@ -69,7 +77,28 @@ export function InspectionScreen({ order: initialOrder, employee }: Props) {
     qrPrintFlag: boolean;
     print: { ok: boolean; dryRun: boolean } | null;
   } | null>(null);
+
+  // モーダル制御
+  const [showNotices, setShowNotices] = useState(variant === 'handy'); // ハンディ起動時のみ
+  const [showNoshi, setShowNoshi] = useState(false);
+  const [showAccompanies, setShowAccompanies] = useState(false);
+  const [accompaniesConfirmed, setAccompaniesConfirmed] = useState(false);
+
+  // 縦/横レイアウト
+  const [portrait, setPortrait] = useState(variant === 'handy'); // ハンディは既定で縦
+
   const scanInputRef = useRef<HTMLInputElement>(null);
+  const invoiceInputRef = useRef<HTMLInputElement>(null);
+
+  // 連絡事項クローズ後にのし確認を出す
+  useEffect(() => {
+    if (showNotices) return;
+    if (!sessionId) return; // セッション開始前にはのし表示しない
+    if (order.qrPrintFlag && !showNoshi && !accompaniesConfirmed) {
+      // のし確認はセッション開始直後に1回だけ
+      // sessionId が立った直後に発火させる
+    }
+  }, [showNotices, sessionId, order.qrPrintFlag, showNoshi, accompaniesConfirmed]);
 
   // セッション開始
   useEffect(() => {
@@ -81,11 +110,21 @@ export function InspectionScreen({ order: initialOrder, employee }: Props) {
     })
       .then((r) => r.json())
       .then((j) => {
-        if (j.data?.id) setSessionId(j.data.id);
-        else setErrorMsg(j.message ?? 'セッション開始に失敗');
+        if (j.data?.id) {
+          setSessionId(j.data.id);
+          // qrPrintFlag=true ならのし確認モーダルを出す
+          if (order.qrPrintFlag) setShowNoshi(true);
+        } else setErrorMsg(j.message ?? 'セッション開始に失敗');
       })
       .catch((e) => setErrorMsg(String(e)));
-  }, [order.pkNo, sessionId, completed]);
+  }, [order.pkNo, order.qrPrintFlag, sessionId, completed]);
+
+  // スキャン入力フォーカス（モーダルが閉じたら）
+  useEffect(() => {
+    if (!showNotices && !showNoshi && !showAccompanies) {
+      scanInputRef.current?.focus();
+    }
+  }, [showNotices, showNoshi, showAccompanies]);
 
   const allInspected = order.items.every((it) => it.forceOk || it.scannedQty >= it.qty);
 
@@ -136,9 +175,8 @@ export function InspectionScreen({ order: initialOrder, employee }: Props) {
         body: JSON.stringify({ sessionId, scanValue: scanInput.trim(), qty: 1 }),
       });
       const j = await res.json();
-      if (!res.ok) {
-        setErrorMsg(j.message ?? `エラー: HTTP ${res.status}`);
-      } else {
+      if (!res.ok) setErrorMsg(j.message ?? `エラー: HTTP ${res.status}`);
+      else {
         setLastResult(j.data);
         if (j.data.result === 'matched') await refreshOrder();
       }
@@ -151,8 +189,7 @@ export function InspectionScreen({ order: initialOrder, employee }: Props) {
 
   async function onForceOk(item: InspectionItem) {
     const reason = prompt(`「${item.productName}」を強制OKにする理由を入力してください`);
-    if (!reason) return;
-    if (!sessionId) return;
+    if (!reason || !sessionId) return;
     setBusy(true);
     try {
       const res = await fetch('/api/inspect/force-ok', {
@@ -161,10 +198,7 @@ export function InspectionScreen({ order: initialOrder, employee }: Props) {
         body: JSON.stringify({ sessionId, itemId: item.id, reason }),
       });
       if (res.ok) await refreshOrder();
-      else {
-        const j = await res.json();
-        setErrorMsg(j.message ?? '強制OK失敗');
-      }
+      else setErrorMsg((await res.json()).message ?? '強制OK失敗');
     } finally {
       setBusy(false);
     }
@@ -178,23 +212,29 @@ export function InspectionScreen({ order: initialOrder, employee }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ qr_print_flag: !order.qrPrintFlag }),
       });
-      if (res.ok) {
-        setOrder({ ...order, qrPrintFlag: !order.qrPrintFlag });
-      } else {
-        const j = await res.json();
-        setErrorMsg(j.message ?? 'フラグ切替失敗');
-      }
+      if (res.ok) setOrder({ ...order, qrPrintFlag: !order.qrPrintFlag });
+      else setErrorMsg((await res.json()).message ?? 'フラグ切替失敗');
     } finally {
       setBusy(false);
     }
   }
 
-  async function onComplete(e: React.FormEvent) {
+  async function onCompleteSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!invoiceNo.trim() || !sessionId) return;
+
+    // 同梱物未確認なら先にモーダル
+    if (!accompaniesConfirmed) {
+      setShowAccompanies(true);
+      return;
+    }
+
+    await actuallyComplete();
+  }
+
+  async function actuallyComplete() {
     setBusy(true);
     setErrorMsg(null);
-
     try {
       const res = await fetch('/api/inspect/complete', {
         method: 'POST',
@@ -203,6 +243,7 @@ export function InspectionScreen({ order: initialOrder, employee }: Props) {
           sessionId,
           pkNo: order.pkNo,
           invoiceNo: invoiceNo.trim(),
+          ...(boxCode ? { boxCode } : {}),
         }),
       });
       const j = await res.json();
@@ -231,26 +272,23 @@ export function InspectionScreen({ order: initialOrder, employee }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, reason }),
       });
-      if (res.ok) router.push('/tablet');
-      else {
-        const j = await res.json();
-        setErrorMsg(j.message ?? '保留失敗');
-      }
+      if (res.ok) router.push(variant === 'tablet' ? '/tablet' : '/handy');
+      else setErrorMsg((await res.json()).message ?? '保留失敗');
     } finally {
       setBusy(false);
     }
   }
 
+  // === 完了画面 ===
   if (completed) {
     return (
-      <main className="min-h-screen bg-green-50 p-6">
-        <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-md p-6 text-center">
+      <main className="min-h-screen bg-green-50 p-4 sm:p-6">
+        <div className="max-w-md mx-auto bg-white rounded-xl shadow-md p-6 text-center">
           <div className="text-6xl mb-4">✅</div>
           <h1 className="text-2xl font-bold text-green-700 mb-2">梱包完了</h1>
           <p className="text-gray-600 mb-6">
-            ピッキング№ <code className="font-mono">{order.pkNo}</code> を packed に更新しました
+            ピッキング№ <code className="font-mono">{order.pkNo}</code>
           </p>
-
           <dl className="text-left bg-gray-50 rounded p-4 grid grid-cols-2 gap-2 text-sm mb-6">
             <dt className="text-gray-500">所要時間</dt>
             <dd>{completionInfo?.durationSec ?? '—'} 秒</dd>
@@ -263,9 +301,8 @@ export function InspectionScreen({ order: initialOrder, employee }: Props) {
                 : '—'}
             </dd>
           </dl>
-
           <button
-            onClick={() => router.push('/tablet')}
+            onClick={() => router.push(variant === 'tablet' ? '/tablet' : '/handy')}
             className="w-full bg-blue-600 text-white rounded-lg py-4 text-lg font-medium hover:bg-blue-700"
           >
             次の伝票へ
@@ -275,35 +312,84 @@ export function InspectionScreen({ order: initialOrder, employee }: Props) {
     );
   }
 
+  // === メイン UI ===
+  const compact = variant === 'handy' || portrait;
+  const containerMaxW = compact ? 'max-w-md' : 'max-w-3xl';
+  const itemPad = compact ? 'p-2' : 'p-3';
+  const fontSize = compact ? 'text-sm' : 'text-base';
+
   return (
-    <main className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-3xl mx-auto space-y-4">
+    <main className={`min-h-screen bg-gray-50 ${compact ? 'p-2' : 'p-4'}`}>
+      {/* モーダル */}
+      {showNotices && (
+        <NoticesModal
+          variant={variant === 'tablet' ? 'tablet-launch' : 'handy-launch'}
+          onClose={() => setShowNotices(false)}
+        />
+      )}
+      {showNoshi && (
+        <NoshiConfirmationModal
+          pkNo={order.pkNo}
+          noshiName={order.noshiName}
+          qrPrintFlag={order.qrPrintFlag}
+          onConfirm={() => setShowNoshi(false)}
+          onCancel={() => router.push(variant === 'tablet' ? '/tablet' : '/handy')}
+        />
+      )}
+      {showAccompanies && (
+        <AccompaniesModal
+          pkNo={order.pkNo}
+          onConfirm={() => {
+            setAccompaniesConfirmed(true);
+            setShowAccompanies(false);
+            // 自動で完了処理を続行
+            actuallyComplete();
+          }}
+          onCancel={() => setShowAccompanies(false)}
+        />
+      )}
+
+      <div className={`${containerMaxW} mx-auto space-y-3`}>
         {/* ヘッダ */}
-        <div className="bg-white rounded-xl shadow p-4">
+        <div className={`bg-white rounded-xl shadow ${itemPad} ${fontSize}`}>
           <div className="flex justify-between items-start mb-2">
             <div>
               <div className="text-xs text-gray-500">ピッキング№</div>
-              <div className="text-xl font-mono font-bold">{order.pkNo}</div>
+              <div className={`${compact ? 'text-base' : 'text-xl'} font-mono font-bold`}>
+                {order.pkNo}
+              </div>
             </div>
-            <button
-              onClick={() => router.push('/tablet')}
-              className="text-sm text-gray-500 hover:underline"
-            >
-              ← 戻る
-            </button>
+            <div className="flex gap-2">
+              {variant === 'tablet' && (
+                <button
+                  onClick={() => setPortrait((p) => !p)}
+                  className="text-xs text-gray-500 hover:underline"
+                  title="縦横切替"
+                >
+                  {portrait ? '◫ 横' : '▯ 縦'}
+                </button>
+              )}
+              <button
+                onClick={() => router.push(variant === 'tablet' ? '/tablet' : '/handy')}
+                className="text-xs text-gray-500 hover:underline"
+              >
+                ← 戻る
+              </button>
+            </div>
           </div>
-          <div className="text-sm text-gray-700 grid grid-cols-2 gap-x-4 gap-y-1 mt-2">
-            <div>運送会社: {order.carrier?.short ?? order.carrier?.name ?? '—'}</div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs text-gray-700">
+            <div>運送: {order.carrier?.short ?? order.carrier?.name ?? '—'}</div>
             <div>状態: {order.status}</div>
-            <div>配送先: {order.destName ?? '—'}</div>
-            <div className="truncate">{order.destZip} {order.destAddr}</div>
+            <div className="col-span-2 truncate">
+              {order.destName ?? '—'} / {order.destZip} {order.destAddr}
+            </div>
           </div>
-          <div className="mt-3 flex items-center gap-2">
-            <span className="text-sm">QR印刷フラグ:</span>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-xs">QR印刷フラグ:</span>
             <button
               onClick={onTogglePrintFlag}
               disabled={busy}
-              className={`px-3 py-1 rounded font-medium text-sm ${
+              className={`px-3 py-1 rounded text-xs font-medium ${
                 order.qrPrintFlag
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-200 text-gray-700'
@@ -311,12 +397,11 @@ export function InspectionScreen({ order: initialOrder, employee }: Props) {
             >
               {order.qrPrintFlag ? '🖨 ON' : '○ OFF'}
             </button>
-            <span className="text-xs text-gray-500">タップで切替</span>
           </div>
         </div>
 
         {/* スキャン入力 */}
-        <div className="bg-white rounded-xl shadow p-4">
+        <div className={`bg-white rounded-xl shadow ${itemPad}`}>
           <form onSubmit={onScan} className="flex gap-2">
             <input
               ref={scanInputRef}
@@ -324,20 +409,22 @@ export function InspectionScreen({ order: initialOrder, employee }: Props) {
               autoFocus
               value={scanInput}
               onChange={(e) => setScanInput(e.target.value)}
-              className="flex-1 border-2 rounded-lg px-4 py-3 text-lg font-mono"
-              placeholder="JAN または 商品コードをスキャン"
+              className={`flex-1 border-2 rounded-lg px-3 ${
+                compact ? 'py-2 text-base' : 'py-3 text-lg'
+              } font-mono`}
+              placeholder="JAN/商品コード"
             />
             <button
               type="submit"
               disabled={busy || !scanInput.trim() || !sessionId}
-              className="px-6 bg-blue-600 text-white rounded-lg font-medium disabled:bg-gray-300"
+              className={`${compact ? 'px-4' : 'px-6'} bg-blue-600 text-white rounded-lg font-medium disabled:bg-gray-300`}
             >
               スキャン
             </button>
           </form>
           {lastResult && (
             <div
-              className={`mt-3 p-2 rounded text-sm ${
+              className={`mt-2 p-2 rounded text-xs ${
                 lastResult.result === 'matched'
                   ? 'bg-green-50 text-green-800'
                   : lastResult.result === 'already_done'
@@ -345,55 +432,53 @@ export function InspectionScreen({ order: initialOrder, employee }: Props) {
                     : 'bg-red-50 text-red-700'
               }`}
             >
-              直近スキャン: <strong>{lastResult.result}</strong>
+              直近: <strong>{lastResult.result}</strong>
             </div>
           )}
           {errorMsg && (
-            <div className="mt-3 p-2 rounded text-sm bg-red-50 text-red-700">
-              {errorMsg}
-            </div>
+            <div className="mt-2 p-2 rounded text-xs bg-red-50 text-red-700">{errorMsg}</div>
           )}
         </div>
 
         {/* 商品リスト */}
-        <div className="bg-white rounded-xl shadow p-4">
-          <h2 className="font-semibold mb-2">商品 ({order.items.length} 品目)</h2>
+        <div className={`bg-white rounded-xl shadow ${itemPad}`}>
+          <h2 className="font-semibold mb-2 text-sm">商品 ({order.items.length})</h2>
           <ul className="space-y-2">
             {order.items.map((it) => {
               const done = it.forceOk || it.scannedQty >= it.qty;
               return (
                 <li
                   key={it.id}
-                  className={`border rounded-lg p-3 flex items-center gap-3 ${
+                  className={`border rounded ${itemPad} flex items-center gap-2 ${
                     done ? 'bg-green-50 border-green-200' : ''
                   }`}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">
+                    <div className="font-medium text-sm truncate">
                       {it.productName}
                       {it.productFrozen && (
                         <span className="ml-1 text-xs bg-blue-100 text-blue-700 px-1 rounded">
-                          冷凍
+                          冷
                         </span>
                       )}
                       {it.forceOk && (
                         <span className="ml-1 text-xs bg-yellow-100 text-yellow-800 px-1 rounded">
-                          強制OK
+                          強制
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-gray-500 font-mono">
-                      {it.productCode} / JAN: {it.productJan ?? '—'}
+                    <div className="text-xs text-gray-500 font-mono truncate">
+                      {it.productCode}
+                      {it.productJan ? ` / ${it.productJan}` : ''}
                     </div>
-                    {it.forceOk && it.forceReason && (
-                      <div className="text-xs text-yellow-700 mt-1">理由: {it.forceReason}</div>
-                    )}
                   </div>
-                  <div className="text-right">
+                  <div className="text-right shrink-0">
                     <div
-                      className={`text-lg font-bold ${done ? 'text-green-700' : 'text-gray-700'}`}
+                      className={`${compact ? 'text-base' : 'text-lg'} font-bold ${
+                        done ? 'text-green-700' : 'text-gray-700'
+                      }`}
                     >
-                      {it.scannedQty} / {it.qty}
+                      {it.scannedQty}/{it.qty}
                     </div>
                     {!done && (
                       <button
@@ -411,40 +496,57 @@ export function InspectionScreen({ order: initialOrder, employee }: Props) {
           </ul>
         </div>
 
+        {/* 箱選定 */}
+        <div className={`bg-white rounded-xl shadow ${itemPad}`}>
+          <BoxSuggestion
+            pkNo={order.pkNo}
+            selectedBoxCode={boxCode}
+            onSelect={setBoxCode}
+            density={compact ? 'compact' : 'wide'}
+          />
+        </div>
+
         {/* 完了 */}
-        <div className="bg-white rounded-xl shadow p-4">
-          <h2 className="font-semibold mb-2">納品書№ をスキャンして完了</h2>
-          <form onSubmit={onComplete} className="flex gap-2 mb-2">
+        <div className={`bg-white rounded-xl shadow ${itemPad}`}>
+          <h2 className="font-semibold mb-2 text-sm">納品書№ で完了</h2>
+          <form onSubmit={onCompleteSubmit} className="flex gap-2 mb-2">
             <input
+              ref={invoiceInputRef}
               type="text"
               value={invoiceNo}
               onChange={(e) => setInvoiceNo(e.target.value)}
-              className="flex-1 border-2 rounded-lg px-4 py-3 text-lg font-mono"
+              className={`flex-1 border-2 rounded-lg px-3 ${
+                compact ? 'py-2 text-base' : 'py-3 text-lg'
+              } font-mono`}
               placeholder="00059546010001"
               disabled={!allInspected || busy}
             />
             <button
               type="submit"
               disabled={!allInspected || busy || !invoiceNo.trim()}
-              className="px-6 bg-green-600 text-white rounded-lg font-medium disabled:bg-gray-300"
+              className={`${compact ? 'px-4' : 'px-6'} bg-green-600 text-white rounded-lg font-medium disabled:bg-gray-300`}
             >
-              梱包完了
+              完了
             </button>
           </form>
           {!allInspected && (
             <p className="text-xs text-gray-500">
-              すべての商品をスキャン or 強制OK にすると押せます
+              すべての商品を検品 or 強制OK で押せます
             </p>
           )}
-          <div className="mt-3 text-right">
-            <button onClick={onHold} disabled={busy} className="text-sm text-orange-600 hover:underline">
+          <div className="mt-2 text-right">
+            <button
+              onClick={onHold}
+              disabled={busy}
+              className="text-xs text-orange-600 hover:underline"
+            >
               一時保留
             </button>
           </div>
         </div>
 
         <div className="text-center text-xs text-gray-400">
-          作業者: {employee?.name}（{employee?.empCode}） / 端末: {employee?.deviceCode}
+          {employee?.name}（{employee?.empCode}） / {employee?.deviceCode}
         </div>
       </div>
     </main>

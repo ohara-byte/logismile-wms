@@ -1,6 +1,6 @@
 /**
- * /tablet/inspect/[pkNo]
- * タブレット検品メイン画面
+ * /handy/inspect/[pkNo]
+ * ハンディ検品メイン画面（共通コンポーネントを variant="handy" で使う）
  */
 
 import { notFound } from 'next/navigation';
@@ -8,7 +8,7 @@ import { prisma } from '@/lib/db';
 import { getEmployeeSession } from '@/lib/auth/employee-session';
 import { InspectionScreen } from '@/components/inspection/inspection-screen';
 
-export default async function InspectPage({
+export default async function HandyInspectPage({
   params,
 }: {
   params: { pkNo: string };
@@ -33,7 +33,7 @@ export default async function InspectPage({
 
   return (
     <InspectionScreen
-      variant="tablet"
+      variant="handy"
       order={{
         id: order.id,
         pkNo: order.pkNo,
