@@ -30,6 +30,9 @@ export default async function AdminLayout({
               <a href="/dashboard" className="text-gray-700 hover:text-blue-600">
                 ダッシュボード
               </a>
+              <a href="/orders" className="text-gray-700 hover:text-blue-600">
+                出荷指示
+              </a>
               <a href="/imports" className="text-gray-700 hover:text-blue-600">
                 CSV取込
               </a>
