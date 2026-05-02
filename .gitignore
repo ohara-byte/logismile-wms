@@ -45,3 +45,6 @@ next-env.d.ts
 # Claude Code worktrees / agent state（一時的な作業領域）
 /.claude/worktrees/
 /.claude/agent-state/
+
+# 年次アーカイブ CSV（本番運用で生成。実顧客データを含むのでコミット禁止）
+/data/archives/

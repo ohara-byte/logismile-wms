@@ -476,7 +476,7 @@ model PrintLog {
   status      String   @default("success") @db.VarChar(10)
   errorMsg    String?  @map("error_msg") @db.Text
 
-  order   ShippingOrder @relation(fields: [orderId], references: [id])
+  order   ShippingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   printer Printer       @relation(fields: [printerCode], references: [code])
   device  Device?       @relation(fields: [deviceCode], references: [code])
   staff   Staff?        @relation(fields: [staffCode], references: [code])
@@ -495,7 +495,7 @@ model OrderAuditLog {
   reason  String?  @db.Text
   diff    Json?
 
-  order ShippingOrder @relation(fields: [orderId], references: [id])
+  order ShippingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   staff Staff         @relation(fields: [actedBy], references: [code])
 
   @@index([orderId])
