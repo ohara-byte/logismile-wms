@@ -1,0 +1,67 @@
+/**
+ * POST /api/print/qr
+ * QR印刷指示（手動）
+ *
+ * 用途: 検品画面の「印刷」ボタン、管理PCからの再発行 など
+ *
+ * 処理:
+ *  1. shipping_orders.qr_print_flag = false なら 422
+ *  2. device_printer_map から既定プリンターを取得 → ZPL 送信
+ *  3. print_logs に記録
+ */
+
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { prisma } from '@/lib/db';
+import { requireRole } from '@/lib/auth/permissions';
+import { runPrintJob } from '@/lib/print-job';
+
+const Body = z.object({
+  pkNo: z.string().min(1),
+  deviceCode: z.string().min(1),
+});
+
+export async function POST(req: Request) {
+  const guard = await requireRole('admin', 'manager', 'staff');
+  if (!guard.ok) return guard.response;
+
+  const json = await req.json();
+  const parsed = Body.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'VALIDATION', message: parsed.error.issues.map((i) => i.message).join(', ') },
+      { status: 422 },
+    );
+  }
+
+  const order = await prisma.shippingOrder.findFirst({
+    where: { pkNo: parsed.data.pkNo, deletedAt: null },
+    select: { id: true, pkNo: true, qrPrintFlag: true, invoiceNo: true },
+  });
+  if (!order) {
+    return NextResponse.json(
+      { error: 'NOT_FOUND', message: `ピッキング№が見つかりません: ${parsed.data.pkNo}` },
+      { status: 404 },
+    );
+  }
+  if (!order.qrPrintFlag) {
+    return NextResponse.json(
+      { error: 'VALIDATION', message: 'QR印刷フラグが OFF のため印刷できません（先にフラグを切替えてください）' },
+      { status: 422 },
+    );
+  }
+
+  const result = await runPrintJob({
+    orderId: order.id,
+    pkNo: order.pkNo,
+    invoiceNo: order.invoiceNo,
+    deviceCode: parsed.data.deviceCode,
+    staffCode: guard.auth.staffCode,
+    isReprint: false,
+  });
+
+  return NextResponse.json({
+    data: { ok: result.ok, dryRun: 'dryRun' in result ? result.dryRun : false },
+    message: result.ok ? 'OK' : 'PRINT_FAILED',
+  });
+}
