@@ -27,6 +27,9 @@ export default async function AdminLayout({
           <div className="flex items-center gap-4">
             <span className="font-bold text-gray-800">大江ノ郷WMS 管理PC</span>
             <nav className="flex gap-3 text-sm">
+              <a href="/dashboard" className="text-gray-700 hover:text-blue-600">
+                ダッシュボード
+              </a>
               <a href="/imports" className="text-gray-700 hover:text-blue-600">
                 CSV取込
               </a>
