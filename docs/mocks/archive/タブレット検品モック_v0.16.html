@@ -1,0 +1,3067 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1280, initial-scale=1">
+<title>LogiSmile タブレット検品・梱包 モック v0.16</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: "Yu Gothic UI", "Yu Gothic", "Meiryo", sans-serif;
+    background: #0f172a;
+    color: #f8fafc;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; cursor: pointer; border: 0; }
+  input { font-family: inherit; }
+
+  .tablet {
+    width: 1280px;
+    height: 820px;
+    margin: 20px auto;
+    background: #1e293b;
+    border-radius: 18px;
+    padding: 14px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+  .tablet-note {
+    text-align: center;
+    color: #94a3b8;
+    font-size: 13px;
+    margin: 10px auto 24px;
+    max-width: 1100px;
+    line-height: 1.8;
+  }
+  .tablet-note b { color: #f1f5f9; }
+
+  /* 強制検品バナー (Sticky) */
+  .force-banner {
+    display: none;
+    background: linear-gradient(90deg, #ea580c, #c2410c);
+    color: white;
+    padding: 8px 20px;
+    border-radius: 8px 8px 0 0;
+    font-size: 14px;
+    font-weight: bold;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+    animation: pulseBanner 1.8s infinite;
+  }
+  .force-banner.show { display: flex; }
+  .force-banner .release-btn {
+    margin-left: auto;
+    background: rgba(255,255,255,0.25);
+    padding: 4px 12px;
+    border-radius: 5px;
+    color: white;
+    font-size: 12px;
+  }
+  .force-banner .release-btn:hover { background: rgba(255,255,255,0.4); }
+  @keyframes pulseBanner {
+    0%,100% { box-shadow: 0 0 0 0 rgba(234,88,12,0.7); }
+    50%     { box-shadow: 0 0 0 6px rgba(234,88,12,0); }
+  }
+
+  header {
+    height: 52px;
+    background: #0f172a;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    padding: 0 18px;
+    color: #f1f5f9;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+  .h-brand { font-size: 17px; font-weight: bold; letter-spacing: 0.5px; }
+  .h-table {
+    background: #334155;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .h-table b { color: #fbbf24; margin-left: 6px; font-size: 15px; }
+  .h-spacer { flex: 1; }
+  .h-user {
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .h-user .avatar {
+    width: 30px; height: 30px;
+    background: #475569;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+  }
+  .h-clock { font-size: 13px; color: #cbd5e1; font-variant-numeric: tabular-nums; }
+
+  .alert-bar {
+    background: #fef3c7;
+    color: #78350f;
+    padding: 9px 16px;
+    margin: 6px 0 0;
+    border-radius: 8px;
+    display: none;
+    gap: 16px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+    font-weight: bold;
+    font-size: 14px;
+    border-left: 5px solid #f59e0b;
+  }
+  .alert-bar.show { display: flex; }
+  .alert-bar.frozen {
+    background: #dbeafe;
+    color: #1e3a8a;
+    border-color: #3b82f6;
+  }
+  .alert-bar.special {
+    background: #fce7f3;
+    color: #831843;
+    border-color: #db2777;
+  }
+  .alert-bar .chip {
+    background: rgba(255,255,255,0.6);
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+  }
+
+  main {
+    flex: 1;
+    display: flex;
+    gap: 10px;
+    padding: 10px 0 0;
+    min-height: 0;
+  }
+
+  .pane-left {
+    width: 340px;
+    background: #1f2937;
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+  }
+  .section-title {
+    font-size: 11px;
+    color: #94a3b8;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .kv { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+  .kv .k { color: #94a3b8; font-size: 10px; }
+  .kv .v { color: #f1f5f9; font-weight: 500; }
+  .kv .v.big { font-size: 15px; font-weight: bold; color: #fbbf24; }
+  .pk-no {
+    background: #0f172a;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-family: "Consolas", monospace;
+    font-size: 19px;
+    color: #fbbf24;
+    letter-spacing: 1px;
+    text-align: center;
+    border: 2px solid #334155;
+  }
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: bold;
+  }
+  .badge-jp { background: #dc2626; color: white; }
+  .badge-yamato { background: #000000; color: #fbbf24; }
+
+  /* セット品タグ */
+  .set-header {
+    background: #1e3a5f;
+    color: #bfdbfe;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border-left: 4px solid #60a5fa;
+    font-size: 13px;
+  }
+  .set-header .set-title {
+    font-weight: bold;
+    color: #60a5fa;
+    font-size: 11px;
+    letter-spacing: 1px;
+    margin-bottom: 2px;
+  }
+
+  /* 印刷フラグトグル */
+  .print-flag {
+    background: #0f172a;
+    border: 2px solid #334155;
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .print-flag:hover { border-color: #64748b; }
+  .print-flag.on { border-color: #db2777; background: #2a0f1d; }
+  .print-flag .cb {
+    width: 22px; height: 22px;
+    border: 2px solid #475569;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-size: 16px; font-weight: bold;
+    color: transparent;
+  }
+  .print-flag.on .cb { background: #db2777; border-color: #db2777; color: white; }
+  .print-flag-text {
+    font-size: 13px;
+    color: #f1f5f9;
+  }
+  .print-flag-text small { color: #94a3b8; display: block; font-size: 10px; margin-top: 1px; }
+
+  .pane-center {
+    flex: 1;
+    background: #1f2937;
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .center-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .center-title { font-size: 16px; font-weight: bold; }
+  .progress-chip {
+    font-size: 22px;
+    font-weight: bold;
+    color: #fbbf24;
+    font-variant-numeric: tabular-nums;
+  }
+  .progress-chip small { font-size: 13px; color: #94a3b8; margin: 0 4px; font-weight: normal; }
+
+  /* フロー進行ステップ */
+  .flow-steps {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+    font-size: 11px;
+  }
+  .flow-step {
+    flex: 1;
+    padding: 6px 10px;
+    background: #0f172a;
+    border-radius: 5px;
+    text-align: center;
+    border: 1px solid #334155;
+    color: #64748b;
+  }
+  .flow-step.active { background: #422006; color: #fbbf24; border-color: #fbbf24; font-weight: bold; }
+  .flow-step.done   { background: #064e3b; color: #6ee7b7; border-color: #10b981; }
+  .flow-step .num { font-size: 10px; margin-right: 3px; opacity: 0.7; }
+
+  .scan-line-list {
+    flex: 1;
+    overflow-y: auto;
+    background: #0f172a;
+    border-radius: 8px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .scan-line {
+    display: grid;
+    grid-template-columns: 36px 1fr 120px 100px;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 12px;
+    background: #1e293b;
+    border-radius: 6px;
+    border-left: 5px solid #64748b;
+    transition: all 0.2s;
+  }
+  .scan-line.done { border-left-color: #10b981; background: #064e3b; }
+  .scan-line.warn { border-left-color: #ef4444; background: #450a0a; animation: shake 0.3s; }
+  .scan-line .icon { font-size: 20px; text-align: center; }
+  .scan-line .pname { font-size: 15px; font-weight: bold; }
+  .scan-line .pcode { font-size: 10px; color: #94a3b8; font-family: Consolas, monospace; margin-top: 2px; }
+  .scan-line .qty {
+    text-align: center;
+    font-size: 18px;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+  }
+  .scan-line .qty small { font-size: 11px; color: #94a3b8; }
+  .scan-line.done .icon { color: #10b981; }
+  .scan-line .action-btn {
+    font-size: 10px;
+    background: #334155;
+    color: #cbd5e1;
+    padding: 4px 8px;
+    border-radius: 4px;
+  }
+
+  .pane-right {
+    width: 290px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .ship-to {
+    background: #1f2937;
+    border-radius: 10px;
+    padding: 14px;
+    flex-shrink: 0;
+  }
+  .ship-to .name { font-size: 16px; font-weight: bold; margin-bottom: 6px; }
+  .ship-to .addr { font-size: 12px; color: #cbd5e1; line-height: 1.55; }
+  .ship-to .zip { font-size: 11px; color: #94a3b8; margin-bottom: 2px; font-family: Consolas, monospace; }
+
+  .koudoku {
+    background: #1f2937;
+    border-radius: 10px;
+    padding: 14px;
+    flex: 1;
+    overflow-y: auto;
+  }
+  .koudoku-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px;
+    background: #0f172a;
+    border-radius: 6px;
+    margin-bottom: 5px;
+    font-size: 13px;
+  }
+  .koudoku-item.checked { background: #064e3b; color: #d1fae5; }
+  .koudoku-item .cb {
+    width: 22px; height: 22px;
+    border: 2px solid #475569;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 16px;
+    font-weight: bold;
+    color: transparent;
+  }
+  .koudoku-item.checked .cb { background: #10b981; border-color: #10b981; color: white; }
+
+  footer {
+    height: 82px;
+    display: flex;
+    gap: 7px;
+    padding: 8px 0 0;
+    flex-shrink: 0;
+  }
+  .btn {
+    flex: 1;
+    height: 100%;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: bold;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    border: 2px solid transparent;
+    transition: all 0.1s;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn .ico { font-size: 22px; }
+  .btn .kb { font-size: 9px; color: rgba(255,255,255,0.8); font-weight: normal; letter-spacing: 1px; }
+  .btn-primary { background: #2563eb; }
+  .btn-success { background: #059669; }
+  .btn-warning { background: #ea580c; }
+  .btn-danger  { background: #dc2626; }
+  .btn-neutral { background: #475569; }
+  .btn-print   { background: #db2777; }
+  .btn:hover:not(:disabled) { filter: brightness(1.15); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn.highlight {
+    box-shadow: 0 0 0 0 #fbbf24;
+    animation: hilite 1.2s infinite;
+  }
+  @keyframes hilite {
+    0%,100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.7); }
+    50%     { box-shadow: 0 0 0 8px rgba(251,191,36,0); }
+  }
+
+  .idle-screen {
+    flex: 1;
+    background: #0f172a;
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 20px;
+    position: relative;
+  }
+  .idle-screen .scan-icon { font-size: 140px; color: #334155; }
+  .idle-screen h1 { font-size: 32px; color: #f1f5f9; letter-spacing: 2px; }
+  .idle-screen p { color: #94a3b8; font-size: 15px; }
+  .idle-screen .pulse {
+    width: 50px; height: 50px;
+    border-radius: 50%;
+    background: #fbbf24;
+    opacity: 0.7;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0%   { transform: scale(0.8); opacity: 0.3; }
+    50%  { transform: scale(1.2); opacity: 0.9; }
+    100% { transform: scale(0.8); opacity: 0.3; }
+  }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+
+  /* 待機画面の端：QR再発行ボタン */
+  .idle-corner-btn {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: #db2777;
+    color: white;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .idle-corner-btn:hover { filter: brightness(1.15); }
+  .idle-corner-btn .ico { font-size: 18px; }
+
+  .modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.65);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    border-radius: 18px;
+  }
+  .modal-backdrop.active { display: flex; }
+  .modal {
+    background: #1e293b;
+    border-radius: 14px;
+    padding: 28px;
+    width: 640px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .modal h2 { color: #fbbf24; font-size: 22px; margin-bottom: 8px; }
+  .modal p.sub { color: #94a3b8; font-size: 13px; margin-bottom: 18px; }
+  .reason-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .reason-btn {
+    padding: 16px 14px;
+    background: #0f172a;
+    color: #f1f5f9;
+    border-radius: 8px;
+    font-size: 14px;
+    text-align: left;
+    border: 2px solid #334155;
+  }
+  .reason-btn:hover { border-color: #fbbf24; background: #1c2332; }
+  .reason-btn.selected { border-color: #fbbf24; background: #422006; }
+  .reason-btn .no { color: #fbbf24; font-weight: bold; margin-right: 8px; }
+
+  .sticky-note {
+    background: #422006;
+    color: #fed7aa;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    border-left: 3px solid #fb923c;
+  }
+  .sticky-note input { width: 18px; height: 18px; cursor: pointer; }
+
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+  /* 印刷確認モーダル */
+  .print-modal {
+    background: #1e293b;
+    border-radius: 14px;
+    padding: 24px;
+    width: 720px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .print-modal h2 { color: #f472b6; font-size: 22px; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; }
+  .print-modal .sub { color: #94a3b8; font-size: 13px; margin-bottom: 18px; }
+  .print-preview {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+  }
+  .qr-visual-mini {
+    width: 180px;
+    height: 230px;
+    background: white;
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .qr-box-mini {
+    width: 130px; height: 130px;
+    background:
+      repeating-linear-gradient(90deg, #000 0 4px, transparent 4px 8px),
+      repeating-linear-gradient(0deg, #000 0 4px, transparent 4px 8px);
+    background-color: white;
+    border: 4px solid #000;
+  }
+  .qr-visual-mini .qr-text {
+    color: #000;
+    font-family: Consolas, monospace;
+    font-size: 11px;
+    font-weight: bold;
+  }
+  .qr-info-mini { color: #f1f5f9; font-size: 13px; flex: 1; }
+  .qr-info-mini table { width: 100%; font-size: 12px; }
+  .qr-info-mini table td { padding: 4px 6px; border-bottom: 1px solid #334155; }
+  .qr-info-mini table td:first-child { color: #94a3b8; width: 35%; }
+
+  .print-options {
+    background: #0f172a;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 18px;
+    font-size: 13px;
+    color: #cbd5e1;
+  }
+  .print-options .line { display: flex; justify-content: space-between; padding: 4px 0; }
+  .print-options .line b { color: #f1f5f9; }
+
+  .complete-screen {
+    flex: 1;
+    background: linear-gradient(135deg, #065f46, #047857);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 16px;
+  }
+  .complete-screen .big-check { font-size: 140px; color: white; filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); }
+  .complete-screen h1 { font-size: 36px; color: white; }
+  .complete-screen p  { font-size: 15px; color: #d1fae5; }
+
+  /* デモパネル */
+  .demo-panel {
+    max-width: 1100px;
+    margin: 26px auto 50px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 20px;
+    color: #cbd5e1;
+  }
+  .demo-panel h3 { color: #fbbf24; margin-bottom: 10px; font-size: 16px; }
+  .demo-panel p  { font-size: 13px; margin-bottom: 12px; line-height: 1.7; }
+  .demo-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .demo-btns button {
+    padding: 10px 14px;
+    background: #334155;
+    color: #f1f5f9;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .demo-btns button:hover { background: #475569; }
+  .demo-btns button.primary { background: #2563eb; }
+  .demo-btns button.special { background: #db2777; }
+  .demo-btns button.warn { background: #ea580c; }
+  .legend { margin-top: 14px; font-size: 12px; color: #94a3b8; line-height: 1.8; }
+  .legend b { color: #f1f5f9; }
+  .change-log {
+    margin-top: 16px;
+    padding: 12px;
+    background: #0f172a;
+    border-left: 3px solid #fbbf24;
+    border-radius: 5px;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+  .change-log b { color: #fbbf24; }
+
+  /* 数量入力キーパッド */
+  .qty-modal {
+    background: #1e293b;
+    border-radius: 14px;
+    padding: 24px;
+    width: 560px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .qty-modal h2 { color: #fbbf24; font-size: 20px; margin-bottom: 6px; }
+  .qty-modal .sub { color: #94a3b8; font-size: 12px; margin-bottom: 14px; }
+  .qty-target {
+    background: #0f172a;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    border-left: 4px solid #fbbf24;
+  }
+  .qty-target .nm { font-size: 15px; font-weight: bold; color: #f1f5f9; }
+  .qty-target .cd { font-size: 11px; color: #94a3b8; font-family: Consolas, monospace; margin-top: 3px; }
+  .qty-display {
+    background: #0f172a;
+    color: #fbbf24;
+    border: 2px solid #fbbf24;
+    border-radius: 8px;
+    padding: 14px 20px;
+    font-family: Consolas, monospace;
+    font-size: 40px;
+    text-align: right;
+    margin-bottom: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .qty-display small { font-size: 14px; color: #94a3b8; margin-left: 10px; }
+  .keypad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .keypad button {
+    padding: 18px 0;
+    background: #334155;
+    color: #f1f5f9;
+    border-radius: 8px;
+    font-size: 22px;
+    font-weight: bold;
+  }
+  .keypad button:hover { background: #475569; }
+  .keypad button.util { background: #ea580c; color: white; font-size: 15px; }
+  .keypad button.ok { background: #059669; color: white; font-size: 18px; grid-column: span 2; }
+
+  /* 連絡事項モーダル（起動時） */
+  .notice-modal {
+    background: #1e293b;
+    border-radius: 14px;
+    padding: 28px 32px;
+    width: 780px;
+    max-height: 90%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    border-top: 6px solid #f59e0b;
+    display: flex;
+    flex-direction: column;
+  }
+  .notice-modal h2 {
+    color: #fbbf24;
+    font-size: 24px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .notice-modal .sub {
+    color: #94a3b8;
+    font-size: 13px;
+    margin-bottom: 18px;
+  }
+  .notice-list {
+    background: #0f172a;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 18px;
+    max-height: 420px;
+    overflow-y: auto;
+  }
+  .notice-item {
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    gap: 12px;
+    padding: 14px;
+    background: #1e293b;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    border-left: 4px solid #64748b;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .notice-item:hover { background: #263449; }
+  .notice-item.checked {
+    background: #064e3b;
+    border-left-color: #10b981;
+  }
+  .notice-item.priority-high { border-left-color: #dc2626; }
+  .notice-item.priority-high.checked { border-left-color: #10b981; }
+  .notice-item .cb {
+    width: 26px; height: 26px;
+    border: 2px solid #64748b;
+    border-radius: 5px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: bold;
+    color: transparent;
+    margin-top: 2px;
+  }
+  .notice-item.checked .cb {
+    background: #10b981;
+    border-color: #10b981;
+    color: white;
+  }
+  .notice-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-size: 11px;
+    color: #94a3b8;
+  }
+  .notice-meta .tag {
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: bold;
+  }
+  .notice-meta .tag.high { background: #7f1d1d; color: #fecaca; }
+  .notice-meta .tag.norm { background: #334155; color: #cbd5e1; }
+  .notice-meta .author { color: #fbbf24; }
+  .notice-title {
+    font-size: 15px;
+    font-weight: bold;
+    color: #f1f5f9;
+    margin-bottom: 3px;
+  }
+  .notice-body {
+    font-size: 13px;
+    color: #cbd5e1;
+    line-height: 1.6;
+  }
+  .notice-progress {
+    background: #0f172a;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 12px;
+    color: #cbd5e1;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .notice-progress .bar {
+    flex: 1;
+    height: 8px;
+    background: #334155;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .notice-progress .fill {
+    height: 100%;
+    background: linear-gradient(90deg, #10b981, #6ee7b7);
+    width: 0%;
+    transition: width 0.3s;
+  }
+
+  .scan-flash {
+    position: absolute;
+    inset: 0;
+    background: rgba(16, 185, 129, 0.25);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 50;
+    border-radius: 18px;
+  }
+  .scan-flash.ng { background: rgba(220, 38, 38, 0.35); }
+  .scan-flash.invoice { background: rgba(59, 130, 246, 0.35); }
+  .scan-flash.show { animation: flash 0.4s; }
+
+  /* ★v0.11★ 推奨箱カード */
+  .box-cand {
+    flex: 1; min-width: 200px; max-width: 260px;
+    background: #1e293b; border: 2px solid #334155; border-radius: 8px;
+    padding: 10px 12px; cursor: pointer; transition: all 0.12s;
+    position: relative;
+  }
+  .box-cand:hover { border-color: #94a3b8; transform: translateY(-1px); }
+  .box-cand.primary { border-color: #10b981; background: #064e3b; }
+  .box-cand-tag {
+    position: absolute; top: -8px; left: 8px;
+    background: #10b981; color: #fff; padding: 2px 8px;
+    border-radius: 9px; font-size: 9px; font-weight: bold; letter-spacing: 1px;
+  }
+  .box-cand-name { font-size: 13px; font-weight: bold; color: #f1f5f9; margin-bottom: 2px; line-height: 1.3; }
+  .box-cand-code { font-size: 9px; color: #93c5fd; font-family: Consolas, monospace; margin-bottom: 6px; }
+  .box-cand-row { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+  .box-pill {
+    display: inline-block; padding: 1px 6px; font-size: 9px; font-weight: bold;
+    background: #1e293b; color: #cbd5e1; border-radius: 9px; border: 1px solid #475569;
+  }
+  .box-pill.box-fixed { background: #422006; color: #fbbf24; border-color: #d97706; }
+  .box-pill.box-ext   { background: #581c87; color: #e9d5ff; border-color: #a855f7; }
+  .box-pill.box-var   { background: #1e3a8a; color: #bfdbfe; border-color: #3b82f6; }
+  .box-pill.rank      { background: #0b1424; color: #fbbf24; border-color: #d97706; }
+  .box-pill.frozen    { background: #1e3a8a; color: #67e8f9; border-color: #06b6d4; }
+  .box-pill.noshi     { background: #831843; color: #fbcfe8; border-color: #db2777; }
+  .box-cand-dim { font-size: 9px; color: #94a3b8; line-height: 1.4; margin-bottom: 4px; }
+  .box-cand-fill { margin-top: 4px; }
+  .box-cand-fill-bar { height: 5px; background: #0f172a; border-radius: 3px; overflow: hidden; }
+  .box-cand-fill-bar-in { height: 100%; background: linear-gradient(90deg, #10b981, #67e8f9); transition: width 0.3s; }
+  .box-cand-fill-txt { font-size: 9px; color: #cbd5e1; margin-top: 2px; }
+
+  /* ★v0.12★ 推奨箱（左ペイン用コンパクト版） */
+  .box-cand-mini {
+    background: #1e293b; border: 1.5px solid #334155; border-radius: 5px;
+    padding: 6px 8px; cursor: pointer; transition: all 0.12s;
+  }
+  .box-cand-mini:hover { border-color: #94a3b8; }
+  .box-cand-mini.primary { border-color: #10b981; background: #064e3b; }
+  .box-cand-mini-row1 {
+    display: flex; gap: 4px; align-items: center; margin-bottom: 3px;
+  }
+  .box-cand-mini-tag {
+    display: inline-block; padding: 0 5px; font-size: 9px; font-weight: bold;
+    background: #10b981; color: #fff; border-radius: 3px;
+    min-width: 14px; text-align: center;
+  }
+  .box-cand-mini-tag.dim { background: #475569; color: #cbd5e1; }
+  .box-cand-mini-name {
+    font-size: 11px; font-weight: bold; color: #f1f5f9;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    flex: 1;
+  }
+  .box-cand-mini-row2 {
+    display: flex; gap: 3px; align-items: center; margin-bottom: 3px;
+    flex-wrap: wrap;
+  }
+  .box-cand-mini-code {
+    font-family: Consolas, monospace; font-size: 9px; color: #93c5fd;
+    margin-left: auto;
+  }
+  .box-pill-mini {
+    display: inline-block; padding: 0 5px; font-size: 9px; font-weight: bold;
+    background: #1e293b; color: #cbd5e1; border-radius: 8px; border: 1px solid #475569;
+    line-height: 1.4;
+  }
+  .box-pill-mini.box-fixed { background: #422006; color: #fbbf24; border-color: #d97706; }
+  .box-pill-mini.box-ext   { background: #581c87; color: #e9d5ff; border-color: #a855f7; }
+  .box-pill-mini.box-var   { background: #1e3a8a; color: #bfdbfe; border-color: #3b82f6; }
+  .box-pill-mini.rank      { background: #0b1424; color: #fbbf24; border-color: #d97706; }
+  .box-pill-mini.frozen    { background: #1e3a8a; color: #67e8f9; border-color: #06b6d4; }
+  .box-pill-mini.noshi     { background: #831843; color: #fbcfe8; border-color: #db2777; }
+  .box-cand-mini-fill { margin-top: 3px; display: flex; gap: 4px; align-items: center; }
+  .box-cand-mini-bar {
+    flex: 1; height: 4px; background: #0f172a; border-radius: 2px; overflow: hidden;
+  }
+  .box-cand-mini-bar-in {
+    height: 100%; background: linear-gradient(90deg, #10b981, #67e8f9);
+    transition: width 0.3s;
+  }
+  .box-cand-mini-fill-txt {
+    font-size: 9px; color: #cbd5e1; min-width: 50px; text-align: right;
+  }
+  @keyframes flash {
+    0%   { opacity: 0; }
+    40%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  /* ★v0.9★ 伝票保留 メニュー */
+  .hold-opt {
+    background: #0f172a; border: 2px solid #475569; border-radius: 10px;
+    padding: 22px 14px; cursor: pointer; transition: all 0.12s;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  .hold-opt:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .hold-opt .ic { font-size: 36px; line-height: 1; }
+  .hold-opt .ttl { font-size: 16px; font-weight: bold; color: #f1f5f9; }
+  .hold-opt .desc { font-size: 11px; color: #94a3b8; line-height: 1.4; text-align: center; }
+  .hold-opt.insp { border-color: #f59e0b; }
+  .hold-opt.insp:hover { background: #422006; }
+  .hold-opt.insp .ic { color: #fbbf24; }
+  .hold-opt.cont { border-color: #3b82f6; }
+  .hold-opt.cont:hover { background: #1e3a8a; }
+  .hold-opt.cont .ic { color: #93c5fd; }
+
+  /* 分類ボタン */
+  #holdCatBtns .cat-btn {
+    background: #0f172a; color: #cbd5e1;
+    border: 2px solid #334155; border-radius: 8px;
+    padding: 14px 8px; cursor: pointer; transition: all 0.12s;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  #holdCatBtns .cat-btn:hover { border-color: #fbbf24; background: #1c2332; }
+  #holdCatBtns .cat-btn.on { border-color: #fbbf24; background: #422006; color: #fbbf24; }
+  #holdCatBtns .cat-btn .ic { font-size: 28px; line-height: 1; }
+  #holdCatBtns .cat-btn .lbl { font-size: 13px; font-weight: bold; }
+
+
+  /* ★v0.11★ 箱候補セクション */
+  #finalBoxSummary {
+    background:#0b1220;
+    border-left:4px solid #a855f7;
+    border-radius:6px;
+    padding:12px 14px;
+    margin-bottom:14px;
+  }
+  #finalBoxSummary .lbl {
+    font-size:12px; color:#c4b5fd; letter-spacing:1px; margin-bottom:6px;
+    display:flex; align-items:center; gap:8px;
+  }
+  #finalBoxSummary .lbl .src {
+    font-size:9px; padding:1px 7px; background:#581c87; color:#e9d5ff;
+    border-radius:9px; font-weight:bold; letter-spacing:0.5px;
+  }
+  .box-tabs {
+    display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;
+  }
+  .box-tab {
+    padding:5px 12px; font-size:11px; font-weight:bold;
+    background:#1e293b; color:#cbd5e1; border:1.5px solid #334155;
+    border-radius:14px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:6px;
+    transition: all 0.12s;
+  }
+  .box-tab:hover { background:#334155; border-color:#a855f7; }
+  .box-tab.on { background:#581c87; color:#fbbf24; border-color:#fbbf24; }
+  .box-tab.recommend::before {
+    content:'⭐'; font-size:11px;
+  }
+  .box-detail {
+    background:#1e293b; border-radius:6px; padding:10px 14px;
+    border:1px solid #475569;
+  }
+  .box-detail .b-name {
+    font-size:15px; font-weight:bold; color:#fbbf24; margin-bottom:4px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .box-detail .b-name .pcode {
+    font-family:Consolas, monospace; font-size:11px; color:#93c5fd;
+    background:#0f172a; padding:1px 7px; border-radius:3px;
+  }
+  .box-detail .b-spec {
+    display:grid; grid-template-columns:repeat(4,1fr); gap:4px 12px;
+    font-size:11px; margin-bottom:6px;
+  }
+  .box-detail .b-spec .k { color:#94a3b8; font-size:10px; }
+  .box-detail .b-spec .v { color:#f1f5f9; font-weight:bold; }
+  .box-detail .b-spec .v.val { color:#fbbf24; font-family:Consolas,monospace; }
+  .box-detail .b-reason {
+    background:#0f172a; padding:6px 10px; border-radius:4px;
+    font-size:10px; color:#a7f3d0; border-left:2px solid #10b981;
+    margin-top:4px;
+  }
+  .box-detail .b-warn {
+    background:#422006; padding:6px 10px; border-radius:4px;
+    font-size:10px; color:#fed7aa; border-left:2px solid #f59e0b;
+    margin-top:4px;
+  }
+  .box-detail .b-temp-frozen { background:#0c4a6e; color:#bae6fd; }
+  .box-detail .b-temp-chill  { background:#1e3a8a; color:#bfdbfe; }
+
+  /* === ★v0.15★ サンドイッチ完了ボタン強調 === */
+  @keyframes scanPulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(103,232,249,0.6); }
+    50% { transform: scale(1.04); box-shadow: 0 0 0 12px rgba(103,232,249,0); }
+  }
+  .scan-cta-emphasis {
+    animation: scanPulse 1.4s ease-in-out infinite;
+    background: linear-gradient(135deg, #06b6d4, #0e7490) !important;
+    color: #fff !important;
+    border: 2px solid #67e8f9 !important;
+  }
+  .scan-cta-disabled {
+    background: #334155 !important;
+    color: #94a3b8 !important;
+    cursor: not-allowed !important;
+    border: 2px solid transparent !important;
+  }
+  .kdk-row-light {
+    display:flex; gap:10px; align-items:center;
+    padding:12px 14px; background:#ffffff; border-left:4px solid #3BB6F6;
+    border-radius:6px; margin-bottom:6px; cursor:pointer;
+    color:#0f172a;
+  }
+  .kdk-row-light .cb {
+    width:24px; height:24px; border:2px solid #94a3b8; border-radius:5px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:18px; font-weight:bold; color:transparent; flex-shrink:0;
+    background:#ffffff;
+  }
+  .kdk-row-light.checked { background:#ECFDF5; border-left-color:#10b981; }
+  .kdk-row-light.checked .cb { background:#10b981; border-color:#10b981; color:#ffffff; }
+  .kdk-row-light .ttl { font-size:15px; color:#0f172a; line-height:1.4; font-weight:500; }
+  .kdk-noshi-light {
+    background:#ffffff; border-left:4px solid #f59e0b; border-radius:6px;
+    padding:14px; margin-bottom:14px; color:#0f172a;
+  }
+  .kdk-noshi-light .nm-kind { font-size:18px; font-weight:bold; color:#0f172a; margin-top:0; }
+  .kdk-noshi-light .nm-name { font-size:14px; color:#475569; margin-top:2px; }
+  .kdk-noshi-light label { color:#0f172a; }
+  .h-logo-mark { display:flex; align-items:center; gap:10px; }
+  .h-logo-sub { font-size:11px; color:#94a3b8; line-height:1.2; }
+
+  /* ===== 縦表示モード (portrait) ===== */
+  .tablet.portrait {
+    width: 768px;
+    height: 1080px;
+  }
+  .tablet.portrait header {
+    height: 48px;
+    flex-wrap: wrap;
+  }
+  .tablet.portrait .h-logo-mark svg { height: 28px; }
+  .tablet.portrait .h-logo-sub { font-size: 9px; }
+  .tablet.portrait .h-clock { font-size: 12px; }
+
+  /* 検品メイン: 縦積み */
+  .tablet.portrait #scrInspect {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .tablet.portrait .pane-left {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .tablet.portrait .pane-left > div {
+    min-width: 0;
+    flex: 1 1 140px;
+  }
+  .tablet.portrait #boxSuggestPane {
+    flex: 1 1 100%;
+  }
+  .tablet.portrait .pane-center {
+    flex: 1;
+    min-height: 360px;
+  }
+  .tablet.portrait .pane-right {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    gap: 10px;
+  }
+  .tablet.portrait .pane-right > div {
+    flex: 1;
+    min-width: 0;
+  }
+  /* フッター: 2行×3列 */
+  .tablet.portrait footer {
+    height: 106px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    padding: 6px 0 0;
+  }
+  .tablet.portrait footer .btn {
+    height: 100%;
+    font-size: 12px;
+  }
+  .tablet.portrait footer .btn .ico svg { width: 18px; height: 18px; }
+
+</style>
+</head>
+<body>
+
+<div class="tablet-note">
+  <b>LogiSmile タブレット検品・梱包 モック v0.15</b>　／　HP14 タブレット（1280×800）＋外付スキャナ＋SATO CT4-LX プリンタ想定　／
+  v0.14 からの変更点：<b>v0.16: 正式ロゴ差し替え(#29A6F6/#00B6CB)・Fキーラベル除去・縦表示トグル追加 ／ LogiSmile ロゴ＋カラーを採用／F1-F5/ESC ボタンを SVG アイコン化（絵文字撤去）／最終モーダルの のし・同梱物枠を白背景＋黒文字に刷新／サブラベル撤去／納品書スキャン待ちプロンプト撤去・ボタンを小型化＋脈動強調</b>
+</div>
+
+<div class="tablet" id="tablet">
+
+  <!-- 強制検品 Stickyバナー -->
+  <div class="force-banner" id="forceBanner">
+    <span>⚠ 強制検品モード 実行中</span>
+    <span style="font-weight:normal; font-size:12px; opacity:0.9">理由コード: <b id="forceReasonLabel">-</b></span>
+    <button class="release-btn" onclick="releaseForce()">解除</button>
+  </div>
+
+  <!-- ヘッダ -->
+  <header>
+    <div class="h-brand h-logo-mark"><?xml version="1.0" encoding="UTF-8"?><svg aria-label="LogiSmile" role="img" xmlns="http://www.w3.org/2000/svg" style="display:block; height:38px; width:auto;" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1733.33 509.52"><defs><style>.cls-1{fill:none;}.cls-2{fill:#29A6F6;}.cls-3{fill:url(#lsGrad);}</style><linearGradient id="lsGrad" x1="1044.37" y1="417.77" x2="1382.77" y2="391.59" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#29A6F6"/><stop offset="1" stop-color="#00B6CB"/></linearGradient></defs><path class="cls-2" d="M616.04,188.15c0-8.71-.01-17.43,0-26.14,0-.84-.06-1.62-.5-2.38-.42-.71-.73-1.47-1.06-2.23-.42-.96-1.08-1.79-1.93-2.27-1.88-1.07-3.71-2.37-6.14-1.86-1.05,.22-2.19,.02-3.29,.01-8.9-.06-17.79-.07-26.69-.21-1.87-.03-3.36,.56-4.83,1.58-1,.7-1.7,1.66-2.5,2.53-.66,.72-.9,1.54-.89,2.51,.04,2.2,.02,4.4,.02,6.6,0,.49-.15,.93-.64,1.09-.35,.12-.76,0-1.01-.29-1.59-1.94-3.8-3.15-5.67-4.75-2.24-1.92-4.79-3.33-7.25-4.9-2.88-1.84-6.1-2.93-9.13-4.42-1.68-.82-3.47-1.61-5.45-1.78-.88-.07-1.75-.52-2.57-.93-1.18-.59-2.38-.89-3.7-.87-1.19,.01-2.4-.01-3.56-.23-5.36-1.01-10.78-.87-16.19-.75-1.28,.03-2.59,.16-3.81,.49-1.36,.37-2.71,.51-4.08,.46-1.79-.07-3.44,.33-5.06,1.07-.83,.38-1.72,.78-2.6,.83-2.61,.17-4.97,1.26-7.38,2.03-3.2,1.01-6.29,2.41-9.24,4.11-5.56,3.2-11.14,6.35-15.71,10.96-.19,.19-.43,.35-.63,.54-5.35,5.02-10.67,10.06-14.53,16.41-.62,1.02-1.16,2.09-1.87,3.04-1.99,2.66-3.05,5.82-4.8,8.61-.85,3.46-3.22,6.36-3.68,9.97-.03,.26-.26,.49-.35,.74-1.1,3.17-2.74,6.18-2.74,9.67,0,.44-.14,.93-.36,1.31-.97,1.66-1.1,3.49-1.1,5.32,0,1.68-.25,3.28-.9,4.83-.53,1.29-.75,2.64-.75,4.03,0,5.41-.03,10.82,0,16.23,0,2.49,.4,4.93,1.04,7.34,.19,.7,.44,1.42,.46,2.14,.06,2.49,.16,4.95,1.34,7.23,.03,2.6,1.06,4.95,1.77,7.38,.18,.61,.21,1.29,.5,1.85,.67,1.29,1.48,2.52,1.45,4.06,1.26,2.74,2.44,5.51,3.8,8.2,1.58,3.1,3.42,6.04,5.29,8.98,2.07,3.26,4.48,6.26,6.82,9.28,4.3,5.55,9.9,9.79,15.59,13.81,3.94,2.79,8.09,5.27,12.61,7.12,2.45,1,4.88,1.97,7.41,2.73,.7,.21,1.4,.44,2.06,.75,1.26,.6,2.53,1.04,3.96,.96,.44-.02,.99,.02,1.32,.26,1.61,1.17,3.46,1.1,5.28,1.12,1.76,.01,3.44,.33,5.15,.72,4.71,1.08,9.45,1.06,14.15-.15,1.34-.35,2.68-.56,4.07-.57,1.28-.01,2.68,.14,3.81-.31,1.64-.66,3.27-1.08,5.02-1.2,.45-.03,.9-.2,1.31-.39,3.23-1.5,6.68-2.44,9.81-4.21,3.34-1.89,6.89-3.41,9.76-6.04,.27-.24,.59-.45,.91-.62,2.7-1.46,4.98-3.41,6.93-5.76,.34-.41,.79-.75,1.24-1.05,.64-.42,1.3-.02,1.28,.78-.03,1.1-.24,2.2-.16,3.29,.33,4.31,.21,8.62,.04,12.92-.06,1.37-.19,2.75-.43,4.1-.26,1.45-.51,2.89-.45,4.36,.04,1.12-.14,2.2-.74,3.17-.65,1.05-.91,2.19-.89,3.41,0,.93-.16,1.81-.65,2.63-.28,.46-.46,1-.57,1.53-.46,2.18-1.65,4.05-2.55,6.03-1.15,2.51-2.91,4.63-4.72,6.72-4.3,4.96-9.79,8.2-15.56,11.08-1.68,.17-2.93,1.52-4.62,1.67-1.67,.15-3.2,.72-4.73,1.37-.48,.21-1.08,.17-1.63,.17-6.15,0-12.29,.01-18.44,0-1.1,0-2.18-.11-3.19-.69-1.3-.74-2.75-1.06-4.22-1.1-2.23-.07-4.12-1.53-6.36-1.47-.08,0-.17-.07-.24-.13-1.96-1.42-4.42-1.69-6.51-2.87-2.15-1.21-4.39-2.25-6.34-3.77-4.21-3.28-8.12-6.86-11.69-10.82-.79-.88-1.69-1.68-2.61-2.43-1.58-1.28-3.1-1.3-4.71,.03-1.2,.98-2.42,2.02-3.37,3.23-3.21,4.11-6.71,8.02-9.57,12.4-.3,.46-.58,.95-.96,1.34-2.83,2.9-5.02,6.32-7.71,9.32-1.07,1.2-1.62,2.67-2.2,4.09-.56,1.37-.56,2.94,.04,4.31,1.22,2.78,2.66,5.44,5.05,7.44,1.55,1.29,3.13,2.54,4.69,3.82,1.06,.87,2.18,1.68,3.16,2.64,2.52,2.45,5.45,4.33,8.46,6.09,2.83,1.66,5.74,3.19,8.67,4.65,2.6,1.3,5.21,2.68,7.96,3.57,2.32,.75,4.41,2.33,7.01,2.2,.25-.01,.54,.14,.77,.28,.79,.52,1.68,.72,2.6,.81,1.12,.11,2.18,.43,3.13,.97,1.34,.77,2.75,.94,4.24,.9,.91-.02,1.85-.1,2.7,.33,2.03,1.04,4.24,1.12,6.44,1.13,4.13,.02,8.25,.18,12.35,.64,2.1,.23,4.22,.26,6.31-.05,2.73-.4,5.47-.55,8.22-.61,2.29-.05,4.59-.14,6.73-1.12,.95-.43,1.98-.33,2.98-.34,1.01-.02,2.01,.03,2.95-.46,2.54-1.33,5.53-1.23,8.08-2.55,1.51-.04,2.84-.64,4.11-1.4,.39-.23,.83-.43,1.27-.5,2.01-.33,3.72-1.4,5.54-2.18,2.52-1.09,4.84-2.57,7.24-3.89,4.11-2.26,8.1-4.75,11.54-7.87,5.15-4.66,10.44-9.26,14.26-15.2,.35-.54,.8-1.01,1.15-1.54,1.27-1.9,2.69-3.73,3.74-5.75,1.39-2.67,3.05-5.19,4.12-8.03,.89-2.38,2.31-4.55,2.72-7.12,.04-.27,.12-.56,.27-.77,.84-1.17,.91-2.57,1.22-3.9,.15-.62,.22-1.3,.51-1.84,.92-1.68,1.05-3.49,1.07-5.33,0-1.01-.01-2,.39-2.97,.99-2.42,1.23-4.97,1.2-7.55-.02-1.38,.03-2.76,.37-4.1,.5-1.97,.68-3.98,.71-6,.06-3.3,.09-6.6,.09-9.91,0-24.77,0-49.53,0-74.3h.06c0-19.81,0-39.63,0-59.44Zm-47.79,58.55c0,1.2,0,2.37-.59,3.48-.25,.48-.44,1.04-.48,1.57-.22,2.96-1.54,5.62-2.3,8.43-.37,1.39-1,2.76-1.75,4.01-3.64,6.08-7.66,11.84-13.6,16-2.34,1.64-4.8,3.02-7.32,4.31-1.62,.83-3.22,1.74-5.13,1.77-.35,0-.76,.12-1.04,.32-1.43,1.09-3.08,1.03-4.73,1.02-2.11-.02-4.21,0-6.32,0,0,.06,0,.11,0,.17-2.75-.06-5.5-.14-8.25-.18-.94-.01-1.8-.2-2.64-.63-.65-.33-1.38-.8-2.04-.75-2.48,.21-4.38-1.24-6.38-2.21-2.53-1.23-5.01-2.68-7.26-4.38-2.84-2.16-5.34-4.74-7.36-7.73-.82-1.22-1.75-2.36-2.51-3.6-.77-1.24-1.46-2.53-2.07-3.85-.79-1.72-2.09-3.26-1.96-5.32,0-.09-.02-.19-.07-.26-1.54-2.02-1.63-4.41-1.75-6.8,0-.18-.04-.37-.11-.54-1.34-3.44-1.04-7.03-1.02-10.6,0-1.19,0-2.38,0-3.58,0-.46-.06-.94,.05-1.37,.68-2.75,1.39-5.49,1.47-8.35,.02-.59,.44-1.2,.76-1.74,.47-.81,.81-1.62,.79-2.59,0-.44,.09-.94,.32-1.3,.81-1.24,1.23-2.65,1.83-3.98,2.46-5.5,5.79-10.42,10.36-14.37,2.63-2.27,5.63-4.05,8.67-5.78,2.4-1.37,5.13-1.89,7.56-3.17,.68-.36,1.61-.31,2.42-.31,1.29,0,2.56-.11,3.81-.44,3.71-.95,7.42-.9,11.14-.07,1.35,.3,2.71,.43,4.09,.43,.83,0,1.69,.01,2.4,.47,1.94,1.26,4.26,1.6,6.28,2.71,2.71,1.5,5.51,2.84,7.77,5.03,1.45,1.4,2.87,2.83,4.34,4.21,3.66,3.44,6.3,7.57,8.41,12.09,.39,.83,.87,1.6,.92,2.55,.02,.27,.05,.57,.18,.8,1.24,2.22,1.43,4.7,1.89,7.12,.07,.36,.07,.77,.24,1.07,1.14,1.94,.93,4.07,.94,6.17,0,3.39,0,6.78,0,10.18Z"/><path class="cls-2" d="M1012.97,242.53c0,25.59,0,51.19,0,76.78,0,1.74,0,3.49-.04,5.23-.03,1.06,.24,1.99,.9,2.81,.63,.78,1.22,1.61,1.91,2.33,1.48,1.55,3.35,2.18,5.48,2.06,5.86-.34,11.73-.3,17.6-.26,5.14,.04,10.27,.03,15.41,.06,2.71,.02,4.98-.83,6.68-3.07,1.09-1.43,1.73-2.87,1.71-4.76-.09-9.17-.04-18.35-.04-27.52,0-10.92,0-21.83,0-32.75,0-12.29,.02-24.58,.04-36.88,0-1.84,.29-3.62,.8-5.41,.7-2.46,1.36-4.92,2.22-7.34,1.02-2.88,2.37-5.6,4.24-7.94,3.88-4.87,8.65-8.69,14.48-11.05,.5-.2,1.04-.38,1.57-.43,1.29-.11,2.54-.29,3.67-1.01,.64-.41,1.37-.45,2.12-.45,4.04,0,8.07-.03,12.11-.04,.64,0,1.33-.07,1.87,.3,1.18,.81,2.49,1.06,3.88,1.18,.61,.05,1.2,.41,1.77,.68,.66,.31,1.28,.72,1.95,1.01,4.09,1.76,7.04,4.87,9.76,8.25,.17,.21,.33,.45,.45,.69,1.01,2.05,2.01,4.09,2.99,6.15,.19,.4,.34,.88,.33,1.31-.07,1.88,.49,3.62,1.07,5.36,.47,1.41,.65,2.85,.64,4.33-.02,2.84,.03,5.69,.03,8.53,0,26.05-.02,52.1-.03,78.16,0,4.86-.01,9.72-.02,14.59,0,1.01-.02,2,.46,2.95,1.68,3.32,4.35,5.13,8.08,5.2,4.22,.07,8.44,.04,12.66,.03,6.88-.01,13.74-.61,20.63-.37,3.46,.12,3.48-.09,5.98-2.56,1.32-1.31,1.89-2.71,1.88-4.61-.08-10.55-.04-21.1-.04-31.65,0-8.81,.01-17.61,.01-26.42,0-13.39,0-26.79,0-40.18,0-.82-.1-1.67,.29-2.44,1.59-3.14,.91-6.92,2.81-9.97,.04-.07,.05-.18,.04-.27-.03-1.15,.57-2.07,1.05-3.06,1.35-2.77,3.27-5.11,5.4-7.25,2.25-2.27,4.62-4.46,7.48-5.98,1.05-.56,2.2-.91,3.25-1.46,2.98-1.55,6.16-2.25,9.5-2.32,2.84-.06,5.68-.05,8.52-.12,1.13-.03,2.21,.13,3.23,.56,.86,.36,1.72,.61,2.64,.69,.64,.06,1.33,.07,1.88,.35,2.38,1.17,4.85,2.2,6.99,3.78,2.74,2.02,5.2,4.41,7.11,7.23,1.11,1.63,2.21,3.35,2.6,5.38,.19,.98,.61,1.91,.92,2.87,.2,.61,.55,1.21,.55,1.82-.02,2.94,.53,5.85,.6,8.77,.2,8.8,.31,17.61,.32,26.41,.01,8.07-.18,16.14-.21,24.21-.04,9.63,0,19.26-.01,28.89,0,6.05,.03,12.11-.11,18.16-.04,1.83,.34,3.44,1.11,5.02,1.38,2.85,4.66,4.73,7.84,4.54,.82-.05,1.65-.1,2.47-.1,6.05,0,12.11,.04,18.16,.03,4.04,0,8.07-.06,12.11-.1,1.77-.02,3.51-.25,4.93-1.4,2.4-1.94,3.79-4.42,3.71-7.6-.07-3.12-.18-6.23-.17-9.35,.02-8.16-.12-16.33,.13-24.49,.12-3.94,.1-7.89,.08-11.83-.04-9.54-.17-19.08-.17-28.62,0-10.36,.12-20.73,.18-31.09,.01-2.39,0-4.78-.56-7.11-.61-2.51-.91-5.04-.84-7.63,.04-1.66-.18-3.29-.82-4.85-.46-1.11-.73-2.27-.73-3.48,0-.83-.19-1.61-.54-2.39-.92-1.99-1.13-4.26-2.39-6.12-.11-1.51-.88-2.77-1.55-4.08-.75-1.46-1.45-2.97-2.26-4.4-2.13-3.75-4.46-7.38-7.57-10.42-3.68-3.6-7.72-6.71-12.13-9.41-2.52-1.54-5.14-2.78-7.79-4.01-1.48-.69-3.01-1.42-4.6-1.72-3.31-.61-6.33-2.48-9.82-2.29-.17,0-.34-.13-.52-.16-1.36-.22-2.71-.56-4.07-.63-6.14-.33-12.29-.25-18.43,.05-2.83,.14-5.55,1.19-8.42,1.09-2.46,1.26-5.2,1.65-7.77,2.56-.6,.21-1.19,.51-1.81,.6-1.02,.14-1.91,.57-2.83,.99-2.65,1.22-5.26,2.49-7.86,3.81-2.37,1.2-4.7,2.44-6.84,3.99-4.46,3.25-8.62,6.84-12.06,11.19-.91,1.15-1.97,2.16-2.66,3.49-.44,.87-1.16,.92-1.76,.28-.06-.07-.13-.13-.18-.21-1.21-1.83-2.82-3.36-3.9-5.3-.62-1.11-1.41-2.15-2.27-3.1-3.96-4.38-8.58-7.99-13.63-11.01-2.03-1.21-4.24-2.14-6.41-3.1-2.49-1.1-4.83-2.63-7.71-2.6-.85,0-1.56-.5-2.27-.93-.97-.59-2.01-.84-3.15-.81-.82,.03-1.7,.09-2.45-.17-2.22-.77-4.51-.75-6.79-.87-5.13-.25-10.27-.11-15.41-.01-1.11,.02-2.25,.05-3.25,.46-1.77,.73-3.64,.37-5.42,.74-1.88,.39-3.5,1.61-5.44,1.87-.83,.11-1.57,.5-2.35,.73-2.2,.67-4.23,1.73-6.32,2.64-3.02,1.31-5.98,2.86-8.53,4.92-2.54,2.06-5.59,3.58-7.47,6.42-.19,.29-.6,.38-1,.26-.44-.13-.52-.5-.5-.86,.03-.64,.15-1.27,.2-1.91,.37-4.12-1.29-7.29-4.56-9.7-.92-.67-1.92-.9-3.09-.89-6.51,.09-13.02,.11-19.53,.13-4.68,.01-9.36-.02-14.03-.01-.64,0-1.31,0-1.9,.21-3.26,1.11-7.05,4.28-6.45,8.79,0,26.79,0,53.57,0,80.36Z"/><path class="cls-2" d="M205.93,281.09c-16.6,.05-33.2,0-49.81,0-18.25,0-36.5,.03-54.76,.05-.27,0-.55,0-.82-.03-.74-.08-1.11-.49-1.16-1.27-.02-.37,.01-.73,.01-1.1,0-17.25,0-34.49,.01-51.74,0-23.76,0-47.52,0-71.28,0-21.92,0-43.85,0-65.77,0-10.82-.05-21.65,.01-32.47,.01-1.75-.46-3.21-1.33-4.65-.77-1.29-1.86-2.23-3-3.17-.98-.81-1.99-1.15-3.26-1.15-12.93,.04-25.87,.06-38.8,.02-1.71,0-3.17,.34-4.63,1.29-2.33,1.53-3.7,3.48-3.77,6.3-.07,2.57-.23,5.13-.23,7.7,0,12.2,.07,24.4,.09,36.6,.03,17.98,.03,35.96,.08,53.94,.04,12.11,.14,24.22,.22,36.32-.08,0-.15,0-.23,0v29.99c0,12.93-.02,25.86,0,38.8,.01,7.15,.12,14.31,.14,21.46,.05,12.66,.06,25.32,.09,37.98,0,2.02,.04,4.04,0,6.05-.03,1.38,.43,2.5,1.43,3.43,.47,.44,.91,.91,1.35,1.37,.72,.75,1.59,1.11,2.61,1.37,1.82,.47,3.63,.29,5.46,.3,24.31,0,48.62,.03,72.92,.06,9.08,0,18.16,.04,27.24,.04,16.14,0,32.29-.02,48.43,0,1.02,0,2-.24,2.99-.35,2.15-.24,3.5-1.57,4.49-3.26,.93-1.58,1.39-3.27,1.4-5.21,.03-7.98-.44-15.96-.13-23.94,.12-3.02,.03-6.05,.14-9.08,.06-1.71-.28-3.25-1.11-4.73-1.34-2.42-3.14-3.85-6.11-3.84Z"/><path class="cls-2" d="M406.73,225.1c-.59-1.15-.9-2.4-.86-3.71,.05-1.76-.06-3.46-1.04-5.03-.32-.51-.39-1.23-.43-1.86-.08-1.12-.4-2.14-.9-3.14-.41-.81-.66-1.71-.97-2.57-.64-1.8-1.16-3.66-1.95-5.4-1.31-2.91-2.79-5.74-4.18-8.61-1.76-3.63-3.85-7.05-6.19-10.34-3.2-4.51-6.93-8.54-10.88-12.38-2.17-2.11-4.25-4.3-6.93-5.82-.63-.36-1.19-.85-1.75-1.32-2.24-1.9-4.78-3.37-7.26-4.94-1.16-.73-2.35-1.44-3.6-2-3.66-1.65-7.29-3.39-11.05-4.76-2.12-.77-4.23-1.77-6.54-1.97-1.03-.09-1.94-.53-2.83-1.01-.99-.54-2.04-.75-3.17-.77-1.1-.01-2.23,.03-3.28-.22-2.88-.68-5.79-.92-8.73-.93-4.77-.02-9.54,.02-14.3,.08-.91,.01-1.88,.05-2.7,.38-1.5,.61-3.02,.67-4.58,.66-1.01,0-2.04-.06-2.96,.45-1.71,.95-3.53,1.48-5.49,1.63-.44,.03-.88,.25-1.28,.47-.9,.5-1.84,.76-2.87,.86-.62,.06-1.27,.27-1.82,.58-1.05,.59-2.18,.95-3.28,1.4-1.43,.59-2.87,1.18-4.23,1.91-2.5,1.33-4.99,2.66-7.42,4.12-2.99,1.8-5.63,4.1-8.63,5.87-.31,.18-.57,.46-.84,.71-4.04,3.61-7.89,7.39-11.52,11.41-.86,.95-1.84,1.82-2.56,2.87-2.52,3.71-5.35,7.21-7.41,11.22-.46,.89-1.12,1.7-1.48,2.63-1.21,3.06-2.81,5.94-4.08,8.96-.78,1.84-1.3,3.79-2.26,5.56-.16,.3-.15,.72-.14,1.08,0,1.03-.19,1.98-.75,2.88-.44,.7-.63,1.51-.74,2.34-.24,1.72-.36,3.46-1.37,4.99-.28,.42-.25,1.06-.3,1.6-.07,.82-.13,1.65-.11,2.47,.04,2.21-.2,4.38-.72,6.54-.4,1.69-.7,3.42-.69,5.17,0,4.31-.01,8.62,.06,12.93,.02,1.18,.17,2.4,.53,3.52,.63,1.95,.78,3.94,.83,5.96,.03,1.18-.01,2.47,.43,3.52,.65,1.55,.97,3.13,1.23,4.76,.11,.71,.35,1.43,.67,2.08,.53,1.08,.94,2.17,.96,3.4,0,.45,.13,.91,.3,1.33,1.08,2.71,2.04,5.48,3.33,8.09,2.18,4.42,4.43,8.81,7.08,12.98,1.77,2.79,3.93,5.29,5.86,7.94,4.07,5.57,9.58,9.56,14.63,14.07,.27,.24,.6,.42,.91,.62,3.83,2.49,7.57,5.16,11.71,7.09,1.72,.81,3.36,1.78,5.14,2.51,2.19,.9,4.56,1.33,6.63,2.54,.46,.27,1.05,.31,1.57,.48,.6,.2,1.27,.32,1.78,.66,.81,.54,1.66,.73,2.6,.69,1.03-.05,2.03,.07,2.88,.71,1.4,1.06,3.01,1.25,4.69,1.28,1.74,.03,3.51-.08,5.21,.2,6.29,1.04,12.6,.98,18.92,.51,.37-.03,.76,.02,1.09-.11,2.03-.8,4.15-.58,6.25-.59,1.22,0,2.34-.25,3.44-.79,.81-.41,1.67-.85,2.55-.97,1.91-.26,3.72-.83,5.56-1.37,1.6-.47,3.03-1.31,4.59-1.76,2.64-.76,5.1-1.87,7.55-3.1,1.14-.57,2.19-1.3,3.38-1.79,2.3-.95,4.35-2.33,6.39-3.71,3.87-2.62,7.54-5.49,10.85-8.83,4.38-4.43,8.84-8.72,12.32-13.99,4.51-6.83,8.28-13.98,11.09-21.65,.13-.34,.25-.69,.35-1.04,.58-2.09,1.74-4.04,1.6-6.31-.01-.17,.04-.39,.14-.52,1.13-1.48,1.08-3.26,1.32-4.98,.17-1.18,.34-2.37,.93-3.43,.46-.83,.58-1.73,.58-2.66,0-4.77,0-9.54,0-14.3,0,0,0,0,0,0,0-4.58-.02-9.17,.01-13.75,0-1.49-.17-2.9-.87-4.25Zm-46.39,25.99c-.58,1.17-.75,2.45-.71,3.75,.03,1.12-.14,2.19-.7,3.18-.22,.39-.38,.83-.51,1.26-2.34,7.61-6.51,14.09-12.34,19.47-3.25,3-7.04,5.21-11.05,7.05-.4,.18-.88,.21-1.33,.25-.83,.08-1.67,.18-2.32,.73-.84,.71-1.79,.8-2.83,.8-2.29-.02-4.56-.02-6.75,.95-1.15,.51-2.49,.54-3.79,.24-3.04-.7-6.1-1.3-9.24-1.21-.18,0-.38,0-.54-.07-1.97-.71-3.98-1.34-5.89-2.18-3.36-1.49-6.31-3.7-9.38-5.69-1.62-1.04-2.94-2.5-4.12-4.02-1.68-2.17-3.34-4.37-4.86-6.65-1.37-2.05-2.19-4.4-3.15-6.67-.29-.67-.44-1.43-.84-2.02-.67-.98-.78-2.04-.74-3.15,.05-1.23-.25-2.37-.81-3.44-.75-1.42-1-2.92-.96-4.51,.05-1.92,.01-3.85,.01-5.1-.67-4.81,.03-8.91,.12-13.03,.02-.76,.37-1.41,.72-2.05,.36-.64,.92-1.27,.84-2-.24-2.04,.79-3.69,1.48-5.46,1.03-2.65,2.29-5.16,3.64-7.67,2.54-4.73,6.59-8.04,10.34-11.65,1.01-.98,2.39-1.34,3.51-2.11,2.2-1.51,4.79-2.24,7.02-3.67,.28-.18,.7-.23,1.06-.22,1.88,.02,3.62-.55,5.31-1.25,1.13-.47,2.29-.63,3.49-.63,1.74,0,3.48,0,5.23,0,2.48-.01,4.96-.16,7.24,1.15,.38,.22,.88,.24,1.33,.31,3.39,.51,6.33,2.16,9.36,3.63,3.79,1.85,6.68,4.78,9.63,7.64,1.58,1.52,3.1,3.15,4.38,4.93,1.65,2.3,3.01,4.8,4.16,7.39,1,2.25,1.84,4.56,2.8,6.82,.37,.87,.46,1.77,.45,2.69-.03,2.12,.14,4.2,1.01,6.19,.4,.92,.48,1.95,.49,2.97,0,2.93,.02,5.87,.08,8.8,.03,1.49-.13,2.91-.8,4.27Z"/><path class="cls-2" d="M1703.03,230.33c-.05-2.93-.21-5.86-1.19-8.68-.15-.43-.29-.9-.27-1.34,.12-2.7-.38-5.28-1.45-7.76-.04-.08-.08-.17-.08-.26-.14-2.77-1.85-5.17-1.88-7.97,0-.41-.38-.81-.57-1.23-.27-.58-.61-1.14-.79-1.75-1.46-4.86-3.99-9.22-6.43-13.61-1.28-2.31-2.57-4.65-4.47-6.57-.44-.45-.74-1.04-1.11-1.57-4.46-6.37-9.85-11.81-16.22-16.27-.97-.68-1.95-1.37-2.93-2.03-3.1-2.09-6.35-3.91-9.74-5.51-1.91-.9-3.9-1.55-5.82-2.38-2.15-.94-4.31-2.05-6.75-2.16-.94-.04-1.79-.45-2.58-.88-1.25-.68-2.56-.91-3.96-.91-1.56,0-3.14,0-4.66-.28-5.73-1.02-11.51-.86-17.29-.74-2.19,.05-4.4,.1-6.52,.85-.58,.21-1.27,.16-1.91,.15-1.68-.04-3.27,.3-4.79,1.03-.99,.48-2.03,.92-3.14,.93-1.5,.01-2.91,.23-4.21,1.03-.3,.19-.69,.25-1.04,.33-2.61,.54-5.02,1.66-7.43,2.71-2.75,1.2-5.42,2.6-8.08,4.01-1.78,.94-3.58,1.9-5.18,3.11-3.28,2.49-6.66,4.85-9.76,7.6-6.87,6.1-12.23,13.36-16.89,21.19-2.06,3.46-3.66,7.13-5.13,10.88-.57,1.45-.89,2.98-1.55,4.37-.71,1.49-1.54,2.89-1.34,4.66,.05,.49-.2,1.11-.51,1.54-.79,1.11-.96,2.35-1.01,3.65-.03,.92-.17,1.87-.65,2.65-.93,1.5-.98,3.12-.95,4.78,.03,1.66,0,3.29-.79,4.83-.24,.47-.32,1.05-.36,1.59-.16,2.19-.37,4.39-.4,6.58-.06,4.58-.02,9.17,0,13.76,0,1.75,.16,3.52,.75,5.15,.65,1.77,.8,3.55,.8,5.39,0,1.28-.09,2.59,.5,3.78,1.31,2.65,1.08,5.77,2.56,8.36,.13,.22,.12,.54,.11,.81,0,.85,.27,1.6,.63,2.36,.39,.82,.64,1.71,.98,2.56,.77,1.95,1.5,3.92,2.33,5.84,1.68,3.87,3.85,7.49,6.02,11.09,1.32,2.19,2.85,4.26,4.42,6.28,1.69,2.17,3.51,4.24,5.33,6.3,1.03,1.17,2.11,2.3,3.26,3.34,4.95,4.51,10.18,8.67,16.07,11.91,2.63,1.44,5.29,2.83,8.05,4.05,2,.88,4.15,1.38,6.04,2.49,.39,.23,.83,.41,1.27,.49,2.43,.41,4.64,1.65,7.13,1.87,.61,.05,1.21,.42,1.78,.71,1.26,.63,2.57,.91,3.98,.89,.82-.01,1.69-.01,2.45,.24,2.04,.68,4.13,.84,6.24,.85,6.88,.02,13.76,.02,20.63-.01,1.37,0,2.77-.09,4.1-.36,2.16-.44,4.3-.82,6.52-.79,.62,0,1.3-.17,1.85-.46,2.71-1.44,5.9-1.28,8.6-2.71,2.78-.29,5.14-1.82,7.74-2.63,2.16-.67,4.17-1.86,6.19-2.92,7.11-3.71,13.37-8.62,19.46-13.78,1.71-1.45,2.94-3.19,3.87-5.23,.64-1.42,.54-2.61-.24-3.88-.83-1.35-1.91-2.45-3.1-3.46-2.31-1.95-4.69-3.83-6.9-5.89-4.23-3.94-8.38-7.95-12.51-11.99-1.27-1.24-2.73-2.15-4.2-3.07-.78-.49-1.55-.46-2.29,.11-1.38,1.06-2.8,2.08-4.13,3.2-2.94,2.47-5.69,5.18-9.19,6.92-2.37,1.18-4.66,2.51-7,3.75-.31,.17-.69,.33-1.03,.32-1.44-.08-2.68,.46-3.93,1.07-.48,.24-1.04,.4-1.58,.44-3.48,.22-6.95,.37-10.43,.58-3.22,.19-6.4-.41-9.6-.47-1.85-.04-3.64-.21-5.34-1.05-.56-.28-1.23-.48-1.84-.49-1.18,0-2.11-.47-3.02-1.14-.59-.43-1.27-.73-1.91-1.07-3.32-1.78-6.46-3.8-9.04-6.62-1.3-1.42-2.74-2.71-4.04-4.13-.8-.87-1.57-1.81-2.16-2.83-2.34-4.03-4.59-8.12-5.67-12.72-1.43-2.44-.75-5.2-1.2-7.79-.09-.51,.36-.8,.85-.88,.27-.04,.55-.04,.82-.04,6.69,0,13.39,.03,20.08,.03,5.32,0,10.64-.04,15.95-.05,6.78,0,13.57,0,20.35,0h0c9.26,0,18.52,0,27.78,0,9.44,0,18.89-.05,28.33,.04,1.82,.02,3.21-.47,4.33-1.85,.35-.43,.7-.85,1.08-1.25,.79-.84,1.12-1.8,1.11-2.99-.08-6.33-.04-12.66-.14-18.98Zm-46.61-8.66c-.71,.16-1.44,.24-2.17,.25-3.67,.05-7.33,.09-11,.1-7.61,.01-15.22,0-22.83,0h0c-9.81,0-19.62,0-29.43,0-1.65,0-3.3-.04-4.95-.12-.72-.04-1.45-.19-2.16-.37-.55-.14-.91-.79-.66-1.31,1.38-2.92,1.43-6.25,2.82-9.15,1.03-2.15,1.97-4.37,3.29-6.32,1.43-2.11,2.87-4.27,4.77-6.02,2.43-2.24,5.06-4.19,7.93-5.87,1.91-1.12,3.97-1.84,5.97-2.72,.58-.25,1.23-.38,1.86-.45,1.47-.18,2.9-.49,4.19-1.24,.75-.43,1.54-.51,2.38-.51,3.12,0,6.23,.01,9.35-.02,.94,0,1.8,.14,2.66,.54,.74,.35,1.52,.71,2.32,.81,4.6,.61,8.4,3,12.22,5.35,1.57,.96,2.78,2.37,4.15,3.6,3.84,3.45,6.33,7.74,8.28,12.46,.75,1.81,1.23,3.6,1.44,5.51,.15,1.36,.45,2.71,.6,4.07,.08,.77-.28,1.24-1.02,1.41Z"/><path class="cls-3" d="M1515.8,374.71c-.96-.56-2.12-.53-3.17,.05-.64,.35-1.25,.8-1.94,1.02-3.49,1.11-6.65,2.97-10.03,4.34-2.96,1.2-5.82,2.65-8.83,3.7-3.79,1.32-7.49,2.84-11.22,4.31-.42,.17-.79,.51-1.23,.6-3.71,.72-6.89,2.83-10.46,3.96-2.69,.85-5.18,2.3-8.02,2.74-.27,.04-.56,.11-.78,.26-1.17,.78-2.54,.98-3.83,1.43-1.87,.66-3.59,1.73-5.63,1.86-.08,0-.15,.1-.23,.15-1.9,1.14-4.21,1.23-6.09,2.4-2.92,.49-5.57,1.72-8.23,2.92-.6,.27-1.2,.41-1.84,.53-.63,.12-1.31,.17-1.86,.46-1.95,1.03-4.26,1.12-6.11,2.42-.34,.24-.88,.19-1.33,.28-.63,.14-1.25,.28-1.87,.44-3.43,.88-6.61,2.64-10.2,2.97-.18,.02-.35,.12-.51,.19-4.01,1.8-8.33,2.68-12.49,4-2.68,.85-5.31,1.87-8.11,2.44-3.82,.78-7.4,2.59-11.37,2.85-.27,.02-.56,.1-.79,.23-1.46,.84-3.09,1.04-4.69,1.43-2.56,.62-5,1.73-7.68,1.88-2.43,1.37-5.36,1.21-7.8,2.56-.3,.17-.72,.2-1.07,.18-1.97-.09-3.82,.3-5.53,1.3-.15,.09-.34,.15-.52,.17-2.11,.25-4.14,.76-6.05,1.71-.31,.16-.72,.18-1.08,.16-1.97-.11-3.8,.37-5.63,1.04-.93,.34-1.96,.43-2.95,.61-1.26,.24-2.54,.36-3.71,.94-1.01,.5-2.08,.64-3.2,.64-1,0-2.13-.12-2.99,.28-2.14,1.01-4.42,1.12-6.68,1.48-.71,.11-1.44,.33-2.09,.66-1.36,.68-2.78,.87-4.27,.85-1.09-.01-2.21-.05-3.24,.43-1.69,.79-3.52,.97-5.35,1.16-1.18,.12-2.4,.11-3.48,.71-1.08,.6-2.25,.71-3.46,.73-1.84,.04-3.66,.25-5.36,1.02-.86,.38-1.77,.44-2.69,.48-1.84,.07-3.67,.34-5.35,1.1-1.13,.5-2.27,.64-3.47,.67-2.29,.05-4.58,.24-6.73,1.13-.87,.36-1.78,.4-2.7,.44-2.21,.08-4.39,.36-6.45,1.2-.79,.32-1.59,.42-2.42,.41-2.49-.01-4.92,.35-7.33,.97-1.51,.39-3.05,.63-4.62,.59-1.85-.04-3.68,.22-5.39,.92-1.66,.68-3.36,.85-5.11,.82-2.02-.03-4.05,.02-5.99,.66-1.85,.62-3.75,.83-5.68,.87-2.39,.05-4.74,.36-7.05,1.04-1.24,.37-2.51,.49-3.81,.5-1.56,.01-3.12,.07-4.68,.06-2.03-.02-4.02,.24-5.98,.78-.79,.22-1.61,.52-2.41,.5-5.07-.09-10.04,.61-14.99,1.63-2.98,.62-6.03,.36-9.05,.44-2.02,.05-4.02,.12-6.02,.49-3.24,.6-6.52,.98-9.84,.97-3.21-.01-6.41,.26-9.59,.69-4.27,.58-8.56,.91-12.88,.86-4.31-.05-8.63,.03-12.92,.32-8.61,.58-17.22,.95-25.84,1.05-15.13,.17-30.26,.37-45.39-.14-6.23-.21-12.47-.27-18.69-.72-7.51-.53-15.03-.5-22.55-.55-1.83-.01-3.69-.02-5.49-.31-5.63-.9-11.3-1.2-16.99-1.29-1.19-.02-2.4-.05-3.56-.29-4.61-.97-9.26-1.24-13.95-1.15-2.21,.04-4.41-.2-6.53-.79-3.13-.87-6.31-1.1-9.53-1.09-1.57,0-3.1-.15-4.62-.55-2.4-.63-4.85-.94-7.35-.86-1.01,.03-2.02,0-3.02-.07-.82-.06-1.72-.02-2.43-.36-2.33-1.1-4.78-1.17-7.26-1.17-1.76,0-3.46-.23-5.12-.84-1.3-.48-2.65-.7-4.05-.68-1.1,.02-2.2-.06-3.3-.02-1.49,.06-2.9-.13-4.29-.74-1.61-.71-3.34-1.01-5.1-.99-1.49,.01-2.92-.25-4.33-.64-2.31-.64-4.65-1.03-7.06-.97-.92,.03-1.84,0-2.69-.43-1.67-.87-3.5-1.02-5.33-1.17-.91-.07-1.85-.04-2.7-.41-2.32-1.03-4.77-1.23-7.27-1.17-.83,.02-1.63-.05-2.37-.53-1.51-.99-3.21-1.26-4.99-1.24-1.28,0-2.57,0-3.78-.54-1.62-.73-3.34-.93-5.1-.95-1.01-.01-2.01-.07-2.92-.61-1.3-.77-2.74-1-4.23-1.03-1.01-.02-2.02-.08-2.97-.5-1.72-.76-3.53-.92-5.38-.9-1.02,.01-2.04-.02-2.9-.65-.94-.69-2.02-.79-3.1-.99-1.44-.26-2.94-.17-4.31-.8-1.44-.67-2.97-.91-4.55-.84-1.12,.04-2.18-.15-3.18-.71-.8-.45-1.67-.74-2.6-.85-1.92-.23-3.8-.58-5.6-1.31-.58-.23-1.26-.31-1.89-.28-1.79,.08-3.44-.23-4.96-1.26-.43-.29-1.03-.35-1.57-.45-1.44-.27-2.88-.53-4.21-1.19-.32-.16-.69-.35-1.04-.33-2.16,.08-4.13-.63-6.1-1.35-.59-.22-1.26-.24-1.88-.39-.89-.21-1.82-.34-2.64-.72-1.2-.55-2.42-.83-3.72-.79-.94,.03-1.81-.11-2.6-.7-.91-.68-2-.91-3.1-1-1.21-.1-2.34-.37-3.41-.96-1.32-.74-2.91-.43-4.26-.96-1.36-.54-2.62-1.34-4.12-1.45-.75-.06-1.46-.24-2.09-.63-.81-.51-1.69-.69-2.62-.68-1.13,.01-2.18-.19-3.13-.85-.93-.65-2.02-.89-3.11-1.02-1.11-.13-2.14-.36-3.13-.91-.54-.3-1.21-.36-1.83-.51-.53-.13-1.17-.08-1.59-.36-2.1-1.42-4.84-1.11-6.89-2.63-.2-.15-.53-.16-.8-.14-1.14,.08-2.14-.24-3.1-.87-.59-.39-1.34-.63-2.05-.74-2.35-.36-4.32-2.06-6.82-1.87-.16,.01-.33-.14-.5-.21-2.65-1.23-5.29-2.47-8.23-2.87-.26-.04-.55-.14-.76-.3-1.93-1.51-4.38-1.81-6.56-2.71-2.09-.86-4.15-1.84-6.37-2.43-2.09-.56-4.02-1.7-6.1-2.32-3.86-1.14-7.49-2.87-11.27-4.18-1.2-.42-2.48-.75-3.55-1.41-1.81-1.13-4.06-1.17-5.76-2.49-2.08-.12-3.71-1.47-5.61-2.08-1.55-.5-3.03-1.21-4.52-1.87-1.83-.82-3.6-1.82-5.48-2.5-3.01-1.08-5.77-2.7-8.76-3.85-2.79-1.08-5.36-2.71-8.05-4.06-.83-.41-1.76-.69-2.63-.13-1.76,1.12-3.58,2.12-4.67,4.1-1.57,2.84-1.31,5.77,1.06,7.98,.66,.62,1.41,1.2,2.22,1.61,2.67,1.36,5.4,2.61,8.09,3.93,2.37,1.16,4.71,2.37,7.07,3.56,1.87,.94,3.73,1.89,5.6,2.83,2.36,1.18,4.72,2.33,7.08,3.52,2.67,1.34,5.3,2.8,8.02,4.04,4.14,1.9,8.18,4.02,12.47,5.63,2.71,1.02,5.23,2.54,7.91,3.67,1.59,.67,3.16,1.49,4.77,2.01,2.44,.77,4.7,1.91,7.07,2.83,1.61,.62,3.14,1.48,4.76,1.99,1.99,.63,3.67,2.17,5.91,2.03,.23-.01,.49,.23,.7,.41,.58,.49,1.3,.7,2,.88,1.95,.49,3.6,1.83,5.67,2,.33,.03,.62,.37,.96,.53,.41,.19,.84,.47,1.26,.47,1.26,0,2.29,.53,3.34,1.13,.63,.36,1.33,.59,2.02,.84,2.06,.75,4.18,1.34,6.16,2.25,1.91,.87,4.11,.92,5.85,2.2,2.64-.04,4.6,2.28,7.29,2.09,.31-.02,.68,.26,.97,.47,.62,.44,1.32,.68,2.04,.78,2.27,.3,4.1,2.11,6.51,1.88,.08,0,.19,.03,.25,.09,1.16,1.05,2.6,1.25,4.07,1.43,.44,.06,.91,.22,1.27,.47,1.17,.81,2.4,1.32,3.85,1.2,.26-.02,.58,.01,.8,.15,1.37,.85,2.96,.87,4.45,1.27,2.37,.63,4.56,1.86,7.05,2.08,1.18,.8,2.55,.94,3.9,1.23,.8,.17,1.6,.44,2.33,.79,1.17,.57,2.32,1.08,3.66,.98,.64-.05,1.26,.1,1.84,.46,.46,.28,.99,.6,1.51,.62,3.14,.15,5.83,2.24,9.04,2.02,.09,0,.19,.03,.26,.07,1.79,1.02,3.79,1.24,5.77,1.59,.79,.14,1.56,.54,2.29,.91,.76,.39,1.54,.49,2.37,.59,3.35,.43,6.57,1.46,9.88,2.11,.18,.03,.36,.11,.5,.21,1.2,.84,2.56,.9,3.95,.86,.91-.02,1.87-.11,2.68,.41,1.38,.88,2.92,1.01,4.48,1.08,1.11,.05,2.22,.17,3.17,.79,1.38,.9,2.88,1.09,4.47,1.05,1-.03,2.05-.16,2.97,.34,1.77,.96,3.7,.98,5.62,1.09,.92,.05,1.88,0,2.68,.5,1.64,1.02,3.46,1.08,5.3,1.16,.91,.04,1.97-.08,2.69,.35,1.87,1.1,3.86,1.03,5.87,1.02,1.13,0,2.26,.1,3.18,.7,1.8,1.17,3.78,1.29,5.81,1.28,1.1,0,2.25-.19,3.27,.26,2.08,.92,4.26,1.02,6.47,.97,.93-.02,1.85,.04,2.67,.5,2.35,1.29,4.9,1.42,7.48,1.29,1.13-.06,2.2,.13,3.23,.53,1.91,.73,3.89,1.08,5.92,1,1.4-.06,2.78,.09,4.06,.59,2.89,1.14,5.89,1.28,8.93,1.23,1.29-.02,2.58,.01,3.82,.38,2.76,.82,5.59,.95,8.44,.98,1.1,.01,2.2,.02,3.27,.36,3.62,1.17,7.34,1.55,11.13,1.38,1.49-.07,2.93,.12,4.31,.67,.96,.38,1.95,.49,2.96,.52,2.75,.08,5.5,.18,8.25,.27,1.83,.06,3.65,.19,5.46,.6,3.68,.85,7.41,1.2,11.19,1.2,1.93,0,3.85,.02,5.78,.07,1.74,.04,3.5,0,5.22,.19,6.93,.82,13.9,.99,20.86,1.26,5.77,.23,11.54,.3,17.31,.57,10.44,.49,20.89,.87,31.19,.7,9.61,.13,19.05-.07,28.49-.46,2.66-.11,5.3-.46,7.95-.57,3.57-.15,7.15-.16,10.73-.18,5.59-.04,11.17-.35,16.74-.86,3.93-.36,7.85-.78,11.8-.68,1.92,.05,3.85,0,5.78-.07,1.37-.06,2.78-.08,4.09-.42,4.03-1.05,8.12-1.36,12.25-1.5,1.28-.04,2.57-.08,3.85-.12,1.38-.05,2.74-.14,4.08-.5,2.23-.6,4.5-.81,6.81-.72,.91,.04,1.83-.04,2.75-.05,1.85-.01,3.65-.28,5.4-.9,1.49-.53,3.01-.65,4.59-.72,2.38-.1,4.8-.16,7.1-.69,2.17-.5,4.31-.76,6.52-.74,2.29,.02,4.56-.09,6.74-1,1.52-.64,3.17-.81,4.85-.84,2.29-.03,4.56-.29,6.79-.92,1.49-.42,3.04-.62,4.62-.6,1.93,.03,3.83-.23,5.68-.88,1.65-.58,3.37-.83,5.12-.95,1.19-.08,2.41-.15,3.53-.52,1.6-.53,3.22-.62,4.87-.7,1.73-.09,3.49-.05,5.12-.83,1.77-.85,3.64-1.21,5.6-1.18,1.2,.02,2.39-.08,3.47-.67,.92-.49,1.92-.58,2.93-.62,2.39-.09,4.75-.29,6.99-1.27,.65-.29,1.43-.3,2.15-.39,1.63-.21,3.29-.28,4.77-1.16,.3-.18,.71-.29,1.05-.26,2.44,.18,4.7-.5,6.94-1.36,.59-.23,1.24-.36,1.87-.41,3.29-.3,6.35-1.79,9.69-1.82,.53,0,1.07-.24,1.59-.44,1.64-.62,3.34-.97,5.05-1.29,2.24-.42,4.38-1.31,6.71-1.35,.52,0,1.05-.3,1.55-.53,2.95-1.3,6.27-1.26,9.24-2.53,.32-.14,.72-.12,1.09-.12,1.02,0,1.98-.21,2.91-.68,.65-.32,1.37-.61,2.08-.66,2.75-.19,5.19-1.77,7.97-1.76,2.52-1.09,5.19-1.7,7.81-2.48,.96-.29,1.88-.69,2.9-.77,1.01-.08,1.97-.35,2.92-.73,2.2-.9,4.53-1.49,6.81-2.08,2.04-.53,4.04-1.1,6-1.83,.42-.16,.89-.19,1.35-.27,.9-.16,1.79-.35,2.62-.78,.56-.29,1.19-.58,1.81-.62,2.8-.19,5.25-1.55,7.84-2.37,2.32-.73,4.8-1.1,6.95-2.38,.23-.14,.52-.2,.79-.22,2.3-.22,4.19-1.85,6.54-1.9,2.81-1.36,5.76-2.29,8.79-3,.43-.1,.82-.4,1.24-.57,.76-.31,1.52-.64,2.3-.87,1.05-.31,2.07-.72,3.1-1.05,1.92-.6,3.72-1.52,5.64-2.04,1.94-.52,3.59-1.89,5.7-1.85,.24,0,.48-.25,.73-.36,2.5-1.1,4.88-2.49,7.66-2.86,.26-.03,.52-.18,.76-.31,1.12-.65,2.37-.95,3.58-1.39,1.63-.59,3.29-1.16,4.8-1.98,1.77-.97,3.69-1.55,5.55-2.26,2.39-.91,4.69-2.01,7.08-2.93,.94-.36,2.03-.3,2.85-.93,1.71-1.31,3.81-1.8,5.74-2.54,3.07-1.18,6.04-2.59,9.02-3.93,3.41-1.53,6.85-3.01,10.22-4.65,2.55-1.24,5.12-2.41,7.67-3.65,4.01-1.96,8.01-3.94,12.01-5.92,2.37-1.17,4.79-2.25,7.08-3.56,1.94-1.11,2.98-2.82,2.88-5.23-.14-3.26-2.08-5.18-4.62-6.67Z"/><path class="cls-2" d="M1444.93,60.83c0,20.45-.03,40.9-.02,61.35,0,17.33,.05,34.66,.05,51.99,0,21.27-.02,42.55-.03,63.82,0,28.34,0,56.67-.01,85.01,0,2.85,1.38,5.03,3.3,6.96,.31,.31,.74,.6,1.16,.71,1.58,.43,3.09,.99,4.81,.94,10.54-.29,21.09-.28,31.63,0,3,.08,5.39-.75,7.17-3.2,.11-.15,.23-.29,.37-.41,1.07-.91,1.39-2.08,1.34-3.44-.08-2.2-.12-4.4-.12-6.6,0-22.19,.01-44.38,.02-66.57,0-20.45,0-40.9,0-61.35h.04c0-15.5,0-30.99,0-46.49,0-26.13-.02-52.27-.04-78.4,0-3.21,0-6.42-.03-9.63-.04-3.8-3.18-6.92-6.95-6.96-.37,0-.73,0-1.1,0-11,.01-22.01,.02-33.01,.04-.64,0-1.28,0-1.93,0-.66,0-1.24,.2-1.78,.61-1.31,1.02-2.54,2.13-3.54,3.44-.89,1.17-1.47,2.49-1.35,4.07,.11,1.37,.04,2.75,.04,4.12Z"/><path class="cls-2" d="M1390.99,222.96c0-19.53-.05-39.06-.03-58.59,0-1.67-.28-3.27-.58-4.89-.39-2.06-1.64-3.43-3.24-4.57-.6-.42-1.26-.75-1.86-1.17-.71-.5-1.48-.64-2.33-.64-6.69,0-13.39-.04-20.08-.03-4.31,0-8.62,.1-12.93,.15-2.35,.03-4.22,1.12-5.82,2.7-2.08,2.05-2.08,2.15-2.12,5.34,0,.28,0,.55,0,.83,0,26.87,0,53.74,0,80.6h-.05c0,19.26,.01,38.51-.01,57.77,0,3.3-.32,6.6-.2,9.9,.17,4.95,.39,9.89,.29,14.84-.01,.53,.02,1.17,.29,1.59,1.9,3.03,4.38,5.05,8.24,4.97,7.88-.16,15.77-.21,23.65-.28,2.75-.02,5.5,.03,8.25,.06,3.5,.04,7.28-1.96,8.22-6.31,.22-1,.34-1.98,.33-2.99-.04-3.3-.11-6.6-.1-9.9,.02-11.92,.09-23.84,.1-35.76,.02-17.88,.01-35.76,0-53.64Z"/><path class="cls-2" d="M659.63,324.2c-.03,1.56,.25,2.89,1.42,3.97,.4,.37,.73,.82,1.1,1.23,1.73,1.89,3.88,2.62,6.43,2.38,1.55-.14,3.11-.2,4.67-.21,8.71-.08,17.42-.12,26.13-.2,1.1-.01,2.2-.12,3.28-.28,.53-.08,1.12-.25,1.52-.57,2.54-2.07,4.47-4.28,4.38-8.03-.24-9.53-.12-19.07-.13-28.6,0-11.37,.03-22.74,.03-34.1,0-15.67-.04-31.35-.03-47.02,.01-15.77,.07-31.54,.1-47.31,0-1.56-.19-3.09-.39-4.64-.4-3.03-2.26-4.9-4.57-6.51-1.15-.8-2.44-1.15-3.88-1.15-10.82,.04-21.63,.04-32.45,.04-.74,0-1.43,.11-2.14,.38-2.17,.84-3.52,2.57-4.84,4.33-.85,1.13-.42,2.48-.47,3.74-.03,.82,0,1.65,0,2.48,0,26.13,0,52.26,0,78.39,0,22,0,44.01,0,66.01,0,5.23-.03,10.45-.14,15.67Z"/><circle class="cls-2" cx="1367.23" cy="104.29" r="25.3"/><circle class="cls-2" cx="683.63" cy="104.29" r="25.3"/><circle class="cls-2" cx="822.99" cy="233.04" r="17.03"/><path class="cls-2" d="M839.78,121.96c-.81,13.96,7.22,21.26,16.8,26.63,16.78,9.41,35.48,14.36,53.42,21.04,21.69,8.08,42.67,17.51,56.12,37.32,11.75,17.31,17.2,36.25,14.01,57.99-2.85,19.38-10.41,35.54-23.38,49.72-15.83,17.31-36.6,25.24-58.79,29.15-29.32,5.17-58.03,.82-84.29-12.93-24.57-12.87-43.24-31.87-51.7-59.48-2-6.53-1.42-9.57,5.08-12.19,7.13-2.87,14.14-10.31,20.5-9.59,6.78,.76,7.58,11.91,11.81,18.08,25.79,37.57,79.94,50.41,117.87,24.86,12.16-8.19,18.73-20.34,17.93-35.01-.28-5.15,1.14-8.15,4.64-10.09,5.24-2.91,8.44-7.29,11.85-11.91,2.82-3.83,3.33-6.74,.03-10.35-3.91-4.29-8.57-3.83-12.45-1.13-5.2,3.62-7.79,9.04-8.33,15.7-.36,4.5-1.54,9.21-5.48,12.48-3.56,2.96-7.78,3.31-10.58,.16-2.65-2.98-3.12-8.17,.96-10.38,9.43-5.1,4.54-8.03-.85-11.84-14-9.9-30.38-14.2-46.1-20.12-18.48-6.97-37.21-13.12-53.61-24.98-15.13-10.94-24.35-25.58-28.43-42.83-6.83-28.86,.9-54.67,22.67-74.95,16.29-15.18,36.49-22.94,58.9-24.19,19.69-1.1,38.79,1.12,57.16,9.06,19.47,8.41,33.71,22.38,44.61,40.01,1.02,1.65,3.59,5.44-2.17,8.24-11.4,5.53-21.81,13.08-32.65,19.77-4.94,3.05-8.11,2.63-10.97-3.4-11.12-23.5-49.27-34.5-71.77-18.64-8.69,6.13-13.97,13.97-12.82,23.8Z"/><rect class="cls-1" width="1733.33" height="509.52"/></svg><span class="h-logo-sub">大江ノ郷自然牧場<br><span style="color:#fbbf24">タブレット v0.16</span></span></div>
+    <div class="h-table">テーブル<b id="hTable">C</b></div>
+    <div class="h-table">端末<b style="color:#60a5fa">T-03</b></div>
+    <div class="h-spacer"></div>
+    <div class="h-clock" id="hClock">--:--:--</div>
+    <button id="orientBtn" onclick="toggleOrientation()" title="縦/横 切り替え"
+  style="height:34px; padding:0 10px; border-radius:6px; background:#1e293b; border:1px solid #334155;
+         color:#94a3b8; font-size:11px; display:flex; align-items:center; gap:4px; cursor:pointer;">
+  <svg id="orientIcon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="2" width="16" height="20" rx="2"/><line x1="4" y1="17" x2="20" y2="17"/>
+  </svg>
+  <span id="orientLabel">縦</span>
+</button>
+<div class="h-user"><div class="avatar">山</div>山田 花子</div>
+  </header>
+
+  <!-- アラート帯 -->
+  <div class="alert-bar" id="alertBar">
+    <span id="alNoshi"   style="display:none">🎁 熨斗指定あり</span>
+    <span id="alFrozen"  style="display:none">❄ 冷凍</span>
+    <span id="alDate"    style="display:none">📅 配達指定日 <b id="alDateVal"></b></span>
+    <span id="alKoudoku" style="display:none">📦 同梱物 <b id="alKoudokuN"></b>点</span>
+    <span id="alCorp"    style="display:none">🏢 企業顧客</span>
+    <span id="alSpecial" style="display:none">🖨 特殊梱包（印刷対象）</span>
+  </div>
+
+  <main id="main">
+
+    <!-- 待機画面 -->
+    <div class="idle-screen" id="scrIdle">
+      <button class="idle-corner-btn" onclick="openQRReprint()">
+        <span class="ico">🖨</span>QRラベル再発行
+      </button>
+      <div class="pulse"></div>
+      <div style="font-size:90px">📄</div>
+      <h1>ピッキング№バーコードをスキャンしてください</h1>
+      <p>ピッキング票のバーコードをスキャナに通すと検品が開始されます<br><span style="font-size:12px; color:#94a3b8;">※ 梱包完了時は納品書バーコードをスキャンしてください（サンドイッチ方式）</span></p>
+    </div>
+
+    <!-- 検品画面 -->
+    <div style="display:none; flex:1; gap:10px; min-width:0" id="scrInspect">
+      <div class="pane-left">
+        <div>
+          <div class="section-title">ピッキングNo</div>
+          <div class="pk-no" id="pkNo">-</div>
+        </div>
+
+        <!-- v0.4: 親商品は基幹から送信されないため WMS 非表示 (ピッキング票のみ親表示) -->
+
+        <div class="kv">
+          <span class="k">出荷予定日</span>
+          <span class="v big" id="kShipDate">-</span>
+        </div>
+        <div class="kv">
+          <span class="k">配送便</span>
+          <span class="v" id="kCarrier">-</span>
+        </div>
+        <div class="kv">
+          <span class="k">納品書No</span>
+          <span class="v" style="font-family:Consolas,monospace" id="kInvoice">-</span>
+        </div>
+        <div class="kv" id="rowNoshi" style="display:none">
+          <span class="k">熨斗名称</span>
+          <span class="v" id="kNoshi">-</span>
+        </div>
+
+        <!-- 印刷フラグトグル -->
+        <div class="print-flag" id="printFlagBox" onclick="togglePrintFlag()">
+          <div class="cb" id="printFlagCb"></div>
+          <div class="print-flag-text">
+            印刷フラグ
+            <small id="printFlagSub">OFF（印刷なしで完了）</small>
+          </div>
+        </div>
+
+        <!-- ★v0.12★ 推奨箱（左ペイン常時表示） -->
+        <div id="boxSuggestPane" style="background:#0b1220; border-left:3px solid #67e8f9; border-radius:6px; padding:8px 10px;">
+          <div style="font-size:9px; color:#67e8f9; letter-spacing:1px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
+            <span>📦 推奨箱</span>
+            <span id="boxSuggestNote" style="color:#94a3b8; font-weight:normal; font-size:8px;">-</span>
+          </div>
+          <div id="boxSuggestList" style="display:flex; flex-direction:column; gap:6px;"></div>
+          <div style="font-size:8px; color:#64748b; margin-top:6px; line-height:1.3;">
+            ※ 第一候補は緑枠 ／ タップで切替<br>
+            ※ ※将来 基幹側で算出した箱コードを受け取る方式に切替予定
+          </div>
+        </div>
+      </div>
+
+      <div class="pane-center">
+        <div class="center-header">
+          <div class="center-title">商品検品</div>
+          <div class="progress-chip">
+            <span id="progNow">0</span><small>/</small><span id="progTotal">0</span><small>点</small>
+          </div>
+        </div>
+
+        <!-- v0.6: 新フロー -->
+        <div class="flow-steps">
+          <div class="flow-step done" id="step1"><span class="num">①</span>ピッキング№</div>
+          <div class="flow-step active" id="step2"><span class="num">②</span>商品検品</div>
+          <div class="flow-step" id="step3"><span class="num">③</span>最終チェック → 納品書スキャンで完了</div>
+        </div>
+
+        <div class="scan-line-list" id="scanList"></div>
+      </div>
+
+      <div class="pane-right">
+        <div class="ship-to">
+          <div class="section-title">お届け先</div>
+          <div class="zip" id="sZip">-</div>
+          <div class="addr" id="sAddr">-</div>
+          <div class="name" id="sName" style="margin-top:6px">-</div>
+        </div>
+        <div class="koudoku">
+          <div class="section-title">同梱物プレビュー（最終☑はモーダル）</div>
+          <div id="koudokuList"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 完了画面 -->
+    <div class="complete-screen" id="scrComplete" style="display:none">
+      <div class="big-check">✓</div>
+      <h1>検品・梱包 完了</h1>
+      <p id="completeSummary">-</p>
+      <p id="completeExtra" style="font-size:13px; color:#a7f3d0"></p>
+      <p style="font-size:13px; color:#a7f3d0">次の伝票をスキャンしてください</p>
+    </div>
+  </main>
+
+  <!-- アクションボタン -->
+  <footer id="footerBar" style="display:none">
+    <button class="btn btn-primary"  id="btnScan"    onclick="simulateScanProduct()"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 5v14M6.5 5v14M10 5v14M14 5v14M17.5 5v14M21 5v14"/></svg></span>商品スキャン</button>
+    <button class="btn btn-warning"  id="btnForceOK" onclick="openForceOK()"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5z"/><path d="M9 12l2 2 4-4"/></svg></span>強制OK</button>
+    <button class="btn btn-neutral"  id="btnKoudoku" onclick="toggleNextKoudoku()"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3.27 6.96L12 12l8.73-5.04M12 22V12"/></svg></span>同梱物ON</button>
+    <button class="btn btn-success"  id="btnInvoice" onclick="skipAndFinish()"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 4V3a1 1 0 011-1h4a1 1 0 011 1v1"/><path d="M9 13l2 2 4-4"/></svg></span>一括検品</button>
+    <button class="btn btn-danger"   id="btnHold"    onclick="holdOrder()"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg></span>伝票保留</button>
+    <button class="btn btn-neutral"  id="btnBack"    onclick="backToIdle()"><span class="ico"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></span>中断</button>
+  </footer>
+
+  <!-- 強制OKモーダル -->
+  <div class="modal-backdrop" id="forceModal">
+    <div class="modal">
+      <h2>⚠ 強制検品OK</h2>
+      <p class="sub">差分がある状態で検品を完了させます。理由コードを選択してください。実行内容は全てログに記録されます。</p>
+      <div class="reason-grid">
+        <button class="reason-btn" onclick="selectReason(this,'R01','セット品 時間制約')"><span class="no">R01</span>セット品 時間制約</button>
+        <button class="reason-btn" onclick="selectReason(this,'R02','商品不具合による差替')"><span class="no">R02</span>商品不具合による差替</button>
+        <button class="reason-btn" onclick="selectReason(this,'R03','システム不具合')"><span class="no">R03</span>システム不具合</button>
+        <button class="reason-btn" onclick="selectReason(this,'R04','その他（コメント必須）')"><span class="no">R04</span>その他（コメント必須）</button>
+      </div>
+      <div class="sticky-note">
+        <input type="checkbox" id="stickyCb" checked>
+        <label for="stickyCb" style="cursor:pointer">
+          <b>次の伝票以降も強制検品を継続する（Sticky）</b>
+          <div style="margin-top:2px; color:#fed7aa; font-size:11px">
+            ONにすると、次以降の伝票でも検品漏れを許容して完了させる運用になります。画面上部に「強制検品中」バナーが表示されます。解除は画面右上の「解除」ボタンから。
+          </div>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-neutral" style="height:44px;max-width:140px" onclick="closeForceOK()">キャンセル</button>
+        <button class="btn btn-warning" style="height:44px;max-width:180px" id="forceOKApply" onclick="applyForceOK()" disabled>強制OK実行</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <!-- ★v0.9★ 伝票保留メニュー（F5） -->
+  <div class="modal-backdrop" id="holdMenuModal">
+    <div class="modal" style="width:520px;">
+      <h2>⏸ 伝票保留メニュー</h2>
+      <p class="sub">この伝票の処理を一時停止します。理由を選択してください。</p>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:18px;">
+        <button class="hold-opt insp" onclick="holdSubmitInspection()">
+          <div class="ic">⏸</div>
+          <div class="ttl">検品保留</div>
+          <div class="desc">スキャン状態を保持して<br>一時中断する</div>
+        </button>
+        <button class="hold-opt cont" onclick="holdGoToContact()">
+          <div class="ic">📢</div>
+          <div class="ttl">本部連絡</div>
+          <div class="desc">のし／商品／入力内容／WEB<br>分類して連絡</div>
+        </button>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-neutral" style="height:42px;max-width:140px" onclick="closeHoldMenu()">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ★v0.9★ 本部連絡モーダル -->
+  <div class="modal-backdrop" id="holdContactModal">
+    <div class="modal" style="width:640px;">
+      <h2>📢 本部連絡</h2>
+      <p class="sub">連絡分類を1つ選び、必要に応じて補足を入力してください。送信先は管理PC「連絡」タブ。</p>
+
+      <div style="font-size:11px; color:#94a3b8; margin-bottom:6px; letter-spacing:1px;">▼ 分類（必須）</div>
+      <div id="holdCatBtns" style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px;">
+        <button class="cat-btn" onclick="holdSelectCategory(this,'noshi','🎁 のし')">
+          <div class="ic">🎁</div><div class="lbl">のし</div>
+        </button>
+        <button class="cat-btn" onclick="holdSelectCategory(this,'product','📦 商品')">
+          <div class="ic">📦</div><div class="lbl">商品</div>
+        </button>
+        <button class="cat-btn" onclick="holdSelectCategory(this,'input','✏ 入力内容')">
+          <div class="ic">✏</div><div class="lbl">入力内容</div>
+        </button>
+        <button class="cat-btn" onclick="holdSelectCategory(this,'web','🌐 WEB')">
+          <div class="ic">🌐</div><div class="lbl">WEB</div>
+        </button>
+      </div>
+      <input type="hidden" id="holdSelectedCat" value="">
+
+      <div style="background:#0f172a; border-left:3px solid #fbbf24; padding:8px 12px; border-radius:4px; font-size:12px; color:#fed7aa; margin-bottom:12px;">
+        選択中の分類：<b id="holdCategory" style="color:#fbbf24">未選択</b>
+      </div>
+
+      <div style="font-size:11px; color:#94a3b8; margin-bottom:4px; letter-spacing:1px;">▼ 補足（任意・写真添付は将来対応）</div>
+      <textarea id="holdContactBody" rows="4" style="width:100%; background:#0f172a; border:1px solid #334155; color:#e2e8f0; padding:10px; border-radius:5px; font-size:13px; font-family:inherit; margin-bottom:14px;" placeholder="例：のし台紙が破損／JANと指示が違う／お客様情報の電話番号が空欄／WEB側のクーポン入力誤りを確認希望 など"></textarea>
+
+      <div class="modal-actions">
+        <button class="btn btn-neutral" style="height:42px;max-width:140px" onclick="closeHoldMenu()">キャンセル</button>
+        <button class="btn btn-warning" id="holdSendBtn" style="height:42px;max-width:220px" onclick="holdSendContact()" disabled><span class="ico">📤</span>本部へ送信</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 印刷確認モーダル -->
+  <div class="modal-backdrop" id="printModal">
+    <div class="print-modal">
+      <h2>🖨 印刷確認 <span style="font-size:13px; color:#94a3b8; font-weight:normal">自動表示（特殊梱包/印刷フラグON）</span></h2>
+      <p class="sub">以下の内容でプリンタ <b style="color:#fbbf24">SATO CT4-LX</b> にラベルを出力します。</p>
+      <div class="print-preview">
+        <div class="qr-visual-mini">
+          <div class="qr-box-mini"></div>
+          <div class="qr-text" id="pmQrText">-</div>
+          <div style="color:#000; font-size:11px; text-align:center;">特殊梱包ラベル</div>
+        </div>
+        <div class="qr-info-mini">
+          <table>
+            <tr><td>ピッキングNo</td><td id="pmPkNo">-</td></tr>
+            <tr><td>お届け先</td><td id="pmName">-</td></tr>
+            <tr><td>郵便番号</td><td id="pmZip">-</td></tr>
+            <tr><td>配送便</td><td id="pmCarrier">-</td></tr>
+            <tr><td>温度帯</td><td id="pmTemp">-</td></tr>
+            <tr><td>特殊指示</td><td id="pmSpecial">-</td></tr>
+          </table>
+        </div>
+      </div>
+      <div class="print-options">
+        <div class="line"><span>プリンタ</span><b>SATO CT4-LX（梱包ステーション1）</b></div>
+        <div class="line"><span>ラベル種別</span><b>特殊梱包 QRラベル</b></div>
+        <div class="line"><span>枚数</span><b>1枚</b></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-neutral" style="height:44px;max-width:160px" onclick="skipPrint()">印刷せず完了</button>
+        <button class="btn btn-print" style="height:44px;max-width:200px" onclick="doPrint()">🖨 印刷して完了</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 数量入力キーパッド -->
+  <div class="modal-backdrop" id="qtyModal">
+    <div class="qty-modal">
+      <h2>🔢 残数を入力</h2>
+      <p class="sub">スキャンしていない<b>残り個数</b>を入力してください。既存スキャン数に加算されます（残数超過は不可）。</p>
+      <div class="qty-target">
+        <div class="nm" id="qtyTargetName">-</div>
+        <div class="cd" id="qtyTargetCode">-</div>
+        <div id="qtyRemainInfo" style="margin-top:6px; font-size:12px; color:#fed7aa">
+          既スキャン <b id="qtyAlready">0</b> / 全 <b id="qtyAll">0</b>　→　<b style="color:#fbbf24">残り <span id="qtyRemain">0</span> 個</b>
+        </div>
+      </div>
+      <div class="qty-display"><span id="qtyDisplay">0</span><small>（残 <span id="qtyTotal">0</span>）</small></div>
+      <div id="qtyError" style="display:none; background:#7f1d1d; color:#fecaca; border-radius:6px; padding:8px 12px; margin-bottom:10px; font-size:13px; font-weight:bold;">
+        ⚠ <span id="qtyErrorMsg">残数を超えています</span>
+      </div>
+      <div class="keypad">
+        <button onclick="qpNum(7)">7</button>
+        <button onclick="qpNum(8)">8</button>
+        <button onclick="qpNum(9)">9</button>
+        <button onclick="qpNum(4)">4</button>
+        <button onclick="qpNum(5)">5</button>
+        <button onclick="qpNum(6)">6</button>
+        <button onclick="qpNum(1)">1</button>
+        <button onclick="qpNum(2)">2</button>
+        <button onclick="qpNum(3)">3</button>
+        <button class="util" onclick="qpClear()">CE</button>
+        <button onclick="qpNum(0)">0</button>
+        <button class="util" onclick="qpBack()">←</button>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-neutral" style="height:44px;max-width:140px" onclick="qpCancel()">キャンセル</button>
+        <button class="btn btn-success" style="height:44px;max-width:260px" onclick="qpConfirm()"><span class="ico">✓</span>確定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 連絡事項モーダル（起動時） -->
+  <div class="modal-backdrop" id="noticeModal">
+    <div class="notice-modal">
+      <h2>📢 本日の連絡事項</h2>
+      <p class="sub">管理用PCから登録された連絡事項です。すべて確認のうえチェックを入れてから作業を開始してください。</p>
+      <div class="notice-progress">
+        <span>確認状況</span>
+        <div class="bar"><div class="fill" id="noticeFill"></div></div>
+        <span><b id="noticeCheckedN">0</b> / <b id="noticeTotalN">0</b> 件</span>
+      </div>
+      <div class="notice-list" id="noticeList"></div>
+      <div class="modal-actions">
+        <button class="btn btn-neutral" style="height:44px;max-width:140px" onclick="skipNotices()">あとで確認</button>
+        <button class="btn btn-success" id="noticeStartBtn" style="height:44px;max-width:260px" onclick="startWork()" disabled><span class="ico">▶</span>全て確認して作業開始</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- v0.6: 同梱物確認モーダル（商品検品完了→納品書のし＋同梱指示☑） -->
+  <div class="modal-backdrop" id="koudokuModal">
+    <div class="modal" style="width: 720px;">
+      <h2>最終チェック（自動展開）</h2>
+      <p class="sub">商品検品が完了したため<b style="color:#86efac">自動的に表示</b>されました。<b style="color:#fbbf24">のし</b>・<b style="color:#f472b6">同梱指示／同梱物</b>を確認のうえ、すべて☑後に下部の <b style="color:#67e8f9">「納品書をスキャン」ボタン</b>（脈動）が有効化されます。納品書バーコードをスキャンすると梱包完了します（サンドイッチ方式）。<br><span style="color:#fde68a">※ 検品を省略して直接ここに来る場合は フッタ「一括検品」を使用</span> ／ <span style="color:#86efac">強制OKは F2（理由コード必須）で別運用</span> ／ <span style="color:#94a3b8">※ 推奨梱包箱は左ペインで確定済</span></p>
+
+      <!-- ★v0.14★ 推奨梱包箱セクションは撤去（左ペインで確定済のため重複排除） -->
+
+      <!-- v0.7: 商品検品状況サマリー -->
+      <div id="finalItemSummary" style="background:#0b1220; border-left:4px solid #10b981; border-radius:6px; padding:12px 14px; margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
+          <div style="font-size:12px; color:#86efac; letter-spacing:1px;">✓ 商品検品状況</div>
+          <div id="finalItemCount" style="font-size:11px; color:#cbd5e1;">- / - 点</div>
+        </div>
+        <div id="finalItemList" style="display:flex; flex-direction:column; gap:4px; font-size:12px;"></div>
+        <div id="finalItemForce" style="margin-top:8px; padding:6px 10px; background:#422006; border-radius:4px; font-size:11px; color:#fed7aa; display:none;">
+          ⚠ <b id="finalItemForceN">0</b> 点が強制OK扱いです（F2キーで適用済み）
+        </div>
+      </div>
+
+      <div id="kdkNoshi" class="kdk-noshi-light" style="display:none;">
+        <div class="nm-kind" id="kdkNoshiKind">-</div>
+        <div class="nm-name">名入れ：<b id="kdkNoshiName">-</b></div>
+        <label style="display:flex; gap:8px; align-items:center; margin-top:10px; cursor:pointer; user-select:none;">
+          <input type="checkbox" id="kdkNoshiCb" style="width:22px; height:22px; cursor:pointer;" onchange="updateKdkProgress()">
+          <span style="font-size:14px;">のし台紙の挿入を確認した</span>
+        </label>
+      </div>
+
+      <div style="font-size:12px; color:#94a3b8; margin-bottom:6px; letter-spacing:1px;">同梱指示・同梱物（補助マスタ）</div>
+      <div id="kdkList" style="background:#0f172a; border-radius:8px; padding:8px; max-height:200px; overflow-y:auto; margin-bottom:14px;"></div>
+
+      <!-- ★v0.12★ 推奨箱は左ペインに移動（モーダル内からは削除） -->
+
+      <div style="background:#0f172a; border-radius:6px; padding:10px 14px; font-size:12px; color:#cbd5e1; margin-bottom:14px; display:flex; align-items:center; gap:10px;">
+        <span>確認状況</span>
+        <div style="flex:1; height:8px; background:#334155; border-radius:4px; overflow:hidden;">
+          <div id="kdkFill" style="height:100%; background:linear-gradient(90deg,#10b981,#6ee7b7); width:0%; transition:width 0.3s;"></div>
+        </div>
+        <span><b id="kdkCheckedN" style="color:#10b981">0</b> / <b id="kdkTotalN">0</b></span>
+      </div>
+
+      <!-- ★v0.15★ プロンプト枠は撤去。スキャンボタンを小型化＋脈動で強調 -->
+      <div class="modal-actions" style="justify-content:flex-end; gap:10px;">
+        <button class="btn btn-neutral" style="height:40px; max-width:120px;" onclick="closeKoudokuModal()">戻る</button>
+        <button class="scan-cta-disabled" id="kdkScanInvoiceBtn" style="height:40px; padding:0 18px; border-radius:8px; font-weight:bold; font-size:13px; display:inline-flex; align-items:center; gap:8px;" onclick="simulateInvoiceScan()" disabled><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg><span>納品書をスキャン</span></button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ★v0.10★ 保留中伝票 ポップアップ -->
+  <div class="modal-backdrop" id="heldModal">
+    <div class="modal" style="width: 600px;">
+      <h2 style="color:#fbbf24;">⏸ 保留中の伝票です</h2>
+      <p class="sub">この伝票は保留中で、<b style="color:#86efac">スキャン状態が保持</b>されています。「続きから」を選ぶと前回の状態を復元します。</p>
+
+      <div style="background:#0f172a; border-radius:10px; padding:14px; margin-bottom:14px; border-left:4px solid #fbbf24;">
+        <div style="display:grid; grid-template-columns:90px 1fr; gap:6px 12px; font-size:13px;">
+          <div style="color:#94a3b8;">ピッキングNo</div><div style="font-family:Consolas,monospace; color:#fbbf24;" id="hpkPkNo">-</div>
+          <div style="color:#94a3b8;">納品書No</div><div style="font-family:Consolas,monospace;" id="hpkInvoice">-</div>
+          <div style="color:#94a3b8;">お届け先</div><div id="hpkName">-</div>
+          <div style="color:#94a3b8;">保留時刻</div><div id="hpkHeldAt" style="color:#fbbf24;">-</div>
+          <div style="color:#94a3b8;">保留者</div><div id="hpkHeldBy">-</div>
+          <div style="color:#94a3b8;">スキャン</div><div id="hpkScanProg" style="color:#86efac; font-weight:bold;">-</div>
+          <div style="color:#94a3b8;">種別</div><div id="hpkKind" style="color:#cbd5e1;">-</div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-neutral" style="height:44px;max-width:140px" onclick="cancelHeldPopup()">キャンセル</button>
+        <button class="btn btn-warning" style="height:44px;max-width:200px" onclick="restartHeldOrder()"><span class="ico">↻</span>最初から検品</button>
+        <button class="btn btn-success" style="height:44px;max-width:220px" onclick="resumeHeldOrder()"><span class="ico">▶</span>続きから検品</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v0.6: 検品済み伝票・再読込ポップアップ -->
+  <div class="modal-backdrop" id="completedModal">
+    <div class="modal" style="width: 600px;">
+      <h2 style="color:#86efac;">✓ 検品済みの伝票です</h2>
+      <p class="sub">この伝票は既に検品・梱包が完了しています。再度処理する場合は<b style="color:#fbbf24">「検品戻し」</b>を押してください（操作はログに記録されます）。</p>
+
+      <div style="background:#0f172a; border-radius:10px; padding:14px; margin-bottom:18px; border-left:4px solid #10b981;">
+        <div style="display:grid; grid-template-columns:110px 1fr; gap:6px 12px; font-size:13px;">
+          <div style="color:#94a3b8;">ピッキングNo</div><div style="font-family:Consolas,monospace; color:#fbbf24;" id="cpdPkNo">-</div>
+          <div style="color:#94a3b8;">納品書No</div><div style="font-family:Consolas,monospace;" id="cpdInvoice">-</div>
+          <div style="color:#94a3b8;">お届け先</div><div id="cpdName">-</div>
+          <div style="color:#94a3b8;">完了時刻</div><div id="cpdDoneAt" style="color:#86efac;">-</div>
+          <div style="color:#94a3b8;">作業者</div><div id="cpdDoneBy">-</div>
+          <div style="color:#94a3b8;">梱包数</div><div id="cpdQty">-</div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-warning" style="height:44px;max-width:200px" onclick="reopenCompletedOrder()"><span class="ico">↻</span>検品戻し（再検品）</button>
+        <button class="btn btn-success" style="height:44px;max-width:160px" onclick="confirmCompleted()"><span class="ico">✓</span>確認</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- QR再発行モーダル（待機画面から・バーコードスキャンで対象確定） -->
+  <div class="modal-backdrop" id="reprintModal">
+    <div class="modal">
+      <h2>🖨 QRラベル 再発行</h2>
+      <p class="sub">対象伝票を<b>バーコードスキャン</b>で確定してください（ピッキングNo または 納品書No）。<br>特殊梱包フラグの立っていない通常伝票でも任意に印刷できます。</p>
+      <div id="reprintWait" style="background:#0f172a; border:2px dashed #db2777; border-radius:10px; padding:34px 20px; text-align:center; margin-bottom:14px;">
+        <div style="font-size:52px; line-height:1; animation: pulse 1.5s infinite;">📷</div>
+        <div style="color:#f472b6; font-size:16px; font-weight:bold; margin-top:10px;">スキャン待機中…</div>
+        <div style="color:#94a3b8; font-size:12px; margin-top:6px;">ピッキングNo / 納品書No のバーコードをスキャン</div>
+      </div>
+      <div id="reprintConfirm" style="display:none; background:#0f172a; border-radius:10px; padding:14px; margin-bottom:14px;">
+        <div style="font-size:11px; color:#94a3b8;">確定した伝票</div>
+        <div id="reprintPkNo" style="font-family:Consolas,monospace; color:#fbbf24; font-size:22px; font-weight:bold; margin-top:4px;">-</div>
+        <div id="reprintInfo" style="color:#cbd5e1; font-size:13px; margin-top:4px;">-</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-neutral" style="height:44px;max-width:140px" onclick="closeReprint()">キャンセル</button>
+        <button class="btn btn-neutral" style="height:44px;max-width:200px" onclick="simulateReprintScan()">（デモ）スキャン</button>
+        <button class="btn btn-print" id="reprintDoBtn" style="height:44px;max-width:220px" onclick="doReprint()" disabled>🖨 発行する</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="scan-flash" id="flash"></div>
+</div>
+
+<!-- デモ操作パネル -->
+<div class="demo-panel">
+  <h3>🎮 デモ操作パネル</h3>
+  <p>以下から代表的な4ケースの伝票読込をシミュレーションできます。<b style="color:#67e8f9">v0.14 から開始トリガーは「ピッキング№バーコード」、完了トリガーは「納品書バーコード」のサンドイッチ方式</b>に変更されました。</p>
+  <div class="demo-btns">
+    <button class="primary" onclick="loadOrder(0)">📦 ①一般顧客（通常）／ピッキング№スキャン</button>
+    <button class="primary" onclick="loadOrder(1)">🎁 ②熨斗あり（元セット・構成商品3点）</button>
+    <button class="special" onclick="loadOrder(2)">🖨 ③特殊梱包（冷凍・印刷必須）</button>
+    <button class="primary" onclick="loadOrder(3)">🏢 ④企業顧客・同梱多数</button>
+    <button onclick="simulateScanProduct()">商品スキャン（正常）</button>
+    <button onclick="simulateScanProduct(true)">商品スキャン（誤）</button>
+    <button class="warn" onclick="openForceOK()">強制OK</button>
+    <button onclick="skipAndFinish()">📋 一括検品</button>
+    <button onclick="finishInspection()">📋 最終チェック（手動展開）</button>
+    <button style="background:#0e7490; color:white;" onclick="simulateInvoiceScan()">📷 納品書スキャン（梱包完了）</button>
+    <button class="warn" onclick="simulateScanCompleted()">✓ 検品済み 再スキャン（ピッキング№）</button>
+    <button class="warn" onclick="simulateScanHeld()">⏸ 保留中 再スキャン（ピッキング№）</button>
+    <button onclick="openQRReprint()">QRラベル再発行</button>
+    <button class="warn" onclick="NOTICES.forEach(n=>n.checked=false); openNotices()">📢 連絡事項を再表示</button>
+    <button onclick="backToIdle()">待機に戻る</button>
+  </div>
+  <div class="change-log">
+    <b>v0.15 での変更（今回）★ブランディング＋UI調整</b><br>
+    ・<b>LogiSmile ロゴをヘッダ左上に表示</b>（ブランド：メインブルー #3BB6F6 ／ アクセントグリーン #00B7C3）<br>
+    ・<b>F1-F5/ESC ボタンを SVG アイコン化</b>（絵文字撤去：📷⚠📦📋⏸← → バーコード／盾＋✓／箱／クリップボード＋✓／ブックマーク／矢印）<br>
+    ・<b>最終モーダル のし枠を白背景＋黒文字に変更</b>、サブラベル「のし（基幹データ）」を撤去<br>
+    ・<b>最終モーダル 同梱指示／同梱物の各行を白背景＋黒文字に変更</b>、サブラベル「📋 同梱指示（補助マスタ）」「📦 同梱物（基幹データ）」を撤去（本番ではない認識のため）<br>
+    ・<b>納品書バーコードスキャン待ちのプロンプト枠を撤去</b>。代わりに納品書スキャンボタンを小型化（h:44→40px、最大幅:300→自動）し、全☑後に <b style="color:#67e8f9">水色グラデ＋脈動アニメ</b> で強調する仕様に変更<br>
+    <br>
+    <b>v0.14 での変更</b>★現場レビュー反映<br>
+    ・<b>開始トリガーを「納品書バーコード」→「ピッキング№バーコード」に変更</b>（サンドイッチ方式へ移行）<br>
+    　- 待機画面の文言／フローステップ①／デモパネル説明 を全て更新<br>
+    　- 待機画面に「※ 梱包完了時は納品書バーコードをスキャン」のサブテキスト追記<br>
+    ・<b>梱包完了「✓ 梱包完了（次へ進む）」ボタンを撤去 → 納品書バーコードスキャンで自動完了</b>（サンドイッチ方式）<br>
+    　- 最終チェックモーダル内に <b style="color:#67e8f9">📷 納品書バーコード スキャン待ち</b> プロンプトを新設<br>
+    　- 同梱物・同梱指示・のし が全て☑になると「受付中」（点線→水色枠＋脈動）に切替<br>
+    　- スキャンすると画面中央に <b style="color:#86efac">✓ 梱包完了</b> トースト表示（1.4秒）→ 印刷判定／完了画面へ自動遷移<br>
+    　- デモパネルに「📷 納品書スキャン（梱包完了）」ボタン追加<br>
+    ・<b>最終チェックモーダルから「📦 推奨梱包箱」セクションを撤去</b>（左ペインで既に確定済のため重複排除）<br>
+    　- 検品中ずっと表示されている左ペインの推奨箱はそのまま継続<br>
+    ・<b>検品保留メニューの副題を簡素化</b>：「商品/数量に問題あり<br>本部に通知して中断」→「スキャン状態を保持して<br>一時中断する」<br>
+    　- 通知記載は本部連絡側（右ボタン）に明確に分離<br>
+    ・<b>検品済み／保留中の再スキャン デモ ボタン名を「ピッキング№ 再スキャン」に変更</b>（トリガー一致のため）<br>
+    <br>
+    <b>v0.13 での変更</b><br>
+    ・<b>「商品コード」→「構成商品コード」表記に統一</b>（基幹IF認識合わせに基づく）<br>
+    　- 検品リスト／数量キーパッド／最終チェック画面の見出し<br>
+    　- 親商品（受注単位／JANなし）と構成商品（出荷単位／JANあり）の階層を明示<br>
+    　- WMS が受信するのは構成商品レベル。親商品は基幹側にのみ存在<br>
+    <br>
+    <b>v0.12 での変更</b><br>
+    ・<b>📦 推奨箱の表示位置を「最終チェックモーダル内」→「検品中の左ペイン（常時表示）」に変更</b><br>
+    　- 伝票ロード直後（loadOrder 末尾）から箱候補を表示／検品中ずっと右側で見える<br>
+    　- ピッキング担当者が箱を準備できるよう、商品検品より前に候補が確定<br>
+    　- コンパクト縦並びカード（候補名／区分ピル／サイズランク／充填率バー）<br>
+    ・<b>自動展開ロジックを強化</b>：modal が active でない／screenState=inspect／currentOrder 有り の3条件をガード<br>
+    ・最終チェックモーダル内の旧推奨箱セクションを削除（重複防止）<br>
+    ・<b>※将来 基幹側で算出した箱コードを受け取る方式</b>に切替予定（フェーズ2）<br>
+    　- 現在の WMS 内 suggestBoxes() はあくまで暫定実装<br>
+    　- 基幹側で `parent_code → box_code` を確定して連携する設計（基幹連携設計メモ v2.0 に追記予定）<br>
+    <br>
+    <b>v0.11 での変更</b><br>
+    ・<b>最終チェック画面に「📦 推奨梱包箱」セクション追加</b><br>
+    　- 箱マスタ（管理PC v0.15 で管理）から商品構成に応じて候補を自動提案<br>
+    　- 優先度：<span style="color:#fbcfe8">①完全一致 専用箱</span>＞<span style="color:#bfdbfe">②専用箱+追加</span>＞<span style="color:#a7f3d0">③可変箱（容積/重量/温度帯適合）</span><br>
+    　- 上位5件をタブで表示、⭐は推奨候補（スコア最上位）<br>
+    　- 詳細：寸法・容積・最大重量・温度帯・適合理由・警告（温度帯不一致など）<br>
+    　- 温度帯推定：商品コードの先頭文字で常温/冷蔵/冷凍 を自動判定（基幹未連携の補助運用）<br>
+    <br>
+    <b>v0.10 での変更</b><br>
+    ・<b>検品保留時にスキャン状態を保持</b>（HELD_ORDERS レジストリ）<br>
+    　- 数量スキャン状況／同梱物チェック／のしチェック／編集内容 を全てスナップショット保存<br>
+    　- 同じ納品書を再スキャンすると「保留中」ポップアップが表示<br>
+    　- <b>「▶ 続きから検品」</b> で前回の状態を完全復元（途中から再開可能）<br>
+    　- <b>「↻ 最初から検品」</b> で保留状態を破棄して新規検品<br>
+    　- 「キャンセル」で待機画面に戻る<br>
+    ・<b>本部連絡（📢）も同じ仕組みで保留</b>（指示待ち中も検品済み数量が維持される）<br>
+    ・デモパネルに「⏸ 保留中伝票を再スキャン」ボタン追加（ORDERS[1] が半分スキャン済みで保留される）<br>
+    <br>
+    <b>v0.9 での変更</b><br>
+    ・<b>F4ボタン名・色を変更</b>：「⏭ 検品省略」→「<span style="color:#86efac">📋 一括検品</span>」（btn-success 緑）<br>
+    ・<b>F5 伝票保留にポップアップ追加</b>：従来の即保留 → <b>「⏸ 検品保留」「📢 本部連絡」</b> の2択選択<br>
+    　- 本部連絡：4分類ボタン（<span style="color:#fbcfe8">🎁のし</span> / <span style="color:#86efac">📦商品</span> / <span style="color:#fbbf24">✏入力内容</span> / <span style="color:#67e8f9">🌐WEB</span>）+ 補足テキスト<br>
+    　- 送信先：管理PC「連絡」タブ → 着信バッジで通知<br>
+    　- ペイロード：from / pkNo / invoice / category / body / sentAt / read（未読フラグ）<br>
+    <br>
+    <b>v0.8 での変更（再仕様化）</b><br>
+    ・<span style="color:#fbbf24">v0.7 で要件解釈ミスがあったため再仕様化</span><br>
+    ・<b>商品検品完了で「最終チェック画面を自動展開」</b>（ボタン押下を省略）<br>
+    　- 全商品スキャン完了で 0.35秒後に自動でモーダルが開く<br>
+    　- 既に開いている場合や検品済み伝票の再読込時は自動展開しない<br>
+    ・<b>「梱包完了」ボタンを「⏭ 検品省略・梱包完了」用途に転用</b>（オレンジ色 / F4）<br>
+    　- クリックすると <b>残数を確認するダイアログ</b> 表示 → OK で全件完了扱い → 自動展開フローへ合流<br>
+    　- <span style="color:#fbbf24">強制OK と異なり 理由コードは記録しない</span>（検品の流れそのものを省略する用途）<br>
+    　- 監査ログには「検品省略・梱包完了 残N点を省略」を記録<br>
+    ・強制OK（F2）は別系統として維持（理由コード必須）<br>
+    <br>
+    <b>v0.7 での変更（取消）</b><br>
+    ・"梱包完了"ボタンを"📋 最終チェック"にリネームして手動押下を残していた仕様は取消<br>
+    <br>
+    <b>v0.6 での変更</b><br>
+    ・<b>梱包完了ボタンを「📋 最終チェック」に名称変更</b>（強制OKと役割分離）<br>
+    ・<b>最終チェック画面に「✓ 商品検品状況」セクション追加</b>：全アイテムの検品状況（X/Y点・残N点・強制OKメッセージ）を一覧表示<br>
+    ・<b>のし関連の同梱物項目を表示から除外</b>（上部のピンクのし表示と重複しないよう "熨斗"/"のし"/"台紙" を含む koudoku/instructions は描画スキップ）<br>
+    ・最終チェックの完了ボタンを「✓ 梱包完了（次へ進む）」に変更（その後 印刷判定→印刷モーダル or 完了画面へ）<br>
+    ・フローステップ表示を「①納品書 → ②商品検品 → ③📋 最終チェック → 完了」に簡素化<br>
+    <br>
+    <b>v0.6 での変更</b><br>
+    ・<b>トリガーを「納品書バーコード」に一本化</b>：v0.5までのサンドイッチ検品（①ピッキングNo→②商品→③納品書）を撤廃。納品書1枚で①読み込み →②商品検品 →③同梱物確認 →完了。<br>
+    ・<b>同梱物確認モーダル</b>を新設：商品検品完了後に表示。<b style="color:#fbbf24">のし種類・名称</b>（基幹取込データ）と<b style="color:#f472b6">同梱指示・同梱物</b>（WMS補助マスタ／取込データなし）を分けて☑可能。全☑後に「✓ 同梱物 確認完了」で完了画面へ。<br>
+    ・<b>検品済み伝票 再読込ポップアップ</b>：すでに完了済みの納品書バーコードを読むと「✓ 検品済み」と表示。「確認」で待機戻り、「検品戻し（再検品）」で完了状態を解除し再度検品可（操作ログ記録）。<br>
+    ・同梱物の右ペイン表示は「プレビュー」扱いに変更（最終☑はモーダルで実施）。<br>
+    <br>
+    <b>v0.5 からの継続機能</b><br>
+    数量キーパッド「残数入力」方式（残数超過エラー）／特殊梱包フラグ（基幹データ起因）／構成商品のみ表示（親商品は基幹未連携）／連絡事項ポップアップ（起動時☑確認）／QRラベル再発行／強制検品Sticky＋解除バナー。
+  </div>
+  <div class="legend">
+    <b>ハードキー割当（想定）</b>：F1=商品スキャン／F2=強制OK／F3=同梱物ON／F4=📋 一括検品／F5=伝票保留・本部連絡／ESC=中断<br>
+    <b>ハード構成</b>：タブレット＝HP14系（1280×800想定） ／ 外付スキャナ（USB/Bluetooth HIDモード） ／ ラベルプリンタ＝<b>SATO CT4-LX</b>（熱転写）<br>
+    <b>動作確認手順（v0.14 サンドイッチ方式）</b>：
+    起動 → 連絡事項4件☑→「作業開始」 →
+    ケース②（熨斗あり・元セット品）を読込（＝ピッキング№スキャン） → 構成商品3点をスキャン（または🔢ボタン→数量入力）→ 最終チェックモーダル自動展開 → のし・同梱物すべて☑ → 「📷 納品書スキャン（梱包完了）」ボタン押下（または同名 onclick） → ✓ 梱包完了トースト → 印刷／完了画面 →
+    待機画面に戻り右上「QRラベル再発行」→「（デモ）スキャン」で伝票確定 → 発行。
+  </div>
+</div>
+
+<script>
+function updateClock() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  document.getElementById('hClock').textContent =
+    `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())}  ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+setInterval(updateClock, 1000); updateClock();
+
+// ★v0.11★ 箱マスタ（管理PC v0.15 と同期）
+const BOX_TYPES = { fixed:'固定（商品/セット専用）', variable:'可変（単品組合せ用）', extension:'拡張（固定+追加用）' };
+const BOX_SIZE_RANKS = [60, 80, 100, 120, 140];
+const MST_BOX = [
+  { code:'BOX-FX-EGG10-1',  name:'有精卵10個 専用箱',         type:'fixed',     sizeRank:60,
+    W:200, D:120, H:90,    innerW:190, innerD:110, innerH:80,
+    frozen:false, noshi:false, products:['E-10'],         priority:10, note:'10個入り×1個ジャスト' },
+  { code:'BOX-FX-EGG30-1',  name:'有精卵30個 専用箱',         type:'fixed',     sizeRank:80,
+    W:280, D:200, H:100,   innerW:270, innerD:190, innerH:90,
+    frozen:false, noshi:false, products:['E-30'],         priority:10, note:'30個入り×1個ジャスト' },
+  { code:'BOX-FX-GIFT-A',   name:'春の詰合せA 専用化粧箱',    type:'fixed',     sizeRank:80,
+    W:300, D:230, H:120,   innerW:290, innerD:220, innerH:110,
+    frozen:false, noshi:true,  products:['E-10','G-PUDDING-3','G-CAKE-S'], priority:10, note:'御中元/母の日用' },
+  { code:'BOX-FX-SS-2024',  name:'金賞ソーセージ詰合せ 専用箱（冷凍）', type:'fixed', sizeRank:80,
+    W:300, D:200, H:140,   innerW:290, innerD:190, innerH:130,
+    frozen:true,  noshi:false, products:['F-SS-2024'],    priority:10, note:'冷凍・特殊梱包' },
+  { code:'BOX-VR-60-A',     name:'60サイズ 標準型',           type:'variable', sizeRank:60,
+    W:230, D:170, H:120,   innerW:220, innerD:160, innerH:110,
+    frozen:false, noshi:false, products:[], priority:50, note:'最小汎用箱' },
+  { code:'BOX-VR-60-CL',    name:'60サイズ 冷凍対応',         type:'variable', sizeRank:60,
+    W:230, D:170, H:120,   innerW:215, innerD:155, innerH:105,
+    frozen:true,  noshi:false, products:[], priority:52, note:'断熱材内蔵' },
+  { code:'BOX-VR-80-A',     name:'80サイズ 標準型',           type:'variable', sizeRank:80,
+    W:330, D:230, H:160,   innerW:320, innerD:220, innerH:150,
+    frozen:false, noshi:false, products:[], priority:50, note:'汎用' },
+  { code:'BOX-VR-80-CL',    name:'80サイズ 冷凍対応',         type:'variable', sizeRank:80,
+    W:330, D:230, H:160,   innerW:315, innerD:215, innerH:145,
+    frozen:true,  noshi:false, products:[], priority:52, note:'断熱材内蔵' },
+  { code:'BOX-VR-100-A',    name:'100サイズ 標準型',          type:'variable', sizeRank:100,
+    W:400, D:300, H:200,   innerW:390, innerD:290, innerH:190,
+    frozen:false, noshi:false, products:[], priority:50, note:'汎用' },
+  { code:'BOX-VR-100-CL',   name:'100サイズ 冷凍対応',        type:'variable', sizeRank:100,
+    W:400, D:300, H:200,   innerW:385, innerD:285, innerH:185,
+    frozen:true,  noshi:false, products:[], priority:52, note:'断熱材内蔵' },
+  { code:'BOX-VR-120-A',    name:'120サイズ 標準型',          type:'variable', sizeRank:120,
+    W:480, D:380, H:240,   innerW:470, innerD:370, innerH:230,
+    frozen:false, noshi:false, products:[], priority:50, note:'大型ギフト用' },
+  { code:'BOX-VR-140-A',    name:'140サイズ 大型',            type:'variable', sizeRank:140,
+    W:560, D:430, H:280,   innerW:550, innerD:420, innerH:270,
+    frozen:false, noshi:false, products:[], priority:50, note:'最大サイズ' },
+  { code:'BOX-EX-EGG10-K',  name:'有精卵10個＋追加品 拡張箱', type:'extension', sizeRank:80,
+    W:280, D:180, H:120,   innerW:270, innerD:170, innerH:110,
+    frozen:false, noshi:false, products:['E-10'],         priority:30, note:'10個 + プリン/カステラ等' },
+  { code:'BOX-EX-GIFT-A-K', name:'春詰合せA＋追加品 拡張箱',  type:'extension', sizeRank:100,
+    W:360, D:260, H:160,   innerW:350, innerD:250, innerH:150,
+    frozen:false, noshi:true,  products:['G-GIFT-A'],     priority:30, note:'GIFT-A + のし台紙/挨拶状' },
+];
+
+const PRODUCT_PKG_DIM = {
+  'E-10':  { W:190, D:110, H:80 },  'E-20':  { W:230, D:160, H:80 },  'E-30':  { W:260, D:180, H:90 },
+  'F-SS-2024': { W:280, D:180, H:120 }, 'F-CHICK-A':   { W:240, D:160, H:80 },
+  'G-GIFT-A':  { W:290, D:220, H:110 }, 'G-PUDDING-3': { W:180, D:80,  H:80 },
+  'G-SOUP-3':  { W:250, D:90,  H:100 }, 'G-CAKE-S':    { W:180, D:180, H:90 },
+  '7003':  { W:200, D:120, H:80 },  '0100':  { W:200, D:120, H:50 },
+  '7001':  { W:230, D:170, H:80 },  '7012':  { W:230, D:170, H:60 },
+  '7022':  { W:80,  D:65,  H:160 }, '26351': { W:280, D:180, H:120 },
+  '70081': { W:200, D:130, H:60 },  '70082': { W:200, D:130, H:60 },
+  '7000':  { W:200, D:120, H:80 },  '70071': { W:240, D:120, H:60 },
+};
+function boxInnerVolume(b) { return Math.round((b.innerW * b.innerD * b.innerH) / 1000); }
+function productVolume(code) {
+  const d = PRODUCT_PKG_DIM[code];
+  return d ? Math.round((d.W * d.D * d.H) / 1000) : 0;
+}
+function suggestBoxes(itemCodes, opts) {
+  opts = opts || {};
+  const needFrozen = !!opts.frozen, needNoshi = !!opts.noshi;
+  const margin = opts.volumeMargin || 0.80;
+  const candidates = [];
+  const sortedItems = itemCodes.slice().sort();
+  // 1) 固定箱
+  MST_BOX.filter(b => b.type === 'fixed').forEach(b => {
+    if (needFrozen && !b.frozen) return;
+    const sortedBox = (b.products || []).slice().sort();
+    if (sortedItems.length === sortedBox.length &&
+        sortedItems.every((v, i) => v === sortedBox[i])) {
+      candidates.push({ box:b, reason:'固定箱（商品完全一致）', score:100, kind:'fixed' });
+    }
+  });
+  // 2) 拡張箱
+  if (candidates.length === 0) {
+    MST_BOX.filter(b => b.type === 'extension').forEach(b => {
+      if (needFrozen && !b.frozen) return;
+      const baseSet = b.products || [];
+      const allBase = baseSet.every(p => sortedItems.includes(p));
+      if (allBase && sortedItems.length > baseSet.length) {
+        const totalVol = itemCodes.reduce((s, code) => s + productVolume(code), 0);
+        const innerVol = boxInnerVolume(b);
+        if (totalVol <= innerVol * margin) {
+          candidates.push({ box:b, reason:'拡張箱（'+baseSet.join(',')+'+追加'+(sortedItems.length-baseSet.length)+'点）', score:80, kind:'extension', usedVol:totalVol, innerVol });
+        }
+      }
+    });
+  }
+  // 3) 可変箱
+  if (candidates.length === 0) {
+    const totalVol = itemCodes.reduce((s, code) => s + productVolume(code), 0);
+    const eligible = MST_BOX.filter(b => b.type === 'variable')
+      .filter(b => !needFrozen || b.frozen)
+      .filter(b => totalVol <= boxInnerVolume(b) * margin);
+    eligible.sort((a, b) => a.sizeRank - b.sizeRank || (boxInnerVolume(a) - boxInnerVolume(b)));
+    eligible.forEach((b, i) => {
+      const innerVol = boxInnerVolume(b);
+      candidates.push({
+        box:b,
+        reason: i === 0 ? '可変箱（最小収納・'+b.sizeRank+'サイズ）' : '代替候補（'+b.sizeRank+'サイズ）',
+        score: 60 - i * 5, kind:'variable', usedVol:totalVol, innerVol,
+      });
+    });
+  }
+  if (needNoshi) {
+    const noshi = candidates.filter(c => c.box.noshi);
+    if (noshi.length > 0) return noshi.slice(0, 4);
+  }
+  return candidates.slice(0, 4);
+}
+
+// 管理用PCから登録された連絡事項（サンプル）
+const NOTICES = [
+  {
+    id: 'N-20260422-01',
+    priority: 'high',
+    author: '本部・田口',
+    datetime: '2026/04/22 07:45',
+    title: '【重要】本日の母の日ギフト対応について',
+    body: '本日は母の日ギフトの出荷ピークです。熨斗・メッセージカードの同梱漏れに特に注意してください。該当伝票は画面上部にアラートが出ます。',
+    checked: false,
+  },
+  {
+    id: 'N-20260422-02',
+    priority: 'high',
+    author: '本部・小原',
+    datetime: '2026/04/22 08:10',
+    title: '【冷凍】「金賞ソーセージ3種セット」商品マスタ修正',
+    body: '昨日の出荷で1件JAN誤登録がありました。本日出荷分より正規JAN (2800002635101) に修正済です。読取エラー時は強制OK（R02）で対応し、管理PCに連絡してください。',
+    checked: false,
+  },
+  {
+    id: 'N-20260422-03',
+    priority: 'normal',
+    author: '本部・浦川',
+    datetime: '2026/04/22 08:20',
+    title: 'ヤマト便 本日の集荷時間変更',
+    body: '通常便の集荷が30分前倒しで 17:30 となります。I・V・Oテーブルは優先的に進めてください。',
+    checked: false,
+  },
+  {
+    id: 'N-20260422-04',
+    priority: 'normal',
+    author: '本部・山根',
+    datetime: '2026/04/22 08:25',
+    title: 'タブレット T-03 スキャナ動作確認済',
+    body: '昨日発生した読取不良は、スキャナ再ペアリングで解消しています。引き続き異常があれば申告してください。',
+    checked: false,
+  },
+];
+
+function renderNotices() {
+  const list = document.getElementById('noticeList');
+  list.innerHTML = '';
+  NOTICES.forEach((n, i) => {
+    const el = document.createElement('div');
+    el.className = 'notice-item' + (n.checked ? ' checked' : '') + (n.priority === 'high' ? ' priority-high' : '');
+    el.onclick = () => toggleNotice(i);
+    el.innerHTML = `
+      <div class="cb">${n.checked ? '✓' : ''}</div>
+      <div>
+        <div class="notice-meta">
+          <span class="tag ${n.priority === 'high' ? 'high' : 'norm'}">${n.priority === 'high' ? '重要' : '連絡'}</span>
+          <span class="author">${n.author}</span>
+          <span>${n.datetime}</span>
+          <span style="color:#64748b; font-family:Consolas,monospace">${n.id}</span>
+        </div>
+        <div class="notice-title">${n.title}</div>
+        <div class="notice-body">${n.body}</div>
+      </div>
+    `;
+    list.appendChild(el);
+  });
+  updateNoticeProgress();
+}
+
+function toggleNotice(i) {
+  NOTICES[i].checked = !NOTICES[i].checked;
+  renderNotices();
+}
+
+function updateNoticeProgress() {
+  const n = NOTICES.filter(x => x.checked).length;
+  const t = NOTICES.length;
+  document.getElementById('noticeCheckedN').textContent = n;
+  document.getElementById('noticeTotalN').textContent = t;
+  document.getElementById('noticeFill').style.width = (t ? Math.round(n/t*100) : 0) + '%';
+  document.getElementById('noticeStartBtn').disabled = (n < t);
+}
+
+function openNotices() {
+  renderNotices();
+  document.getElementById('noticeModal').classList.add('active');
+}
+
+function startWork() {
+  document.getElementById('noticeModal').classList.remove('active');
+}
+
+function skipNotices() {
+  // 未確認があればログに残して待機画面へ（未確認フラグ等）
+  document.getElementById('noticeModal').classList.remove('active');
+}
+
+// サンプル伝票
+const ORDERS = [
+  {
+    table: 'C', pkNo: 'SC01208830001', shipDate: '2026/04/21',
+    carrier: 'ヤマト運輸', carrierBadge: 'badge-yamato',
+    invoice: '00059456840001', custCode: '000001357596',
+    zip: '680-041', addr: '鳥取県八頭郡八頭町橋本８７７', name: '佐藤　友子',
+    noshi: null, noshiName: null,
+    frozen: false, corp: false, special: false,
+    isSet: false,
+    deliveryDate: '2026/04/22',
+    items: [
+      { code: '7003',  name: 'Ｍサイズパック', jan: '2800002001234', qty: 2 },
+      { code: '0100',  name: '送料無料セット', jan: '2800000000010', qty: 1 },
+    ],
+    koudoku: [
+      { label: 'お客様準備のヤマト伝票/同梱封入', checked: false },
+    ],
+    instructions: ['お届け日指定なし／不在再配達OK', '玄関前置き配 不可（要対面）'],
+  },
+  {
+    table: 'I', pkNo: 'SI01208830033', shipDate: '2026/04/21',
+    carrier: 'ゆうパック', carrierBadge: 'badge-jp',
+    invoice: '00059507690001', custCode: '000000001020',
+    zip: '680-041', addr: '鳥取県八頭郡八頭町橋本８７７', name: '池田　敏之・節子',
+    noshi: '御中元', noshiName: '大江 太郎',
+    frozen: false, corp: false, special: false,
+    isSet: false,
+    deliveryDate: null,
+    items: [
+      // 基幹からは構成商品（子）のみ連携。WMSは親を持たない・表示しない。
+      // ピッキング票（帳票）には親「進物セットA（特撰ぱうむ＋焼菓子）」が印字される。
+      { code: '7001', name: '特撰ぱうむ 6個入',       jan: '2800002070011', qty: 1 },
+      { code: '7012', name: '焼菓子アソート 6個入',   jan: '2800002070125', qty: 1 },
+      { code: '7022', name: '季節のジュース 200ml',   jan: '2800002070224', qty: 2 },
+    ],
+    koudoku: [
+      { label: '熨斗（御中元／大江 太郎）', checked: false },
+      { label: '挨拶状 同封', checked: false },
+    ],
+    instructions: ['熨斗台紙 A04 を使用（御中元用／白黒）', '挨拶状 No.12（春版）を同封', '伝票はお届け先名で出力'],
+  },
+  {
+    table: 'V', pkNo: 'SV01208830045', shipDate: '2026/04/21',
+    carrier: 'ヤマト運輸', carrierBadge: 'badge-yamato',
+    invoice: '00059411670001', custCode: '000000347272',
+    zip: '244-0812', addr: '神奈川県横浜市戸塚区柏尾町１２-３', name: 'アイブリッジ株式会社　様',
+    noshi: null, noshiName: null,
+    frozen: true, corp: true, special: true,   // 特殊梱包フラグON
+    isSet: false,
+    deliveryDate: '2026/04/22',
+    items: [
+      { code: '26351', name: '【冷凍】金賞ソーセージ3種セット', jan: '2800002635101', qty: 1 },
+      { code: '70081', name: '【冷凍】ハーブ①／粗挽き',      jan: '2800002700811', qty: 1 },
+      { code: '70082', name: '【冷凍】ハーブ②／ニュルンベルグ', jan: '2800002700821', qty: 1 },
+    ],
+    koudoku: [
+      { label: '請求書 同梱（月末締め）', checked: false },
+      { label: 'クール便送り状', checked: false },
+    ],
+    instructions: ['月末締め請求書を必ず同梱', '冷凍便のため発送当日 16:30 までに引渡', '配達指定: 4/22 午前指定厳守'],
+  },
+  {
+    table: 'O', pkNo: 'SO01208830032', shipDate: '2026/04/21',
+    carrier: 'ゆうパック', carrierBadge: 'badge-jp',
+    invoice: '00058581230001', custCode: '000000348912',
+    zip: '135-0063', addr: '東京都江東区有明１丁目', name: '株式会社サンプル商事　様',
+    noshi: null, noshiName: null,
+    frozen: false, corp: true, special: false,
+    isSet: false,
+    deliveryDate: null,
+    items: [
+      { code: '7000',  name: '定期パック',       jan: '2800001000027', qty: 3 },
+      { code: '70071', name: '水引ＭＳパック',    jan: '2800002007112', qty: 2 },
+      { code: '0100',  name: '送料無料セット',    jan: '2800000000010', qty: 1 },
+    ],
+    koudoku: [
+      { label: '請求書 同梱', checked: false },
+      { label: '納品書 別送なし', checked: false },
+      { label: '挨拶状 同封', checked: false },
+    ],
+    instructions: ['請求書はAR部宛で送付', '挨拶状（春）同封', '宛名はお届け先名で出力（社内伝票なし）'],
+  },
+];
+
+let currentOrder = null;
+let scanned = [];
+let screenState = 'idle';
+let selectedReason = null;
+let selectedReasonLabel = null;
+let manualPrintFlag = false;   // 印刷フラグ（手動）
+let itemsAllScanned = false;
+
+// ★v0.12 fix★ 自動展開：ロード後に1回だけ確実に発火するフラグ
+let __autoExpandedThisLoad = false;
+
+// v0.6: 完了済み伝票履歴（再スキャン検出用）
+const COMPLETED = {};   // key: invoice → { pkNo, invoice, name, doneAt, doneBy, qty }
+let pendingCompleted = null;  // 検品済みポップアップ表示中の対象
+
+// ★v0.10★ 保留中伝票レジストリ（検品状態スナップショット）
+// key: invoice → { orderIdx, orderSnapshot, scanned[], heldAt, heldBy, kind, contactCat, contactBody }
+// kind: 'inspection'（検品保留） | 'contact'（本部連絡）
+const HELD_ORDERS = {};
+let pendingHeld = null;  // 保留中ポップアップ表示中の対象
+
+// Sticky state
+let stickyForce = false;
+let stickyForceReason = null;
+
+function showScreen(which) {
+  screenState = which;
+  document.getElementById('scrIdle').style.display     = (which==='idle')     ? 'flex' : 'none';
+  document.getElementById('scrInspect').style.display  = (which==='inspect')  ? 'flex' : 'none';
+  document.getElementById('scrComplete').style.display = (which==='complete') ? 'flex' : 'none';
+  document.getElementById('alertBar').classList.toggle('show', which==='inspect' && !!currentOrder);
+  document.getElementById('footerBar').style.display   = (which==='idle')     ? 'none' : 'flex';
+}
+
+function updateFlowSteps(step) {
+  // step: 2=検品中, 3=納品書スキャン待ち, 4=完了
+  const s2 = document.getElementById('step2');
+  const s3 = document.getElementById('step3');
+  s2.classList.remove('active','done');
+  s3.classList.remove('active','done');
+  if (step===2)  { s2.classList.add('active'); }
+  if (step===3)  { s2.classList.add('done'); s3.classList.add('active'); }
+  if (step===4)  { s2.classList.add('done'); s3.classList.add('done'); }
+}
+
+function loadOrder(idx) {
+  const target = ORDERS[idx];
+  // v0.6: 既に完了済みかチェック（納品書ベースのトリガーで再スキャンを検出）
+  if (COMPLETED[target.invoice]) {
+    showCompletedPopup(COMPLETED[target.invoice], idx);
+    return;
+  }
+  // ★v0.10★ 保留中かチェック → 「続きから/最初から/キャンセル」ポップアップ
+  if (HELD_ORDERS[target.invoice]) {
+    showHeldPopup(HELD_ORDERS[target.invoice], idx);
+    return;
+  }
+  currentOrder = JSON.parse(JSON.stringify(ORDERS[idx]));
+  scanned = currentOrder.items.map(()=>0);
+  // ★v0.12 fix★ 新しい伝票ロード時に自動展開フラグをリセット
+  __autoExpandedThisLoad = false;
+  manualPrintFlag = false;
+  itemsAllScanned = false;
+  updatePrintFlagUI();
+
+  document.getElementById('hTable').textContent = currentOrder.table;
+  document.getElementById('pkNo').textContent = currentOrder.pkNo;
+  document.getElementById('kShipDate').textContent = currentOrder.shipDate;
+  document.getElementById('kCarrier').innerHTML = `<span class="badge ${currentOrder.carrierBadge}">${currentOrder.carrier}</span>`;
+  document.getElementById('kInvoice').textContent = currentOrder.invoice;
+
+  const showNoshi = !!currentOrder.noshi;
+  document.getElementById('rowNoshi').style.display = showNoshi ? 'flex' : 'none';
+  if (showNoshi) document.getElementById('kNoshi').textContent = `${currentOrder.noshi}／${currentOrder.noshiName||''}`;
+
+  // v0.4: 親商品は WMS では非表示のため setHeader は削除
+
+  document.getElementById('sZip').textContent = '〒 ' + currentOrder.zip;
+  document.getElementById('sAddr').textContent = currentOrder.addr;
+  document.getElementById('sName').textContent = currentOrder.name;
+
+  const ab = document.getElementById('alertBar');
+  ab.classList.remove('frozen','special');
+  if (currentOrder.special) ab.classList.add('special');
+  else if (currentOrder.frozen) ab.classList.add('frozen');
+
+  document.getElementById('alNoshi').style.display   = showNoshi ? 'inline' : 'none';
+  document.getElementById('alFrozen').style.display  = currentOrder.frozen ? 'inline' : 'none';
+  document.getElementById('alCorp').style.display    = currentOrder.corp ? 'inline' : 'none';
+  document.getElementById('alSpecial').style.display = currentOrder.special ? 'inline' : 'none';
+  const hasDate = !!currentOrder.deliveryDate;
+  document.getElementById('alDate').style.display    = hasDate ? 'inline' : 'none';
+  if (hasDate) document.getElementById('alDateVal').textContent = currentOrder.deliveryDate;
+  const kn = currentOrder.koudoku.length;
+  document.getElementById('alKoudoku').style.display = kn ? 'inline' : 'none';
+  document.getElementById('alKoudokuN').textContent = kn;
+
+  renderItems();
+  renderKoudoku();
+  updateFlowSteps(2);
+
+  // ★v0.12★ 伝票ロード直後に推奨箱を表示
+  renderBoxSuggestions();
+
+  // Sticky 強制検品が有効な場合、最初から全明細を完了扱いに
+  if (stickyForce) {
+    scanned = currentOrder.items.map(it=>it.qty);
+    renderItems();
+    itemsAllScanned = true;
+    updateFlowSteps(3);
+  }
+
+  showScreen('inspect');
+}
+
+function renderItems() {
+  const list = document.getElementById('scanList');
+  list.innerHTML = '';
+  let totalQ = 0, doneQ = 0;
+  currentOrder.items.forEach((it, i) => {
+    const done = scanned[i];
+    const line = document.createElement('div');
+    line.className = 'scan-line';
+    if (done >= it.qty) line.classList.add('done');
+    line.innerHTML = `
+      <div class="icon">${done >= it.qty ? '✓' : '・'}</div>
+      <div>
+        <div class="pname">${it.name}</div>
+        <div class="pcode">構成商品コード: ${it.code}  ／  JAN: ${it.jan}</div>
+      </div>
+      <div class="qty">${done}<small> / </small>${it.qty}</div>
+      <div style="text-align:right; display:flex; flex-direction:column; gap:3px">
+        ${done<it.qty ? `<button class="action-btn" onclick="simulateScanItem(${i})">スキャン+1</button>
+        <button class="action-btn" style="background:#4338ca; color:white" onclick="openQtyKeypad(${i})">🔢 数量</button>` : ''}
+      </div>
+    `;
+    list.appendChild(line);
+    totalQ += it.qty;
+    doneQ += Math.min(done, it.qty);
+  });
+  document.getElementById('progNow').textContent = doneQ;
+  document.getElementById('progTotal').textContent = totalQ;
+
+  const wasComplete = itemsAllScanned;
+  itemsAllScanned = (doneQ >= totalQ) && totalQ > 0;
+  // 商品全スキャン完了→③を点滅させる（検品省略ボタンは点滅不要）
+  const btnInv = document.getElementById('btnInvoice');
+  if (itemsAllScanned) {
+    btnInv.classList.remove('highlight');
+    updateFlowSteps(3);
+  } else {
+    btnInv.classList.remove('highlight');
+  }
+  // ★v0.12 fix★ 商品検品完了で自動的に最終チェック画面を開く（押下省略）
+  // フラグ方式：__autoExpandedThisLoad が false の間、itemsAllScanned が立った瞬間に1回だけ発火
+  if (itemsAllScanned && !__autoExpandedThisLoad && screenState === 'inspect' && !!currentOrder) {
+    const m = document.getElementById('koudokuModal');
+    if (!m || !m.classList.contains('active')) {
+      __autoExpandedThisLoad = true;  // 二重発火防止（ロード単位）
+      console.log('[★v0.12★] 自動展開フラグON → 最終チェック画面を開きます');
+      setTimeout(() => {
+        if (itemsAllScanned && screenState === 'inspect' && !!currentOrder &&
+            !document.getElementById('koudokuModal').classList.contains('active')) {
+          try {
+            openKoudokuModal();
+          } catch(e) {
+            console.error('[★v0.12★] openKoudokuModal でエラー:', e);
+            __autoExpandedThisLoad = false;  // エラー時はリトライ可能に
+          }
+        }
+      }, 250);
+    }
+  }
+}
+
+function renderKoudoku() {
+  const list = document.getElementById('koudokuList');
+  if (!currentOrder.koudoku.length) {
+    list.innerHTML = '<div style="color:#64748b; font-size:12px; text-align:center; padding:20px">同梱物なし</div>';
+    return;
+  }
+  list.innerHTML = '';
+  currentOrder.koudoku.forEach((k, i) => {
+    const div = document.createElement('div');
+    div.className = 'koudoku-item' + (k.checked ? ' checked' : '');
+    div.onclick = () => { k.checked = !k.checked; renderKoudoku(); };
+    div.innerHTML = `<div class="cb">${k.checked ? '✓' : ''}</div><div>${k.label}</div>`;
+    list.appendChild(div);
+  });
+}
+
+function flash(kind='ok') {
+  const el = document.getElementById('flash');
+  el.classList.remove('ng','invoice','show');
+  if (kind==='ng') el.classList.add('ng');
+  if (kind==='invoice') el.classList.add('invoice');
+  void el.offsetWidth;
+  el.classList.add('show');
+}
+
+function simulateScanProduct(wrong=false) {
+  if (screenState !== 'inspect' || !currentOrder) return;
+  if (wrong) {
+    flash('ng');
+    const first = document.querySelector('.scan-line');
+    if (first) { first.classList.add('warn'); setTimeout(()=>first.classList.remove('warn'), 600); }
+    return;
+  }
+  const idx = scanned.findIndex((s,i) => s < currentOrder.items[i].qty);
+  if (idx === -1) return;
+  simulateScanItem(idx);
+}
+
+function simulateScanItem(i) {
+  if (!currentOrder || scanned[i] >= currentOrder.items[i].qty) return;
+  scanned[i]++;
+  flash('ok');
+  renderItems();
+}
+
+// === 数量入力キーパッド（スキャン後にまとめて数量入力する場合） ===
+let qpTargetIdx = -1;
+let qpBuffer = '';
+
+function openQtyKeypad(i) {
+  if (!currentOrder) return;
+  const it = currentOrder.items[i];
+  const already = scanned[i];
+  const remain = it.qty - already;
+  if (remain <= 0) return;  // 既に完了済みなら開かない
+  qpTargetIdx = i;
+  qpBuffer = '';
+  document.getElementById('qtyTargetName').textContent = it.name;
+  document.getElementById('qtyTargetCode').textContent = `構成商品コード: ${it.code} ／ JAN: ${it.jan}`;
+  document.getElementById('qtyAlready').textContent = already;
+  document.getElementById('qtyAll').textContent = it.qty;
+  document.getElementById('qtyRemain').textContent = remain;
+  document.getElementById('qtyTotal').textContent = remain;
+  hideQtyError();
+  refreshQtyDisplay();
+  document.getElementById('qtyModal').classList.add('active');
+}
+function currentRemain() {
+  if (qpTargetIdx < 0 || !currentOrder) return 0;
+  const it = currentOrder.items[qpTargetIdx];
+  return it.qty - scanned[qpTargetIdx];
+}
+function refreshQtyDisplay() {
+  const v = qpBuffer === '' ? 0 : parseInt(qpBuffer, 10);
+  const disp = document.getElementById('qtyDisplay');
+  disp.textContent = String(v);
+  // 入力中もリアルタイムでエラー表示
+  const remain = currentRemain();
+  if (v > remain) {
+    showQtyError(`入力値 ${v} は残数 ${remain} を超えています`);
+    disp.style.color = '#fca5a5';
+  } else {
+    hideQtyError();
+    disp.style.color = '#fbbf24';
+  }
+}
+function showQtyError(msg) {
+  const box = document.getElementById('qtyError');
+  document.getElementById('qtyErrorMsg').textContent = msg;
+  box.style.display = 'block';
+}
+function hideQtyError() {
+  document.getElementById('qtyError').style.display = 'none';
+}
+function qpNum(n) {
+  if (qpBuffer.length >= 3) return;
+  qpBuffer = (qpBuffer === '0' ? '' : qpBuffer) + String(n);
+  refreshQtyDisplay();
+}
+function qpBack() { qpBuffer = qpBuffer.slice(0, -1); refreshQtyDisplay(); }
+function qpClear() { qpBuffer = ''; refreshQtyDisplay(); }
+function qpCancel() { document.getElementById('qtyModal').classList.remove('active'); qpTargetIdx = -1; }
+function qpConfirm() {
+  if (qpTargetIdx < 0) return;
+  const it = currentOrder.items[qpTargetIdx];
+  const n = qpBuffer === '' ? 0 : parseInt(qpBuffer, 10);
+  const remain = it.qty - scanned[qpTargetIdx];
+  if (n <= 0) {
+    showQtyError('1以上の数量を入力してください');
+    flash('ng');
+    return;
+  }
+  if (n > remain) {
+    showQtyError(`入力値 ${n} は残数 ${remain} を超えています`);
+    flash('ng');
+    return;
+  }
+  // 加算方式（既存スキャン数に足す）
+  scanned[qpTargetIdx] = scanned[qpTargetIdx] + n;
+  flash('ok');
+  document.getElementById('qtyModal').classList.remove('active');
+  qpTargetIdx = -1;
+  renderItems();
+}
+
+function toggleNextKoudoku() {
+  if (!currentOrder) return;
+  const idx = currentOrder.koudoku.findIndex(k=>!k.checked);
+  if (idx === -1) return;
+  currentOrder.koudoku[idx].checked = true;
+  renderKoudoku();
+}
+
+// ★v0.8★ 検品が全て完了してから手動で最終チェックを呼ぶ場合（通常はrenderItemsから自動展開）
+function finishInspection() {
+  if (screenState !== 'inspect' || !currentOrder) return;
+  if (!itemsAllScanned) {
+    alert('まだ商品検品が完了していません。\n・残りの商品をスキャンしてください\n・または「⏭ 検品省略・梱包完了」を使用してください');
+    return;
+  }
+  const hasNoshi = !!currentOrder.noshi;
+  const hasKoudoku = (currentOrder.koudoku && currentOrder.koudoku.length>0);
+  const hasInstr = (currentOrder.instructions && currentOrder.instructions.length>0);
+  if (hasNoshi || hasKoudoku || hasInstr) {
+    openKoudokuModal();
+  } else {
+    proceedToComplete();
+  }
+}
+
+// ★v0.8★ 検品省略 → 全件完了扱い → 最終チェックへジャンプ
+function skipAndFinish() {
+  if (screenState !== 'inspect' || !currentOrder) return;
+  // 検品済みなら何もしない（自動展開で最終チェックは出ているはず）
+  if (itemsAllScanned) {
+    if (!document.getElementById('koudokuModal').classList.contains('active')) {
+      openKoudokuModal();
+    }
+    return;
+  }
+  // 残数を表示
+  let remain = 0;
+  currentOrder.items.forEach((it, i) => { remain += Math.max(0, it.qty - (scanned[i] || 0)); });
+  const msg = `検品を省略して梱包完了に進みますか？\n\n残り未検品: ${remain} 点\n（強制OKとは異なり、理由コードは記録されません）\n\n本ボタンは ＜検品の流れそのものを省略＞ する用途です。\n通常は商品スキャンを完了させてください。`;
+  if (!confirm(msg)) return;
+  // 全件完了扱い
+  scanned = currentOrder.items.map(it => it.qty);
+  console.log(`[監査ログ] 一括検品 PK=${currentOrder.pkNo} 残${remain}点を一括完了`);
+  renderItems();  // ※ ここで itemsAllScanned が true になり、自動展開で最終チェックモーダルが開く
+}
+
+// ★v0.7★ 最終チェックモーダル
+// - 商品検品状況サマリー（必須☑なし／表示のみ）
+// - のし（基幹データ）／必要時のみ
+// - 同梱指示・同梱物（のし関連は重複除外）
+function openKoudokuModal() {
+  // ★v0.12 fix★ 箱候補は左ペインで描画済み（loadOrder→renderBoxSuggestions）。ここでは再呼出のみ
+  try { renderBoxSuggestions(); } catch(e) { console.warn('renderBoxSuggestions スキップ:', e); }
+
+  // ▼ 商品検品状況サマリー
+  const sumList = document.getElementById('finalItemList');
+  let totalQ = 0, doneQ = 0, forceN = 0;
+  const itemHtml = [];
+  currentOrder.items.forEach((it, i) => {
+    const done = scanned[i] || 0;
+    totalQ += it.qty;
+    doneQ += Math.min(done, it.qty);
+    const isComplete = done >= it.qty;
+    const isForce = (stickyForce && done >= it.qty);
+    if (isForce) forceN++;
+    const stCol = isComplete ? '#86efac' : '#fbbf24';
+    const stIc  = isComplete ? '✓' : '◯';
+    itemHtml.push(`<div style="display:flex; gap:8px; align-items:center;">
+      <span style="color:${stCol}; font-weight:bold; width:18px;">${stIc}</span>
+      <span style="flex:1; color:#f1f5f9;">${it.name}</span>
+      <span style="color:#94a3b8; font-family:Consolas,monospace; font-size:11px;">${done}/${it.qty}</span>
+    </div>`);
+  });
+  sumList.innerHTML = itemHtml.join('');
+  document.getElementById('finalItemCount').textContent = `${doneQ} / ${totalQ} 点 ${doneQ>=totalQ?'(全件完了)':'(残'+(totalQ-doneQ)+'点)'}`;
+  if (stickyForce) {
+    document.getElementById('finalItemForce').style.display = 'block';
+    document.getElementById('finalItemForceN').textContent = currentOrder.items.length;
+  } else {
+    document.getElementById('finalItemForce').style.display = 'none';
+  }
+
+  // ▼ のし表示
+  const noshiBox = document.getElementById('kdkNoshi');
+  if (currentOrder.noshi) {
+    noshiBox.style.display = 'block';
+    document.getElementById('kdkNoshiKind').textContent = '🎁 ' + currentOrder.noshi;
+    document.getElementById('kdkNoshiName').textContent = currentOrder.noshiName || '（名入れなし）';
+    document.getElementById('kdkNoshiCb').checked = false;
+  } else {
+    noshiBox.style.display = 'none';
+  }
+
+  // ▼ リスト構築：instructions + koudoku
+  const list = document.getElementById('kdkList');
+  list.innerHTML = '';
+
+  // 同梱指示（補助マスタ／取込データなし）— のしを含む指示は除外
+  (currentOrder.instructions || []).forEach((txt, i) => {
+    if (isNoshiText(txt)) return;  // ★v0.7★ のし重複除外
+    const el = document.createElement('div');
+    el.className = 'kdk-row-light';
+    el.dataset.kind = 'instr';
+    el.dataset.idx = i;
+    el.dataset.checked = '0';
+    el.innerHTML = `
+      <div class="cb">✓</div>
+      <div style="flex:1;"><div class="ttl">${txt}</div></div>`;
+    el.onclick = () => toggleKdkRow(el);
+    list.appendChild(el);
+  });
+
+  // 同梱物（既存 koudoku／取込データあり）— のし関連は上部表示と重複するので除外
+  (currentOrder.koudoku || []).forEach((k, i) => {
+    if (isNoshiText(k.label)) return;  // ★v0.7★ のし重複除外
+    const el = document.createElement('div');
+    el.className = 'kdk-row-light' + (k.checked ? ' checked' : '');
+    el.dataset.kind = 'koudoku';
+    el.dataset.idx = i;
+    el.dataset.checked = k.checked ? '1' : '0';
+    el.innerHTML = `
+      <div class="cb">✓</div>
+      <div style="flex:1;"><div class="ttl">${k.label}</div></div>`;
+    el.onclick = () => toggleKdkRow(el);
+    list.appendChild(el);
+  });
+
+  // 空表示の場合
+  if (list.children.length === 0) {
+    list.innerHTML = '<div style="text-align:center; padding:14px; color:#64748b; font-size:12px;">同梱指示／同梱物 なし</div>';
+  }
+
+  updateKdkProgress();
+  // ★v0.11★ 推奨箱を算出して描画
+  renderBoxSuggestions();
+  document.getElementById('koudokuModal').classList.add('active');
+}
+
+// ★v0.12★ 推奨箱の描画（左ペイン用・コンパクト縦並び）
+let __selectedBoxCode = null;
+function renderBoxSuggestions() {
+  const list = document.getElementById('boxSuggestList');
+  const note = document.getElementById('boxSuggestNote');
+  if (!list || !currentOrder) return;
+  const codes = [];
+  currentOrder.items.forEach(it => { for (let k = 0; k < it.qty; k++) codes.push(it.code); });
+  const candidates = suggestBoxes(codes, {
+    frozen: !!currentOrder.frozen,
+    noshi:  !!currentOrder.noshi,
+  });
+  if (candidates.length === 0) {
+    list.innerHTML = '<div style="font-size:10px; color:#fca5a5; padding:6px; line-height:1.4;">⚠ 該当箱なし<br>手動選定してください</div>';
+    if (note) note.textContent = '0';
+    __selectedBoxCode = null;
+    return;
+  }
+  __selectedBoxCode = candidates[0].box.code;
+  list.innerHTML = candidates.map((cand, i) => {
+    const b = cand.box;
+    const innerVol = boxInnerVolume(b);
+    const usedVol = cand.usedVol || 0;
+    const fillPct = innerVol > 0 ? Math.min(100, Math.round(usedVol / innerVol * 100)) : 0;
+    const isPrimary = i === 0;
+    const reasonCls = cand.kind === 'fixed' ? 'box-fixed' : (cand.kind === 'extension' ? 'box-ext' : 'box-var');
+    const reasonShort = cand.kind === 'fixed' ? '固定' : (cand.kind === 'extension' ? '拡張' : '可変');
+    return '<div class="box-cand-mini' + (isPrimary ? ' primary' : '') + '" data-code="' + b.code + '" onclick="selectBox(\'' + b.code + '\')">'
+      + '<div class="box-cand-mini-row1">'
+      +   (isPrimary ? '<span class="box-cand-mini-tag">★</span>' : '<span class="box-cand-mini-tag dim">候補</span>')
+      +   '<span class="box-cand-mini-name">' + b.name + '</span>'
+      + '</div>'
+      + '<div class="box-cand-mini-row2">'
+      +   '<span class="box-pill-mini ' + reasonCls + '">' + reasonShort + '</span>'
+      +   '<span class="box-pill-mini rank">' + b.sizeRank + '</span>'
+      +   (b.frozen ? '<span class="box-pill-mini frozen">❄</span>' : '')
+      +   (b.noshi ? '<span class="box-pill-mini noshi">🎁</span>' : '')
+      +   '<span class="box-cand-mini-code">' + b.code + '</span>'
+      + '</div>'
+      + ((cand.kind === 'variable' || cand.kind === 'extension') ?
+          '<div class="box-cand-mini-fill">'
+          + '<div class="box-cand-mini-bar"><div class="box-cand-mini-bar-in" style="width:' + fillPct + '%"></div></div>'
+          + '<div class="box-cand-mini-fill-txt">充填 ' + fillPct + '%</div>'
+          + '</div>'
+        : '')
+      + '</div>';
+  }).join('');
+  if (note) note.textContent = candidates.length + ' 候補';
+}
+function selectBox(code) {
+  __selectedBoxCode = code;
+  document.querySelectorAll('.box-cand-mini').forEach(el => {
+    el.classList.toggle('primary', el.dataset.code === code);
+  });
+  console.log('[監査ログ] 推奨箱 選択 PK=' + (currentOrder ? currentOrder.pkNo : '') + ' 箱=' + code);
+}
+
+// ★v0.7★ のし関連テキスト判定（重複除外用）
+function isNoshiText(txt) {
+  if (!txt) return false;
+  return /熨斗|のし|台紙/.test(txt);
+}
+
+function toggleKdkRow(el) {
+  const checked = el.dataset.checked === '1';
+  el.dataset.checked = checked ? '0' : '1';
+  if (!checked) {
+    el.classList.add('checked');
+    if (el.dataset.kind === 'koudoku') currentOrder.koudoku[parseInt(el.dataset.idx)].checked = true;
+  } else {
+    el.classList.remove('checked');
+    if (el.dataset.kind === 'koudoku') currentOrder.koudoku[parseInt(el.dataset.idx)].checked = false;
+  }
+  updateKdkProgress();
+}
+
+function updateKdkProgress() {
+  const list = document.getElementById('kdkList');
+  const rows = Array.from(list.querySelectorAll('[data-kind]'));
+  let total = rows.length;
+  let done = rows.filter(r => r.dataset.checked === '1').length;
+  // のし
+  const noshiBox = document.getElementById('kdkNoshi');
+  let noshiNeeded = noshiBox.style.display !== 'none';
+  if (noshiNeeded) {
+    total += 1;
+    if (document.getElementById('kdkNoshiCb').checked) done += 1;
+  }
+  document.getElementById('kdkCheckedN').textContent = done;
+  document.getElementById('kdkTotalN').textContent = total;
+  document.getElementById('kdkFill').style.width = (total ? Math.round(done/total*100) : 100) + '%';
+
+  // ★v0.15★ サンドイッチ方式：全☑後にスキャンボタンを脈動状態へ
+  const ready = (done >= total);
+  const scanBtn = document.getElementById('kdkScanInvoiceBtn');
+  if (scanBtn) {
+    if (ready) {
+      scanBtn.disabled = false;
+      scanBtn.classList.remove('scan-cta-disabled');
+      scanBtn.classList.add('scan-cta-emphasis');
+    } else {
+      scanBtn.disabled = true;
+      scanBtn.classList.remove('scan-cta-emphasis');
+      scanBtn.classList.add('scan-cta-disabled');
+    }
+  }
+}
+
+function closeKoudokuModal() {
+  document.getElementById('koudokuModal').classList.remove('active');
+}
+
+// ★v0.14★ 納品書バーコードスキャン → 自動完了（サンドイッチ方式）
+function simulateInvoiceScan() {
+  const scanBtn = document.getElementById('kdkScanInvoiceBtn');
+  if (scanBtn && scanBtn.disabled) {
+    alert('同梱物の確認が完了していません。すべて☑してから納品書をスキャンしてください。');
+    return;
+  }
+  if (!currentOrder) return;
+  flash('invoice');
+  showInvoiceScannedToast(currentOrder.invoice);
+  setTimeout(() => {
+    closeKoudokuModal();
+    proceedToComplete();
+  }, 500);
+}
+
+// ★v0.14★ 納品書スキャン後のフィードバック（"✓ 梱包完了" を画面前面に瞬時表示）
+function showInvoiceScannedToast(invoiceNo) {
+  let toast = document.getElementById('__invoiceScanToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = '__invoiceScanToast';
+    toast.style.cssText = 'position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); '
+      + 'background:linear-gradient(135deg,#10b981,#34d399); color:white; padding:24px 36px; '
+      + 'border-radius:16px; font-size:22px; font-weight:bold; box-shadow:0 16px 40px rgba(16,185,129,0.45); '
+      + 'z-index:9999; text-align:center; pointer-events:none; opacity:0; transition:opacity 0.2s;';
+    document.body.appendChild(toast);
+  }
+  toast.innerHTML = '✓ 梱包完了<br>'
+    + '<span style="font-size:13px; font-weight:normal; opacity:0.9;">納品書 ' + (invoiceNo || '') + ' をスキャンしました</span>';
+  toast.style.opacity = '1';
+  setTimeout(() => { toast.style.opacity = '0'; }, 1400);
+}
+
+// ★v0.14★ 旧仕様の互換用（一括検品など他経路から呼ばれる）
+function finishKoudokuConfirm() {
+  closeKoudokuModal();
+  proceedToComplete();
+}
+
+function proceedToComplete() {
+  flash('invoice');
+  updateFlowSteps(4);
+  // 印刷判定
+  const needPrint = currentOrder.special || manualPrintFlag;
+  if (needPrint) {
+    setTimeout(()=>openPrintModal(), 400);
+  } else {
+    setTimeout(()=>toComplete(false), 400);
+  }
+}
+
+function openPrintModal() {
+  const o = currentOrder;
+  document.getElementById('pmQrText').textContent = o.pkNo;
+  document.getElementById('pmPkNo').textContent   = o.pkNo;
+  document.getElementById('pmName').textContent   = o.name;
+  document.getElementById('pmZip').textContent    = '〒 ' + o.zip;
+  document.getElementById('pmCarrier').textContent = o.carrier;
+  document.getElementById('pmTemp').textContent   = o.frozen ? '❄ 冷凍' : '常温';
+  const specs = [];
+  if (o.noshi) specs.push(`熨斗: ${o.noshi}`);
+  if (o.deliveryDate) specs.push(`配達指定: ${o.deliveryDate}`);
+  if (o.koudoku.length) specs.push(`同梱${o.koudoku.length}点`);
+  document.getElementById('pmSpecial').textContent = specs.length ? specs.join(' / ') : '―';
+  document.getElementById('printModal').classList.add('active');
+}
+
+function doPrint() {
+  document.getElementById('printModal').classList.remove('active');
+  toComplete(true);
+}
+function skipPrint() {
+  document.getElementById('printModal').classList.remove('active');
+  toComplete(false);
+}
+
+function toComplete(printed) {
+  const cnt = scanned.reduce((a,b)=>a+b,0);
+  // v0.6: 完了済みレジストリへ追加（再スキャン検出に使用）
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const doneAt = `${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  COMPLETED[currentOrder.invoice] = {
+    pkNo: currentOrder.pkNo,
+    invoice: currentOrder.invoice,
+    name: currentOrder.name,
+    doneAt: doneAt,
+    doneBy: '山田 花子（T-03）',
+    qty: cnt,
+    printed: !!printed,
+    boxCode: __selectedBoxCode  // ★v0.11★ 使用した箱
+  };
+  console.log(`[監査ログ] 検品完了 伝票=${currentOrder.pkNo} 納品書=${currentOrder.invoice} 数量=${cnt} 箱=${__selectedBoxCode} 印刷=${printed} 時刻=${now.toISOString()}`);
+  document.getElementById('completeSummary').textContent = `伝票 ${currentOrder.pkNo} を ${cnt}点 で完了しました`;
+  const extras = [];
+  // ★v0.11★ 使用した箱を表示
+  if (__selectedBoxCode) {
+    const usedBox = MST_BOX.find(b => b.code === __selectedBoxCode);
+    if (usedBox) extras.push('📦 ' + usedBox.name + '（' + usedBox.code + '）');
+  }
+  if (printed) extras.push('🖨 QRラベル印刷済（SATO CT4-LX）');
+  if (stickyForce) extras.push('⚠ 強制検品モード（Sticky）実行中');
+  document.getElementById('completeExtra').textContent = extras.join('　');
+  showScreen('complete');
+  // 3秒後に自動で待機へ
+  setTimeout(()=>{ if (screenState==='complete') backToIdle(); }, 3500);
+}
+
+
+// ★v0.10★ 保留中伝票 ポップアップ
+function showHeldPopup(rec, orderIdx) {
+  pendingHeld = { rec: rec, orderIdx: orderIdx };
+  document.getElementById('hpkPkNo').textContent      = rec.orderSnapshot.pkNo;
+  document.getElementById('hpkInvoice').textContent   = rec.orderSnapshot.invoice;
+  document.getElementById('hpkName').textContent      = rec.orderSnapshot.name;
+  document.getElementById('hpkHeldAt').textContent    = rec.heldAt;
+  document.getElementById('hpkHeldBy').textContent    = rec.heldBy;
+  // 検品状況
+  let totalQ = 0, doneQ = 0;
+  rec.orderSnapshot.items.forEach((it, i) => {
+    totalQ += it.qty;
+    doneQ += Math.min(rec.scanned[i] || 0, it.qty);
+  });
+  document.getElementById('hpkScanProg').textContent  = `${doneQ} / ${totalQ} 点 ${doneQ>=totalQ?'(完了)':'(残'+(totalQ-doneQ)+'点)'}`;
+  // 種別
+  const kindLabel = rec.kind === 'contact'
+    ? `📢 本部連絡（${rec.contactCatLabel || '分類'}）${rec.contactBody?'：'+rec.contactBody:''}`
+    : '⏸ 検品保留';
+  document.getElementById('hpkKind').textContent = kindLabel;
+  document.getElementById('heldModal').classList.add('active');
+  flash('invoice');
+}
+
+// 続きから検品：保留時の状態を復元して検品画面へ
+function resumeHeldOrder() {
+  if (!pendingHeld) return;
+  const rec = pendingHeld.rec;
+  const idx = pendingHeld.orderIdx;
+  console.log(`[監査ログ] 検品再開（保留復元） 納品書=${rec.orderSnapshot.invoice} 元保留=${rec.heldAt}`);
+  // currentOrder を保留時のスナップショットから復元
+  currentOrder = JSON.parse(JSON.stringify(rec.orderSnapshot));
+  scanned = rec.scanned.slice();
+  // 保留レジストリから削除
+  delete HELD_ORDERS[rec.orderSnapshot.invoice];
+  document.getElementById('heldModal').classList.remove('active');
+  pendingHeld = null;
+  // 画面構築（loadOrder 内の表示処理を踏襲）
+  manualPrintFlag = false;
+  itemsAllScanned = false;
+  updatePrintFlagUI();
+  document.getElementById('hTable').textContent = currentOrder.table;
+  document.getElementById('pkNo').textContent = currentOrder.pkNo;
+  document.getElementById('kShipDate').textContent = currentOrder.shipDate;
+  document.getElementById('kCarrier').innerHTML = `<span class="badge ${currentOrder.carrierBadge}">${currentOrder.carrier}</span>`;
+  document.getElementById('kInvoice').textContent = currentOrder.invoice;
+  const showNoshi = !!currentOrder.noshi;
+  document.getElementById('rowNoshi').style.display = showNoshi ? 'flex' : 'none';
+  if (showNoshi) document.getElementById('kNoshi').textContent = `${currentOrder.noshi}／${currentOrder.noshiName||''}`;
+  document.getElementById('sZip').textContent = '〒 ' + currentOrder.zip;
+  document.getElementById('sAddr').textContent = currentOrder.addr;
+  document.getElementById('sName').textContent = currentOrder.name;
+  const ab = document.getElementById('alertBar');
+  ab.classList.remove('frozen','special');
+  if (currentOrder.special) ab.classList.add('special');
+  else if (currentOrder.frozen) ab.classList.add('frozen');
+  document.getElementById('alNoshi').style.display   = showNoshi ? 'inline' : 'none';
+  document.getElementById('alFrozen').style.display  = currentOrder.frozen ? 'inline' : 'none';
+  document.getElementById('alCorp').style.display    = currentOrder.corp ? 'inline' : 'none';
+  document.getElementById('alSpecial').style.display = currentOrder.special ? 'inline' : 'none';
+  const hasDate = !!currentOrder.deliveryDate;
+  document.getElementById('alDate').style.display    = hasDate ? 'inline' : 'none';
+  if (hasDate) document.getElementById('alDateVal').textContent = currentOrder.deliveryDate;
+  const kn = currentOrder.koudoku.length;
+  document.getElementById('alKoudoku').style.display = kn ? 'inline' : 'none';
+  document.getElementById('alKoudokuN').textContent = kn;
+  renderItems();
+  renderKoudoku();
+  updateFlowSteps(2);
+  showScreen('inspect');
+  alert(`▶ 保留中の検品を再開しました。\n\nスキャン済み: ${scanned.reduce((a,b)=>a+b,0)}点\n（保留時に☑した同梱物の状態も復元されました）`);
+}
+
+// 最初から検品（保留状態を破棄）
+function restartHeldOrder() {
+  if (!pendingHeld) return;
+  if (!confirm('保留中の検品状態を破棄して、最初から検品を開始します。\nよろしいですか？')) return;
+  const rec = pendingHeld.rec;
+  const idx = pendingHeld.orderIdx;
+  console.log(`[監査ログ] 検品最初から（保留破棄） 納品書=${rec.orderSnapshot.invoice}`);
+  delete HELD_ORDERS[rec.orderSnapshot.invoice];
+  document.getElementById('heldModal').classList.remove('active');
+  pendingHeld = null;
+  // 通常の loadOrder（保留なし状態）
+  loadOrder(idx);
+}
+
+function cancelHeldPopup() {
+  document.getElementById('heldModal').classList.remove('active');
+  pendingHeld = null;
+}
+
+// v0.6: 検品済み伝票 再読込ポップアップ
+function showCompletedPopup(rec, orderIdx) {
+  pendingCompleted = { rec: rec, orderIdx: orderIdx };
+  document.getElementById('cpdPkNo').textContent = rec.pkNo;
+  document.getElementById('cpdInvoice').textContent = rec.invoice;
+  document.getElementById('cpdName').textContent = rec.name;
+  document.getElementById('cpdDoneAt').textContent = rec.doneAt;
+  document.getElementById('cpdDoneBy').textContent = rec.doneBy;
+  document.getElementById('cpdQty').textContent = rec.qty + ' 点' + (rec.printed ? '（印刷済）' : '');
+  document.getElementById('completedModal').classList.add('active');
+  flash('invoice');
+}
+function confirmCompleted() {
+  document.getElementById('completedModal').classList.remove('active');
+  pendingCompleted = null;
+  // 待機画面へ戻す
+  if (screenState !== 'inspect') backToIdle();
+}
+function reopenCompletedOrder() {
+  if (!pendingCompleted) return;
+  if (!confirm('検品戻しを実行します。よろしいですか？\n（完了状態を解除し、再検品可能にします。操作はログに記録されます）')) return;
+  const inv = pendingCompleted.rec.invoice;
+  console.log(`[監査ログ] 検品戻し（再検品）実行 納品書=${inv} 元完了時刻=${pendingCompleted.rec.doneAt} 操作者=山田花子 時刻=${new Date().toISOString()}`);
+  delete COMPLETED[inv];
+  document.getElementById('completedModal').classList.remove('active');
+  // 該当伝票を再ロード
+  const idx = pendingCompleted.orderIdx;
+  pendingCompleted = null;
+  loadOrder(idx);
+}
+
+// v0.6 デモ: 検品済み伝票の再スキャン
+
+// ★v0.10★ 保留中伝票の再スキャン デモ
+function simulateScanHeld() {
+  let invKeys = Object.keys(HELD_ORDERS);
+  if (invKeys.length === 0) {
+    // ダミー保留レコード作成（ORDERS[1] を50%スキャン済みで保留扱いに）
+    const o = ORDERS[1];
+    const halfScanned = o.items.map(it => Math.floor(it.qty / 2));
+    const orderSnap = JSON.parse(JSON.stringify(o));
+    if (orderSnap.koudoku && orderSnap.koudoku.length > 0) orderSnap.koudoku[0].checked = true;
+    HELD_ORDERS[o.invoice] = {
+      orderIdx: 1,
+      orderSnapshot: orderSnap,
+      scanned: halfScanned,
+      heldAt: '2026/04/23 13:25:42',
+      heldBy: '前任者・池田 玲奈（T-01）',
+      kind: 'contact',
+      contactCat: 'noshi',
+      contactCatLabel: '🎁 のし',
+      contactBody: 'のし台紙が破損。代替品の確認待ち。',
+    };
+    invKeys = [o.invoice];
+  }
+  const inv = invKeys[Math.floor(Math.random()*invKeys.length)];
+  const rec = HELD_ORDERS[inv];
+  const idx = ORDERS.findIndex(o => o.invoice === inv);
+  showHeldPopup(rec, idx);
+}
+
+function simulateScanCompleted() {
+  // 完了済が無ければ、case0 を一度完了したことにしてから呼び出す
+  let invKeys = Object.keys(COMPLETED);
+  if (invKeys.length === 0) {
+    // ダミー完了レコード
+    COMPLETED[ORDERS[0].invoice] = {
+      pkNo: ORDERS[0].pkNo,
+      invoice: ORDERS[0].invoice,
+      name: ORDERS[0].name,
+      doneAt: '2026/04/22 09:42:18',
+      doneBy: '田中 結衣（T-01）',
+      qty: ORDERS[0].items.reduce((a,b)=>a+b.qty, 0),
+      printed: false
+    };
+    invKeys = [ORDERS[0].invoice];
+  }
+  // ランダムに1件選択
+  const inv = invKeys[Math.floor(Math.random()*invKeys.length)];
+  const rec = COMPLETED[inv];
+  const idx = ORDERS.findIndex(o => o.invoice === inv);
+  showCompletedPopup(rec, idx);
+}
+
+// ★v0.9★ F5 伝票保留：選択モーダル展開
+function holdOrder() {
+  if (!currentOrder) return;
+  document.getElementById('holdMenuModal').classList.add('active');
+}
+// ★v0.10★ 検品保留：スキャン状態を保持
+function holdSubmitInspection() {
+  if (!currentOrder) { closeHoldMenu(); return; }
+  const inv = currentOrder.invoice;
+  const scannedSnap = scanned.slice();
+  const orderSnap = JSON.parse(JSON.stringify(currentOrder));  // koudoku.checked / 編集済み内容も保存
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const heldAt = `${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const orderIdx = ORDERS.findIndex(o => o.invoice === inv);
+  HELD_ORDERS[inv] = {
+    orderIdx: orderIdx,
+    orderSnapshot: orderSnap,
+    scanned: scannedSnap,
+    heldAt: heldAt,
+    heldBy: '山田 花子（T-03）',
+    kind: 'inspection',
+    contactCat: null,
+    contactBody: '',
+  };
+  console.log(`[監査ログ] 検品保留（状態保持） PK=${currentOrder.pkNo} 納品書=${inv} スキャン済み=${scannedSnap.reduce((a,b)=>a+b,0)}点`);
+  closeHoldMenu();
+  alert(`⏸ 検品保留しました（スキャン状態は保持）\n\n伝票: ${currentOrder.pkNo}\nスキャン済み: ${scannedSnap.reduce((a,b)=>a+b,0)}点\n\n同じピッキング№を再度スキャンすると「続きから検品」できます。`);
+  backToIdle();
+}
+// 本部連絡：分類選択へ
+function holdGoToContact() {
+  document.getElementById('holdMenuModal').classList.remove('active');
+  document.getElementById('holdCategory').textContent = '';
+  document.getElementById('holdContactBody').value = '';
+  document.querySelectorAll('#holdCatBtns .cat-btn').forEach(b => b.classList.remove('on'));
+  document.getElementById('holdSendBtn').disabled = true;
+  document.getElementById('holdContactModal').classList.add('active');
+}
+function holdSelectCategory(btn, code, label) {
+  document.querySelectorAll('#holdCatBtns .cat-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById('holdCategory').textContent = label;
+  document.getElementById('holdSelectedCat').value = code;
+  document.getElementById('holdSendBtn').disabled = false;
+}
+function holdSendContact() {
+  const cat = document.getElementById('holdSelectedCat').value;
+  const catLabel = document.getElementById('holdCategory').textContent;
+  const body = document.getElementById('holdContactBody').value.trim();
+  if (!cat) { alert('分類を選択してください'); return; }
+  if (!currentOrder) { closeHoldMenu(); return; }
+  // 連絡データを管理PCへ送信（モック）
+  const payload = {
+    id: 'TC-' + Date.now(),
+    from: '山田 花子（T-03）',
+    pkNo: currentOrder.pkNo,
+    invoice: currentOrder.invoice,
+    category: cat,
+    categoryLabel: catLabel,
+    body: body,
+    sentAt: new Date().toISOString(),
+    read: false,
+  };
+  console.log(`[監査ログ] 本部連絡送信`, payload);
+  // ★v0.10★ 本部連絡も保留扱いとして状態保持（指示待ち中も検品済み数量を維持）
+  const inv = currentOrder.invoice;
+  const scannedSnap = scanned.slice();
+  const orderSnap = JSON.parse(JSON.stringify(currentOrder));
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const heldAt = `${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const orderIdx = ORDERS.findIndex(o => o.invoice === inv);
+  HELD_ORDERS[inv] = {
+    orderIdx: orderIdx,
+    orderSnapshot: orderSnap,
+    scanned: scannedSnap,
+    heldAt: heldAt,
+    heldBy: '山田 花子（T-03）',
+    kind: 'contact',
+    contactCat: cat,
+    contactCatLabel: catLabel,
+    contactBody: body,
+  };
+  closeHoldMenu();
+  alert(`📢 本部連絡を送信しました（検品状態は保持）\n\n分類: ${catLabel}\n伝票: ${currentOrder.pkNo}\n${body?'内容: '+body+'\n':''}\n※ 管理PCの「連絡」タブにバッジ通知\n※ 同じピッキング№を再度スキャンで「続きから検品」可能`);
+  backToIdle();
+}
+function closeHoldMenu() {
+  document.getElementById('holdMenuModal').classList.remove('active');
+  document.getElementById('holdContactModal').classList.remove('active');
+}
+
+function backToIdle() {
+  currentOrder = null;
+  __selectedBoxCode = null;
+  __autoExpandedThisLoad = false;
+  showScreen('idle');
+}
+
+// 印刷フラグ
+function togglePrintFlag() {
+  manualPrintFlag = !manualPrintFlag;
+  updatePrintFlagUI();
+}
+function updatePrintFlagUI() {
+  const box = document.getElementById('printFlagBox');
+  const cb  = document.getElementById('printFlagCb');
+  const sub = document.getElementById('printFlagSub');
+  box.classList.toggle('on', manualPrintFlag);
+  cb.textContent = manualPrintFlag ? '✓' : '';
+  sub.textContent = manualPrintFlag
+    ? 'ON（納品書スキャン後に印刷確認が表示されます）'
+    : 'OFF（印刷なしで完了）';
+}
+
+// 強制OK
+function openForceOK() {
+  if (!currentOrder) return;
+  document.getElementById('forceModal').classList.add('active');
+  document.querySelectorAll('.reason-btn').forEach(b=>b.classList.remove('selected'));
+  selectedReason = null; selectedReasonLabel = null;
+  document.getElementById('forceOKApply').disabled = true;
+  document.getElementById('stickyCb').checked = stickyForce || true;
+}
+function closeForceOK() {
+  document.getElementById('forceModal').classList.remove('active');
+}
+function selectReason(btn, code, label) {
+  document.querySelectorAll('.reason-btn').forEach(b=>b.classList.remove('selected'));
+  btn.classList.add('selected');
+  selectedReason = code;
+  selectedReasonLabel = label;
+  document.getElementById('forceOKApply').disabled = false;
+}
+function applyForceOK() {
+  const sticky = document.getElementById('stickyCb').checked;
+  scanned = currentOrder.items.map(it=>it.qty);
+  renderItems();
+  closeForceOK();
+  flash('ok');
+  console.log(`[監査ログ] 強制OK 理由=${selectedReason}(${selectedReasonLabel}) 伝票=${currentOrder.pkNo} 作業者=山田花子 時刻=${new Date().toISOString()} sticky=${sticky}`);
+  if (sticky) {
+    stickyForce = true;
+    stickyForceReason = selectedReasonLabel;
+    showStickyBanner();
+  }
+}
+
+function showStickyBanner() {
+  const b = document.getElementById('forceBanner');
+  document.getElementById('forceReasonLabel').textContent = stickyForceReason;
+  if (stickyForce) b.classList.add('show'); else b.classList.remove('show');
+}
+
+function releaseForce() {
+  if (!confirm('強制検品モードを解除しますか？\n以降の伝票は通常検品となります。')) return;
+  stickyForce = false;
+  stickyForceReason = null;
+  console.log(`[監査ログ] 強制検品モード解除 作業者=山田花子 時刻=${new Date().toISOString()}`);
+  showStickyBanner();
+}
+
+// QR再発行（待機画面・バーコードスキャンで対象確定）
+let reprintTarget = null;
+function openQRReprint() {
+  reprintTarget = null;
+  document.getElementById('reprintWait').style.display = 'block';
+  document.getElementById('reprintConfirm').style.display = 'none';
+  document.getElementById('reprintDoBtn').disabled = true;
+  document.getElementById('reprintModal').classList.add('active');
+}
+function closeReprint() {
+  document.getElementById('reprintModal').classList.remove('active');
+  reprintTarget = null;
+}
+function simulateReprintScan() {
+  // ランダムに完了済ダミー伝票を1件選ぶ
+  const pool = [
+    { pk:'SC01208830001', name:'佐藤 友子',           zip:'680-041', carrier:'ヤマト運輸' },
+    { pk:'SI01208830033', name:'池田 敏之・節子',     zip:'680-041', carrier:'ゆうパック' },
+    { pk:'SV01208830045', name:'アイブリッジ株式会社', zip:'244-0812', carrier:'ヤマト運輸' },
+    { pk:'SO01208830032', name:'株式会社サンプル商事', zip:'135-0063', carrier:'ゆうパック' },
+  ];
+  reprintTarget = pool[Math.floor(Math.random()*pool.length)];
+  document.getElementById('reprintWait').style.display = 'none';
+  document.getElementById('reprintConfirm').style.display = 'block';
+  document.getElementById('reprintPkNo').textContent = reprintTarget.pk;
+  document.getElementById('reprintInfo').textContent = `${reprintTarget.name} ／ 〒${reprintTarget.zip} ／ ${reprintTarget.carrier}`;
+  document.getElementById('reprintDoBtn').disabled = false;
+  flash('invoice');
+}
+function doReprint() {
+  if (!reprintTarget) return;
+  const pk = reprintTarget.pk;
+  closeReprint();
+  alert(`QRラベルを再発行しました。\n対象：${pk}\nプリンタ SATO CT4-LX に出力しています。`);
+  console.log(`[監査ログ] QRラベル再発行 対象=${pk} 作業者=山田花子 時刻=${new Date().toISOString()}`);
+}
+
+// ハードキー
+document.addEventListener('keydown', e=>{
+  if (e.key === 'F1') { e.preventDefault(); simulateScanProduct(); }
+  if (e.key === 'F2') { e.preventDefault(); openForceOK(); }
+  if (e.key === 'F3') { e.preventDefault(); toggleNextKoudoku(); }
+  if (e.key === 'F4') { e.preventDefault(); skipAndFinish(); }
+  if (e.key === 'F5') { e.preventDefault(); holdOrder(); }
+  if (e.key === 'Escape') {
+    if (document.getElementById('forceModal').classList.contains('active')) closeForceOK();
+    else if (document.getElementById('printModal').classList.contains('active')) skipPrint();
+    else if (document.getElementById('reprintModal').classList.contains('active')) closeReprint();
+    else if (document.getElementById('noticeModal').classList.contains('active')) { /* 連絡事項は ESC で閉じない */ }
+    else backToIdle();
+  }
+});
+
+showScreen('idle');
+// 端末起動時に連絡事項ポップアップを表示
+openNotices();
+// ===== 縦表示トグル =====
+let _portrait = false;
+function toggleOrientation() {
+  _portrait = !_portrait;
+  const tab = document.querySelector('.tablet');
+  const icon = document.getElementById('orientIcon');
+  const lbl  = document.getElementById('orientLabel');
+  if (_portrait) {
+    tab.classList.add('portrait');
+    // 横アイコン（画面を90度回転させたタブレット）
+    icon.innerHTML = '<rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="15" x2="22" y2="15"/>';
+    lbl.textContent = '横';
+  } else {
+    tab.classList.remove('portrait');
+    icon.innerHTML = '<rect x="4" y="2" width="16" height="20" rx="2"/><line x1="4" y1="17" x2="20" y2="17"/>';
+    lbl.textContent = '縦';
+  }
+}
+
+</script>
+</body>
+</html>

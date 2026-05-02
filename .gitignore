@@ -34,3 +34,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# WMS — 本番用 Thomas CSV 取込ディレクトリ（実データを含むためコミットしない）
+/data/thomas_csv/
+
+# Prisma generated client
+/prisma/generated/

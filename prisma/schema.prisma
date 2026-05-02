@@ -1,0 +1,12 @@
+// Prisma schema for 大江ノ郷自然牧場 WMS
+// 詳細なテーブル定義は docs/DB設計書.md を参照
+// Phase 1 タスク 1-4 で全27テーブルを定義する（マスタ16 + トランザクション9 + システム2）
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

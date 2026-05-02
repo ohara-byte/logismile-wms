@@ -1,0 +1,2796 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1100, initial-scale=1">
+<title>LogiSmile ハンディ検品・梱包 モック v0.13</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: "Yu Gothic UI", "Yu Gothic", "Meiryo", sans-serif;
+    background: #0f172a;
+    color: #f8fafc;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; cursor: pointer; border: 0; }
+
+  /* ★v0.7★ 保留メニュー */
+  .hold-opt {
+    background: #0f172a; border: 2px solid #475569; border-radius: 8px;
+    padding: 12px 6px; cursor: pointer; transition: all 0.12s;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .hold-opt:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,0.4); }
+  .hold-opt .ic { font-size: 24px; line-height: 1; }
+  .hold-opt .ttl { font-size: 13px; font-weight: bold; color: #f1f5f9; }
+  .hold-opt .desc { font-size: 9px; color: #94a3b8; line-height: 1.3; text-align: center; }
+  .hold-opt.insp { border-color: #f59e0b; }
+  .hold-opt.insp:hover { background: #422006; }
+  .hold-opt.insp .ic { color: #fbbf24; }
+  .hold-opt.cont { border-color: #3b82f6; }
+  .hold-opt.cont:hover { background: #1e3a8a; }
+  .hold-opt.cont .ic { color: #93c5fd; }
+
+  #holdCatBtns .cat-btn {
+    background: #0f172a; color: #cbd5e1;
+    border: 2px solid #334155; border-radius: 6px;
+    padding: 10px 6px; cursor: pointer; transition: all 0.12s;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+  }
+  #holdCatBtns .cat-btn:hover { border-color: #fbbf24; background: #1c2332; }
+  #holdCatBtns .cat-btn.on { border-color: #fbbf24; background: #422006; color: #fbbf24; }
+  #holdCatBtns .cat-btn .ic { font-size: 22px; line-height: 1; }
+  #holdCatBtns .cat-btn .lbl { font-size: 11px; font-weight: bold; }
+
+
+  /* v0.4: 同梱物モーダル行 */
+  .kdk-row {
+    display: grid; grid-template-columns: 28px 1fr; gap: 8px;
+    align-items: center; padding: 8px 10px;
+    background: #1e293b; border-radius: 6px; margin-bottom: 5px;
+    cursor: pointer; transition: background 0.15s;
+    border-left: 4px solid #475569;
+  }
+  .kdk-row.instr { border-left-color: #f472b6; }
+  .kdk-row.kdk   { border-left-color: #10b981; }
+  .kdk-row.on    { background: #064e3b; }
+  .kdk-row .cb {
+    width: 22px; height: 22px;
+    border: 2px solid #475569; border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: bold; color: transparent;
+  }
+  .kdk-row.on .cb { background: #10b981; border-color: #10b981; color: #fff; }
+  .kdk-row .b .t  { font-size: 9px; color: #94a3b8; letter-spacing: 1px; }
+  .kdk-row.instr .b .t { color: #f472b6; }
+  .kdk-row.kdk   .b .t { color: #10b981; }
+  .kdk-row .b .m  { font-size: 12px; color: #f1f5f9; margin-top: 2px; line-height: 1.4; }
+
+
+  .stage {
+    max-width: 1100px;
+    margin: 20px auto;
+    padding: 0 20px 50px;
+    display: grid;
+    grid-template-columns: 540px 1fr;
+    gap: 30px;
+    align-items: start;
+  }
+
+  /* === BT-A500 端末フレーム（480x800） === */
+  .handheld-frame {
+    width: 540px;
+    background: #1e293b;
+    border-radius: 28px;
+    padding: 18px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    position: relative;
+  }
+  .frame-top {
+    text-align: center;
+    font-size: 11px;
+    color: #94a3b8;
+    padding: 4px 0 10px;
+    letter-spacing: 2px;
+  }
+  .frame-top .brand { color: #fbbf24; font-weight: bold; letter-spacing: 3px; }
+
+  /* 画面本体 480x800（縦） */
+  .screen {
+    width: 480px;
+    height: 800px;
+    margin: 0 auto;
+    background: #0b1220;
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    color: #f1f5f9;
+  }
+
+  /* ★v0.3★ ハード側の物理キー台（BT-A500実機レイアウトに準拠） */
+  .hw-zone {
+    margin-top: 14px;
+    padding: 14px;
+    background: #0f172a;
+    border-radius: 14px;
+    border: 1px solid #1e293b;
+  }
+  .hw-zone .hw-title {
+    color: #94a3b8;
+    font-size: 10px;
+    letter-spacing: 2px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .hw-zone .hw-title small { color: #fbbf24; font-size: 9px; letter-spacing: 1px; font-weight: normal; }
+
+  .hw-row { display: flex; gap: 6px; margin-bottom: 8px; }
+
+  /* 共通キー */
+  .hw-key, .dp, .num, .hw-side {
+    background: #334155;
+    color: #cbd5e1;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    user-select: none;
+    transition: transform 0.06s, background 0.1s;
+    text-align: center;
+    line-height: 1.2;
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.25);
+  }
+  .hw-key:hover, .dp:hover, .num:hover, .hw-side:hover {
+    background: #475569; color: white;
+  }
+  .hw-key.pressed, .dp.pressed, .num.pressed,
+  .hw-side.pressed, .hw-trigger.pressed {
+    background: #fbbf24 !important;
+    color: #422006 !important;
+    border-color: #fde047 !important;
+    transform: scale(0.92);
+    box-shadow: 0 0 8px rgba(251,191,36,0.7);
+  }
+
+  /* F1-F4 */
+  .hw-fkeys { gap: 6px; }
+  .hw-fkeys .hw-key {
+    flex: 1; padding: 10px 4px; font-size: 11px;
+  }
+  .hw-fkeys .hw-key small {
+    display: block; font-size: 8px; color: #94a3b8; margin-top: 2px; font-weight: normal;
+  }
+
+  /* 中段：D-pad + テンキー */
+  .hw-mid {
+    display: grid;
+    grid-template-columns: 156px 1fr;
+    gap: 12px;
+    align-items: start;
+    margin-bottom: 8px;
+  }
+
+  /* D-pad（5方向） */
+  .dpad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 3px;
+    width: 156px;
+    height: 156px;
+  }
+  .dp {
+    font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+  }
+  .dp-up    { grid-column: 2; grid-row: 1; border-radius: 50% 50% 8px 8px; }
+  .dp-left  { grid-column: 1; grid-row: 2; border-radius: 50% 8px 8px 50%; }
+  .dp-center{ grid-column: 2; grid-row: 2; border-radius: 50%; background: #1e3a8a; color: #dbeafe; font-size: 11px; }
+  .dp-right { grid-column: 3; grid-row: 2; border-radius: 8px 50% 50% 8px; }
+  .dp-down  { grid-column: 2; grid-row: 3; border-radius: 8px 8px 50% 50%; }
+  .dp-center:hover { background: #1e40af; color: white; }
+
+  /* テンキー 3x4 */
+  .numpad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+  }
+  .num {
+    padding: 10px 0;
+    font-size: 14px;
+    font-family: Consolas, monospace;
+  }
+  .num.util {
+    background: #1e293b; color: #93c5fd; font-size: 11px;
+  }
+
+  /* 側面・主トリガー行 */
+  .hw-trig-row {
+    align-items: stretch;
+    gap: 6px;
+  }
+  .hw-side {
+    width: 48px;
+    background: #78350f;
+    color: #fcd34d;
+    font-size: 10px;
+    padding: 6px 0;
+    border: 1px solid #facc15;
+    line-height: 1.1;
+  }
+  .hw-side small { display: block; font-size: 8px; margin-top: 2px; color: #fde68a; font-weight: normal; }
+  .hw-side:hover { background: #92400e; color: #fef3c7; }
+  .hw-trigger {
+    flex: 1;
+    background: #facc15;
+    color: #422006;
+    padding: 14px 0;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 13px;
+    text-align: center;
+    border: 1px solid #fbbf24;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(250,204,21,0.3), inset 0 -3px 0 rgba(133,77,14,0.4);
+    transition: transform 0.06s, background 0.1s;
+    user-select: none;
+  }
+  .hw-trigger:hover { background: #fbbf24; }
+  .hw-trigger:active { transform: translateY(1px); }
+
+  /* メタキー（ESC/TAB/VOL/PWR） */
+  .hw-meta .hw-key {
+    flex: 1; padding: 8px 4px; font-size: 10px;
+  }
+  .hw-meta .hw-key small {
+    display: block; font-size: 8px; color: #94a3b8; margin-top: 1px; font-weight: normal;
+  }
+
+  /* 入力フォーカス：D-pad で選択中の行 */
+  .scan-line.sel {
+    outline: 2px solid #60a5fa;
+    outline-offset: 1px;
+    box-shadow: 0 0 0 1px #60a5fa, 0 0 8px rgba(96,165,250,0.4);
+  }
+
+  /* キーマップ凡例（サイドパネル用） */
+  .keymap {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 4px 10px;
+    font-size: 11px;
+    margin-top: 6px;
+  }
+  .keymap .k {
+    font-family: Consolas, monospace;
+    background: #1e293b;
+    color: #fbbf24;
+    border: 1px solid #334155;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-align: center;
+    font-size: 10px;
+  }
+  .keymap .v { color: #cbd5e1; }
+
+  /* === ヘッダ === */
+  .h-bar {
+    height: 36px;
+    background: #1e293b;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    gap: 8px;
+    font-size: 11px;
+    color: #cbd5e1;
+    flex-shrink: 0;
+    border-bottom: 1px solid #1e3448;
+  }
+  .h-bar .tbl {
+    background: #334155;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+  }
+  .h-bar .tbl b { color: #fbbf24; font-size: 13px; }
+  .h-bar .spacer { flex: 1; }
+  .h-bar .sig { color: #10b981; font-size: 14px; }
+  .h-bar .battery { color: #94a3b8; font-family: Consolas, monospace; }
+  .h-bar .clock { color: #e2e8f0; font-variant-numeric: tabular-nums; }
+
+  .user-bar {
+    height: 26px;
+    background: #0f172a;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #94a3b8;
+    flex-shrink: 0;
+  }
+  .user-bar .avatar {
+    width: 18px; height: 18px;
+    background: #475569;
+    border-radius: 50%;
+    color: white; font-size: 9px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .user-bar .dev { color: #60a5fa; font-family: Consolas, monospace; }
+
+  /* Sticky 強制検品バナー */
+  .force-banner {
+    display: none;
+    background: linear-gradient(90deg, #ea580c, #c2410c);
+    color: white;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: bold;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .force-banner.show { display: flex; }
+  .force-banner .release-btn {
+    margin-left: auto;
+    background: rgba(255,255,255,0.25);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+  }
+
+  /* アラート帯 */
+  .alert-bar {
+    display: none;
+    background: #fef3c7;
+    color: #78350f;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: bold;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .alert-bar.show { display: flex; }
+  .alert-bar.frozen { background: #dbeafe; color: #1e3a8a; }
+  .alert-bar.special { background: #fce7f3; color: #831843; }
+
+  /* main */
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  /* ===== 待機画面 ===== */
+  .idle-screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+    position: relative;
+  }
+  .idle-screen .icon {
+    font-size: 90px;
+    color: #334155;
+    margin-bottom: 14px;
+  }
+  .idle-screen h1 { font-size: 18px; color: #f1f5f9; margin-bottom: 6px; }
+  .idle-screen p { color: #94a3b8; font-size: 12px; line-height: 1.6; }
+  .idle-screen .pulse {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: #fbbf24;
+    opacity: 0.6;
+    margin-bottom: 10px;
+    animation: pulse 1.4s infinite;
+  }
+  @keyframes pulse {
+    0% { transform: scale(0.8); opacity: 0.3; }
+    50% { transform: scale(1.2); opacity: 0.8; }
+    100% { transform: scale(0.8); opacity: 0.3; }
+  }
+  .idle-hint {
+    position: absolute;
+    bottom: 20px;
+    left: 20px; right: 20px;
+    background: #1e293b;
+    color: #94a3b8;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  .idle-hint b { color: #fbbf24; }
+
+  /* ===== 検品画面 ===== */
+  .inspect-screen {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .inspect-screen.show { display: flex; }
+
+  /* フロー進捗 */
+  .flow-steps {
+    display: flex;
+    gap: 3px;
+    padding: 6px 8px;
+    background: #0f172a;
+    border-bottom: 1px solid #1e293b;
+    flex-shrink: 0;
+  }
+  .flow-step {
+    flex: 1;
+    padding: 5px 4px;
+    background: #1e293b;
+    border-radius: 4px;
+    text-align: center;
+    font-size: 10px;
+    color: #64748b;
+    border: 1px solid #334155;
+  }
+  .flow-step.active { background: #422006; color: #fbbf24; border-color: #fbbf24; font-weight: bold; }
+  .flow-step.done { background: #064e3b; color: #6ee7b7; border-color: #10b981; }
+
+  .pk-bar {
+    background: #1e293b;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    border-bottom: 1px solid #334155;
+  }
+  .pk-bar .label { font-size: 9px; color: #94a3b8; letter-spacing: 1px; }
+  .pk-bar .val {
+    font-family: Consolas, monospace;
+    color: #fbbf24;
+    font-size: 14px;
+    font-weight: bold;
+  }
+
+  .addr-bar {
+    background: #0f172a;
+    padding: 6px 10px;
+    flex-shrink: 0;
+    border-bottom: 1px solid #1e293b;
+    font-size: 11px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .addr-bar .carrier-badge {
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: bold;
+    flex-shrink: 0;
+  }
+  .addr-bar .badge-jp { background: #dc2626; color: white; }
+  .addr-bar .badge-yamato { background: #000000; color: #fbbf24; }
+  .addr-bar .nm { color: #f1f5f9; font-weight: bold; font-size: 12px; }
+
+  /* 進捗チップ */
+  .progress-zone {
+    padding: 6px 10px;
+    background: #0b1220;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .progress-zone .title {
+    font-size: 12px;
+    font-weight: bold;
+    color: #f1f5f9;
+  }
+  .progress-zone .prog {
+    font-size: 20px;
+    font-weight: bold;
+    color: #fbbf24;
+    font-variant-numeric: tabular-nums;
+  }
+  .progress-zone .prog small { font-size: 11px; color: #94a3b8; margin: 0 3px; font-weight: normal; }
+
+  /* 商品リスト */
+  .scan-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 8px;
+    background: #0b1220;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .scan-line {
+    background: #1e293b;
+    border-radius: 6px;
+    padding: 8px 10px;
+    border-left: 4px solid #64748b;
+    transition: all 0.15s;
+  }
+  .scan-line.current {
+    background: #422006;
+    border-left-color: #fbbf24;
+    box-shadow: 0 0 0 1px #fbbf24;
+  }
+  .scan-line.done {
+    background: #064e3b;
+    border-left-color: #10b981;
+  }
+  .scan-line .pname {
+    font-size: 13px;
+    font-weight: bold;
+    margin-bottom: 3px;
+    color: #f1f5f9;
+  }
+  .scan-line .pcode {
+    font-size: 9px;
+    color: #94a3b8;
+    font-family: Consolas, monospace;
+    margin-bottom: 4px;
+  }
+  .scan-line.current .pcode { color: #fed7aa; }
+  .scan-line.done .pcode { color: #a7f3d0; }
+  .scan-line .bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .scan-line .qty {
+    font-size: 16px;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+  }
+  .scan-line .qty small { font-size: 11px; color: #94a3b8; margin: 0 3px; font-weight: normal; }
+  .scan-line.current .qty { color: #fbbf24; }
+  .scan-line.done .qty { color: #6ee7b7; }
+  .scan-line .row-actions {
+    display: flex;
+    gap: 4px;
+  }
+  .scan-line .row-btn {
+    background: #334155;
+    color: #cbd5e1;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+  }
+  .scan-line .row-btn.qty { background: #4338ca; color: white; }
+  .scan-line.done .row-btn { display: none; }
+
+  /* フッタ（アクションボタン） */
+  footer {
+    height: 62px;
+    display: flex;
+    gap: 4px;
+    padding: 6px;
+    background: #0f172a;
+    flex-shrink: 0;
+    border-top: 1px solid #1e293b;
+  }
+  .fb {
+    flex: 1;
+    border-radius: 6px;
+    color: white;
+    font-size: 11px;
+    font-weight: bold;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    padding: 4px 2px;
+    transition: all 0.1s;
+  }
+  .fb .ico { font-size: 16px; }
+  .fb { white-space: nowrap; }
+  .fb .kb { font-size: 8px; color: rgba(255,255,255,0.8); font-weight: normal; }
+  .fb:active { transform: scale(0.96); }
+  .fb:disabled { opacity: 0.4; }
+  .fb-primary { background: #2563eb; }
+  .fb-success { background: #059669; }
+  .fb-warning { background: #ea580c; }
+  .fb-danger { background: #dc2626; }
+  .fb-neutral { background: #475569; }
+  .fb.highlight { animation: hilite 1.2s infinite; }
+  @keyframes hilite {
+    0%,100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.7); }
+    50% { box-shadow: 0 0 0 6px rgba(251,191,36,0); }
+  }
+
+  /* 同梱物行（検品後フェーズで下部に出す） */
+  .koudoku-strip {
+    background: #1e293b;
+    padding: 6px 10px;
+    flex-shrink: 0;
+    border-top: 1px solid #334155;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+  .koudoku-strip .k-title {
+    font-size: 9px;
+    color: #94a3b8;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .koudoku-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    background: #0f172a;
+    border-radius: 4px;
+    margin-bottom: 3px;
+    font-size: 11px;
+  }
+  .koudoku-item.checked {
+    background: #064e3b;
+    color: #d1fae5;
+  }
+  .koudoku-item .cb {
+    width: 14px; height: 14px;
+    border: 1.5px solid #475569;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: transparent;
+    flex-shrink: 0;
+  }
+  .koudoku-item.checked .cb {
+    background: #10b981; border-color: #10b981; color: white;
+  }
+
+  /* 完了画面 */
+  .complete-screen {
+    flex: 1;
+    background: linear-gradient(135deg, #065f46, #047857);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+  }
+  .complete-screen.show { display: flex; }
+  .complete-screen .big-check { font-size: 80px; color: white; margin-bottom: 6px; }
+  .complete-screen h1 { font-size: 22px; color: white; margin-bottom: 8px; }
+  .complete-screen p { font-size: 11px; color: #d1fae5; line-height: 1.6; }
+
+  /* フラッシュ */
+  .scan-flash {
+    position: absolute;
+    inset: 0;
+    background: rgba(16,185,129,0.25);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 40;
+  }
+  .scan-flash.ng { background: rgba(220,38,38,0.35); }
+  .scan-flash.invoice { background: rgba(59,130,246,0.35); }
+  .scan-flash.show { animation: flash 0.35s; }
+  @keyframes flash {
+    0% { opacity: 0; }
+    40% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  /* === モーダル共通 === */
+  .modal-bd {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    z-index: 60;
+    padding: 20px 10px;
+    overflow-y: auto;
+  }
+  .modal-bd.active { display: flex; }
+  .modal {
+    background: #1e293b;
+    border-radius: 10px;
+    padding: 14px;
+    width: 100%;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+
+  /* 連絡事項モーダル */
+  .notice-m h2 { color: #fbbf24; font-size: 16px; margin-bottom: 4px; }
+  .notice-m .sub { color: #94a3b8; font-size: 10px; margin-bottom: 8px; }
+  .notice-progress {
+    background: #0f172a;
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 10px;
+    color: #cbd5e1;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .notice-progress .bar { flex: 1; height: 5px; background: #334155; border-radius: 3px; overflow: hidden; }
+  .notice-progress .fill { height: 100%; background: linear-gradient(90deg, #10b981, #6ee7b7); transition: width 0.3s; }
+  .notice-list {
+    background: #0f172a;
+    border-radius: 6px;
+    padding: 6px;
+    margin-bottom: 10px;
+    max-height: 420px;
+    overflow-y: auto;
+  }
+  .notice-item {
+    background: #1e293b;
+    border-radius: 5px;
+    padding: 8px;
+    margin-bottom: 5px;
+    border-left: 3px solid #64748b;
+    display: grid;
+    grid-template-columns: 20px 1fr;
+    gap: 8px;
+    cursor: pointer;
+  }
+  .notice-item.checked {
+    background: #064e3b;
+    border-left-color: #10b981;
+  }
+  .notice-item.priority-high { border-left-color: #dc2626; }
+  .notice-item.priority-high.checked { border-left-color: #10b981; }
+  .notice-item .cb {
+    width: 18px; height: 18px;
+    border: 2px solid #64748b;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: transparent;
+    font-size: 13px;
+    font-weight: bold;
+    margin-top: 2px;
+  }
+  .notice-item.checked .cb { background: #10b981; border-color: #10b981; color: white; }
+  .notice-meta { display: flex; gap: 5px; font-size: 9px; color: #94a3b8; margin-bottom: 2px; flex-wrap: wrap; }
+  .notice-meta .tag { padding: 1px 6px; border-radius: 999px; font-weight: bold; }
+  .notice-meta .tag.high { background: #7f1d1d; color: #fecaca; }
+  .notice-meta .tag.norm { background: #334155; color: #cbd5e1; }
+  .notice-title { font-size: 12px; font-weight: bold; color: #f1f5f9; margin-bottom: 2px; }
+  .notice-body { font-size: 11px; color: #cbd5e1; line-height: 1.5; }
+
+  .modal-actions {
+    display: flex;
+    gap: 5px;
+  }
+  .m-btn {
+    flex: 1;
+    padding: 10px 0;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: bold;
+    color: white;
+    white-space: nowrap;
+    text-align: center;
+  }
+  .m-btn.primary { background: #059669; }
+  .m-btn.primary:disabled { background: #475569; opacity: 0.5; cursor: not-allowed; }
+  .m-btn.neutral { background: #475569; }
+  .m-btn.warning { background: #ea580c; }
+  .m-btn.danger { background: #dc2626; }
+
+  /* 強制OKモーダル */
+  .force-m h2 { color: #fb923c; font-size: 15px; margin-bottom: 4px; }
+  .force-m .sub { color: #94a3b8; font-size: 10px; margin-bottom: 10px; }
+  .reason-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 5px;
+    margin-bottom: 8px;
+  }
+  .reason-btn {
+    padding: 10px;
+    background: #0f172a;
+    color: #f1f5f9;
+    border-radius: 5px;
+    font-size: 12px;
+    text-align: left;
+    border: 2px solid #334155;
+  }
+  .reason-btn.selected { border-color: #fbbf24; background: #422006; }
+  .reason-btn .no { color: #fbbf24; font-weight: bold; margin-right: 6px; }
+  .sticky-row {
+    background: #422006;
+    color: #fed7aa;
+    padding: 8px;
+    border-radius: 5px;
+    font-size: 11px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .sticky-row input { width: 14px; height: 14px; }
+
+  /* 数量キーパッド */
+  .qty-m h2 { color: #fbbf24; font-size: 14px; margin-bottom: 4px; }
+  .qty-target {
+    background: #0f172a;
+    padding: 7px 9px;
+    border-radius: 5px;
+    margin-bottom: 6px;
+    border-left: 3px solid #fbbf24;
+  }
+  .qty-target .nm { font-size: 12px; font-weight: bold; color: #f1f5f9; }
+  .qty-target .cd { font-size: 9px; color: #94a3b8; font-family: Consolas, monospace; margin-top: 2px; }
+  .qty-display {
+    background: #0f172a;
+    color: #fbbf24;
+    border: 2px solid #fbbf24;
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-family: Consolas, monospace;
+    font-size: 30px;
+    text-align: right;
+    margin-bottom: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+  .qty-display small { font-size: 12px; color: #94a3b8; margin-left: 8px; }
+  .keypad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+    margin-bottom: 8px;
+  }
+  .keypad button {
+    padding: 16px 0;
+    background: #334155;
+    color: #f1f5f9;
+    border-radius: 6px;
+    font-size: 20px;
+    font-weight: bold;
+  }
+  .keypad button.util { background: #ea580c; font-size: 13px; }
+
+  /* 伝票再発行・印刷モーダル */
+  .reprint-m h2 { color: #f472b6; font-size: 14px; margin-bottom: 4px; }
+  .reprint-wait {
+    background: #0f172a;
+    border: 2px dashed #db2777;
+    border-radius: 8px;
+    padding: 22px 10px;
+    text-align: center;
+    margin-bottom: 10px;
+  }
+  .reprint-wait .e { font-size: 38px; animation: pulse 1.4s infinite; }
+  .reprint-wait .t { color: #f472b6; font-size: 13px; font-weight: bold; margin-top: 6px; }
+  .reprint-wait .s { color: #94a3b8; font-size: 10px; margin-top: 4px; }
+  .reprint-confirm {
+    background: #0f172a;
+    border-radius: 6px;
+    padding: 8px;
+    margin-bottom: 10px;
+    display: none;
+  }
+  .reprint-confirm .p { font-family: Consolas, monospace; color: #fbbf24; font-size: 16px; font-weight: bold; margin: 2px 0; }
+  .reprint-confirm .s { color: #cbd5e1; font-size: 10px; }
+
+  /* 右側の説明パネル */
+  .side {
+    padding: 20px 5px;
+  }
+  .side h2 {
+    color: #fbbf24;
+    font-size: 18px;
+    margin-bottom: 10px;
+  }
+  .side p { font-size: 12px; color: #cbd5e1; line-height: 1.7; margin-bottom: 12px; }
+  .side h3 {
+    color: #f1f5f9;
+    font-size: 13px;
+    margin: 16px 0 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #334155;
+  }
+  .demo-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .demo-btns button {
+    padding: 8px 10px;
+    background: #334155;
+    color: #f1f5f9;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .demo-btns button.primary { background: #2563eb; }
+  .demo-btns button.warn { background: #ea580c; }
+  .demo-btns button.danger { background: #dc2626; }
+  .demo-btns button.special { background: #db2777; }
+  .side .spec-box {
+    background: #1e293b;
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 11px;
+    line-height: 1.7;
+    margin-bottom: 10px;
+  }
+  .side .spec-box b { color: #fbbf24; }
+  .side .change-log {
+    padding: 10px 12px;
+    background: #0f172a;
+    border-left: 3px solid #fbbf24;
+    border-radius: 4px;
+    font-size: 11px;
+    line-height: 1.7;
+    color: #cbd5e1;
+  }
+  .side .change-log b { color: #fbbf24; }
+
+  /* BT-A500 本体イメージの補助ライン */
+  .frame-decor {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 12px;
+    background: #0f172a;
+    border-radius: 28px 28px 0 0;
+  }
+  .frame-decor .speaker {
+    position: absolute;
+    top: 6px; left: 50%;
+    transform: translateX(-50%);
+    width: 60px; height: 3px;
+    background: #1e293b;
+    border-radius: 2px;
+  }
+
+  /* === ★v0.11★ サンドイッチ完了ボタン強調（ハンディ） === */
+  @keyframes scanPulseHnd {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(103,232,249,0.6); }
+    50% { transform: scale(1.06); box-shadow: 0 0 0 8px rgba(103,232,249,0); }
+  }
+  .scan-cta-emphasis-h {
+    animation: scanPulseHnd 1.4s ease-in-out infinite;
+    background: linear-gradient(135deg, #06b6d4, #0e7490) !important;
+    color: #fff !important;
+    border: 2px solid #67e8f9 !important;
+  }
+  .scan-cta-disabled-h {
+    background: #334155 !important;
+    color: #94a3b8 !important;
+    cursor: not-allowed !important;
+    border: 2px solid transparent !important;
+  }
+  /* === ★v0.11★ 同梱物・のし行 共通の白背景デザイン（ハンディ大文字） === */
+  .kdk-row-light-h {
+    display:flex; gap:8px; align-items:center;
+    padding:10px 12px; background:#ffffff; border-left:4px solid #3BB6F6;
+    border-radius:5px; margin-bottom:5px; cursor:pointer;
+    color:#0f172a;
+  }
+  .kdk-row-light-h .cb {
+    width:22px; height:22px; border:2px solid #94a3b8; border-radius:4px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:16px; font-weight:bold; color:transparent; flex-shrink:0;
+    background:#ffffff;
+  }
+  .kdk-row-light-h.checked { background:#ECFDF5; border-left-color:#10b981; }
+  .kdk-row-light-h.checked .cb { background:#10b981; border-color:#10b981; color:#ffffff; }
+  .kdk-row-light-h .ttl { font-size:14px; color:#0f172a; line-height:1.4; font-weight:500; }
+  .kdk-noshi-light-h {
+    background:#ffffff; border-left:4px solid #f59e0b; border-radius:5px;
+    padding:10px 12px; margin-bottom:10px; color:#0f172a;
+  }
+  .kdk-noshi-light-h .nm-kind { font-size:16px; font-weight:bold; color:#0f172a; margin-top:0; }
+  .kdk-noshi-light-h .nm-name { font-size:13px; color:#475569; margin-top:2px; }
+
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <!-- === BT-A500 本体モック === -->
+  <div class="handheld-frame">
+    <div class="frame-decor"><div class="speaker"></div></div>
+    <div class="frame-top">
+      <span class="brand">KEYENCE BT-A500</span> ／ 3.5inch TFT 480×800
+    </div>
+
+    <!-- 画面本体 -->
+    <div class="screen" id="screen">
+
+      <!-- Sticky 強制検品バナー -->
+      <div class="force-banner" id="forceBanner">
+        <span>⚠ 強制検品モード</span>
+        <span style="font-weight:normal; font-size:10px; opacity:0.9">理由: <b id="forceReasonLabel">-</b></span>
+        <button class="release-btn" onclick="releaseForce()">解除</button>
+      </div>
+
+      <!-- ステータスバー -->
+      <div class="h-bar">
+        <div class="tbl">T<b id="hTable">C</b></div>
+        <div class="spacer"></div>
+        <div class="sig">📶</div>
+        <div class="battery">🔋82%</div>
+        <div class="clock" id="hClock">--:--</div>
+      </div>
+      <div class="user-bar">
+        <div class="avatar">山</div>
+        <span>山田 花子</span>
+        <div style="flex:1"></div>
+        <span class="dev">H-07</span>
+      </div>
+
+      <!-- アラート帯 -->
+      <div class="alert-bar" id="alertBar">
+        <span id="alNoshi" style="display:none">🎁 熨斗</span>
+        <span id="alFrozen" style="display:none">❄ 冷凍</span>
+        <span id="alDate" style="display:none">📅 <b id="alDateVal"></b></span>
+        <span id="alCorp" style="display:none">🏢 企業</span>
+        <span id="alSpecial" style="display:none">🖨 特殊梱包</span>
+      </div>
+
+      <main>
+
+        <!-- === 待機画面 === -->
+        <div class="idle-screen" id="scrIdle">
+          <div class="pulse"></div>
+          <div class="icon">📄</div>
+          <h1>ピッキング№バーコード</h1>
+          <h1 style="color:#fbbf24; margin-top:-2px">スキャンしてください</h1>
+          <p style="margin-top:10px">トリガーキーを押しながら<br>ピッキング票のバーコードを読み取り<br><span style="font-size:10px; color:#94a3b8;">※ 完了時は納品書バーコードをスキャン</span></p>
+          <div class="idle-hint">
+            <b>トリガー</b>＝スキャン ／ <b>F1</b>＝連絡事項再表示 ／ <b>F2</b>＝QRラベル再発行
+          </div>
+        </div>
+
+        <!-- === 検品画面 === -->
+        <div class="inspect-screen" id="scrInspect">
+
+          <!-- 3ステップ進捗 -->
+          <!-- v0.4: 新フロー -->
+          <div class="flow-steps">
+            <div class="flow-step done" id="step1">①PK-NO</div>
+            <div class="flow-step active" id="step2">②商品</div>
+            <div class="flow-step" id="step3">③納品書スキャン</div>
+          </div>
+
+          <!-- ピッキングNo -->
+          <div class="pk-bar">
+            <div class="label">PK-NO</div>
+            <div class="val" id="pkNo">-</div>
+          </div>
+
+          <!-- 配送・宛先 -->
+          <div class="addr-bar">
+            <div class="carrier-badge" id="carrierBadge">便</div>
+            <div style="flex:1; min-width:0">
+              <div class="nm" id="sName" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis">-</div>
+              <div style="color:#94a3b8; font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" id="sAddr">-</div>
+            </div>
+          </div>
+
+          <!-- 進捗 -->
+          <div class="progress-zone">
+            <div class="title">商品検品</div>
+            <div class="prog">
+              <span id="progNow">0</span><small>/</small><span id="progTotal">0</span><small>点</small>
+            </div>
+          </div>
+
+          <!-- 商品リスト -->
+          <div class="scan-list" id="scanList"></div>
+
+          <!-- 同梱物 -->
+          <div class="koudoku-strip" id="koudokuStrip" style="display:none">
+            <div class="k-title">同梱物チェック（F3で順次ON）</div>
+            <div id="koudokuList"></div>
+          </div>
+        </div>
+
+        <!-- === 完了画面 === -->
+        <div class="complete-screen" id="scrComplete">
+          <div class="big-check">✓</div>
+          <h1>完了</h1>
+          <p id="completeSummary">-</p>
+          <p id="completeExtra" style="margin-top:6px"></p>
+          <p style="margin-top:10px">次の伝票をスキャン</p>
+        </div>
+
+      </main>
+
+      <!-- フッタ（画面上のハードキー対応ボタン） -->
+      <footer id="footerBar" style="display:none">
+        <button class="fb fb-primary" id="btnScan" onclick="simulateScanProduct()"><span class="ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M3 5v14M6.5 5v14M10 5v14M14 5v14M17.5 5v14M21 5v14"/></svg></span>スキャン</button>
+        <button class="fb fb-warning" id="btnForceOK" onclick="openForceOK()"><span class="ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5z"/><path d="M9 12l2 2 4-4"/></svg></span>強制OK</button>
+        <button class="fb fb-neutral" id="btnKoudoku" onclick="toggleNextKoudoku()"><span class="ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3.27 6.96L12 12l8.73-5.04M12 22V12"/></svg></span>同梱</button>
+        <button class="fb fb-success" id="btnInvoice" onclick="skipAndFinish()"><span class="ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 4V3a1 1 0 011-1h4a1 1 0 011 1v1"/><path d="M9 13l2 2 4-4"/></svg></span>一括検品</button>
+        <button class="fb fb-danger" id="btnBack" onclick="openHoldMenu()"><span class="ico"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg></span>保留</button>
+      </footer>
+
+      <!-- === モーダル === -->
+
+      <!-- 連絡事項 -->
+      <div class="modal-bd" id="noticeModal">
+        <div class="modal notice-m">
+          <h2>📢 本日の連絡事項</h2>
+          <p class="sub">管理PCから登録。全て☑で作業開始。</p>
+          <div class="notice-progress">
+            <span>確認</span>
+            <div class="bar"><div class="fill" id="noticeFill"></div></div>
+            <span><b id="noticeCheckedN">0</b>/<b id="noticeTotalN">0</b></span>
+          </div>
+          <div class="notice-list" id="noticeList"></div>
+          <div class="modal-actions">
+            <button class="m-btn neutral" onclick="skipNotices()">あとで</button>
+            <button class="m-btn primary" id="noticeStartBtn" onclick="startWork()" disabled>▶ 作業開始</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 強制OK -->
+      <div class="modal-bd" id="forceModal">
+        <div class="modal force-m">
+          <h2>⚠ 強制検品OK</h2>
+          <p class="sub">理由コードを選択（ログ記録）</p>
+          <div class="reason-grid">
+            <button class="reason-btn" onclick="selectReason(this,'R01','セット品 時間制約')"><span class="no">R01</span>セット品 時間制約</button>
+            <button class="reason-btn" onclick="selectReason(this,'R02','商品不具合による差替')"><span class="no">R02</span>商品不具合による差替</button>
+            <button class="reason-btn" onclick="selectReason(this,'R03','JAN読取不可（運用回避）')"><span class="no">R03</span>JAN読取不可</button>
+            <button class="reason-btn" onclick="selectReason(this,'R04','SKUまとめ梱包')"><span class="no">R04</span>SKUまとめ梱包</button>
+            <button class="reason-btn" onclick="selectReason(this,'R99','その他（要管理PC確認）')"><span class="no">R99</span>その他</button>
+          </div>
+          <div class="sticky-row">
+            <input type="checkbox" id="stickyCb">
+            <label for="stickyCb">次以降の伝票も継続（Sticky）</label>
+          </div>
+          <div class="modal-actions">
+            <button class="m-btn neutral" onclick="closeForceOK()">キャンセル</button>
+            <button class="m-btn danger" onclick="confirmForceOK()">実行</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 数量キーパッド（残数入力モード） -->
+      <div class="modal-bd" id="qtyModal">
+        <div class="modal qty-m">
+          <h2>🔢 残数を入力</h2>
+          <div style="color:#94a3b8; font-size:10px; margin-bottom:4px;">未スキャン分の<b>残り個数</b>のみ入力（既存スキャンに加算・残数超過は不可）</div>
+          <div class="qty-target">
+            <div class="nm" id="qtyTargetName">-</div>
+            <div class="cd" id="qtyTargetCode">-</div>
+            <div id="qtyRemainInfo" style="margin-top:3px; font-size:10px; color:#fed7aa">
+              既 <b id="qtyAlready">0</b>／全 <b id="qtyAll">0</b>　→　<b style="color:#fbbf24">残 <span id="qtyRemain">0</span></b>
+            </div>
+          </div>
+          <div class="qty-display">
+            <span id="qtyDisplay">0</span><small>（残<span id="qtyTotal">0</span>）</small>
+          </div>
+          <div id="qtyError" style="display:none; background:#7f1d1d; color:#fecaca; border-radius:4px; padding:4px 6px; margin:0 0 6px 0; font-size:10px; font-weight:bold; text-align:center;">
+            ⚠ <span id="qtyErrorMsg">残数を超えています</span>
+          </div>
+          <div class="keypad">
+            <button onclick="qpNum(7)">7</button>
+            <button onclick="qpNum(8)">8</button>
+            <button onclick="qpNum(9)">9</button>
+            <button onclick="qpNum(4)">4</button>
+            <button onclick="qpNum(5)">5</button>
+            <button onclick="qpNum(6)">6</button>
+            <button onclick="qpNum(1)">1</button>
+            <button onclick="qpNum(2)">2</button>
+            <button onclick="qpNum(3)">3</button>
+            <button class="util" onclick="qpClear()">CE</button>
+            <button onclick="qpNum(0)">0</button>
+            <button class="util" onclick="qpBack()">←</button>
+          </div>
+          <div class="modal-actions">
+            <button class="m-btn neutral" onclick="qpCancel()">キャンセル</button>
+            <button class="m-btn primary" onclick="qpConfirm()">✓ 確定</button>
+          </div>
+        </div>
+      </div>
+
+      
+      <!-- v0.4: 同梱物確認モーダル -->
+      <div class="modal-bd" id="koudokuModal">
+        <div class="modal" style="width: 460px; max-height: 95%; overflow-y: auto;">
+          <h2 style="font-size:16px; color:#fbbf24;">📋 最終チェック（自動展開）</h2>
+          <p class="sub" style="font-size:10px; color:#94a3b8; margin-bottom:8px;">商品検品完了で<b style="color:#86efac">自動表示</b>。のし／同梱物を確認→全☑で「✓梱包完了」へ。<br><span style="color:#fde68a">※検品を省略したい場合は F4=📋 一括検品</span> ／ <span style="color:#86efac">強制OKは F2（理由コード必須）</span></p>
+
+          <!-- v0.5: 商品検品状況サマリー -->
+          <!-- ★v0.11★ 商品検品状況サマリーは撤去（ハンディ画面狭く目視確認難のため） -->
+          <div id="kdkNoshi" class="kdk-noshi-light-h" style="display:none;">
+            <div class="nm-kind" id="kdkNoshiKind">-</div>
+            <div class="nm-name">名入れ：<b id="kdkNoshiName">-</b></div>
+            <label style="display:flex; gap:8px; align-items:center; margin-top:8px; cursor:pointer;">
+              <input type="checkbox" id="kdkNoshiCb" style="width:20px; height:20px; cursor:pointer;" onchange="updateKdkProgress()">
+              <span style="color:#0f172a; font-size:13px; font-weight:500;">のし台紙の挿入を確認</span>
+            </label>
+          </div>
+          <div id="kdkList" style="background:#f1f5f9; border-radius:6px; padding:6px; max-height:280px; overflow-y:auto; margin-bottom:10px;"></div>
+          <div style="background:#0f172a; border-radius:6px; padding:6px 10px; font-size:11px; color:#cbd5e1; margin-bottom:10px; display:flex; align-items:center; gap:8px;">
+            <span>確認</span>
+            <div style="flex:1; height:6px; background:#334155; border-radius:3px; overflow:hidden;">
+              <div id="kdkFill" style="height:100%; background:linear-gradient(90deg,#10b981,#6ee7b7); width:0%;"></div>
+            </div>
+            <span><b id="kdkCheckedN" style="color:#10b981">0</b>/<b id="kdkTotalN">0</b></span>
+          </div>
+          <!-- ★v0.11★ プロンプト枠は撤去。スキャンボタンを小型化＋脈動で強調 -->
+          <div class="modal-actions" style="justify-content:flex-end; gap:8px;">
+            <button class="m-btn neutral" onclick="closeKoudokuModal()" style="height:36px; font-size:12px; max-width:100px;">戻る</button>
+            <button class="scan-cta-disabled-h" id="kdkScanInvoiceBtn" onclick="simulateInvoiceScan()" disabled style="height:36px; padding:0 14px; border-radius:6px; font-weight:bold; font-size:12px; display:inline-flex; align-items:center; gap:6px;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg><span>納品書スキャン</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.4: 検品済み伝票 再読込ポップアップ -->
+      <div class="modal-bd" id="completedModal">
+        <div class="modal" style="width: 420px;">
+          <h2 style="color:#86efac; font-size:18px;">✓ 検品済みの伝票です</h2>
+          <p class="sub" style="font-size:11px; color:#94a3b8; margin-bottom:10px;">この伝票は完了済みです。再処理する場合は「検品戻し」へ。</p>
+          <div style="background:#0f172a; border-radius:8px; padding:10px; margin-bottom:14px; border-left:4px solid #10b981;">
+            <div style="display:grid; grid-template-columns:80px 1fr; gap:4px 8px; font-size:11px;">
+              <div style="color:#94a3b8;">PK-NO</div><div style="font-family:Consolas,monospace; color:#fbbf24;" id="cpdPkNo">-</div>
+              <div style="color:#94a3b8;">納品書</div><div style="font-family:Consolas,monospace;" id="cpdInvoice">-</div>
+              <div style="color:#94a3b8;">お届け先</div><div id="cpdName">-</div>
+              <div style="color:#94a3b8;">完了</div><div id="cpdDoneAt" style="color:#86efac;">-</div>
+              <div style="color:#94a3b8;">作業者</div><div id="cpdDoneBy">-</div>
+              <div style="color:#94a3b8;">梱包数</div><div id="cpdQty">-</div>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button class="m-btn warning" onclick="reopenCompletedOrder()">↻ 検品戻し</button>
+            <button class="m-btn primary" onclick="confirmCompleted()">✓ 確認</button>
+          </div>
+        </div>
+      </div>
+
+      
+      
+      <!-- ★v0.8★ 保留中伝票 ポップアップ -->
+      <div class="modal-bd" id="heldModal">
+        <div class="modal" style="width: 440px;">
+          <h2 style="color:#fbbf24; font-size:16px;">⏸ 保留中の伝票</h2>
+          <p class="sub" style="font-size:11px; color:#94a3b8; margin-bottom:8px;"><b style="color:#86efac">スキャン状態が保持</b>されています。続きから検品可能。</p>
+
+          <div style="background:#0f172a; border-radius:8px; padding:10px; margin-bottom:14px; border-left:4px solid #fbbf24;">
+            <div style="display:grid; grid-template-columns:70px 1fr; gap:4px 8px; font-size:11px;">
+              <div style="color:#94a3b8;">PK-NO</div><div style="font-family:Consolas,monospace; color:#fbbf24;" id="hpkPkNo">-</div>
+              <div style="color:#94a3b8;">納品書</div><div style="font-family:Consolas,monospace;" id="hpkInvoice">-</div>
+              <div style="color:#94a3b8;">お届け先</div><div id="hpkName">-</div>
+              <div style="color:#94a3b8;">保留</div><div id="hpkHeldAt" style="color:#fbbf24;">-</div>
+              <div style="color:#94a3b8;">保留者</div><div id="hpkHeldBy">-</div>
+              <div style="color:#94a3b8;">スキャン</div><div id="hpkScanProg" style="color:#86efac; font-weight:bold;">-</div>
+              <div style="color:#94a3b8;">種別</div><div id="hpkKind" style="color:#cbd5e1; font-size:10px; line-height:1.3;">-</div>
+            </div>
+          </div>
+
+          <div class="modal-actions" style="display:flex; gap:5px;">
+            <button class="m-btn neutral" onclick="cancelHeldPopup()" style="flex:0.7;">取消</button>
+            <button class="m-btn warning" onclick="restartHeldOrder()" style="flex:1;">↻ 最初から</button>
+            <button class="m-btn primary" onclick="resumeHeldOrder()" style="flex:1.3;">▶ 続きから</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ★v0.7★ 保留メニュー -->
+      <div class="modal-bd" id="holdMenuModal">
+        <div class="modal" style="width: 440px;">
+          <h2 style="font-size:16px; color:#fbbf24;">⏸ 伝票保留メニュー</h2>
+          <p class="sub" style="font-size:11px; color:#94a3b8; margin-bottom:10px;">処理を中断する理由を選択してください。</p>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+            <button class="hold-opt insp" onclick="holdSubmitInspection()">
+              <div class="ic">⏸</div>
+              <div class="ttl">検品保留</div>
+              <div class="desc">商品/数量に問題</div>
+            </button>
+            <button class="hold-opt cont" onclick="holdGoToContact()">
+              <div class="ic">📢</div>
+              <div class="ttl">本部連絡</div>
+              <div class="desc">のし/商品/入力/WEB</div>
+            </button>
+          </div>
+          <div class="modal-actions" style="display:flex; gap:6px;">
+            <button class="m-btn neutral" onclick="closeHoldMenu()" style="flex:1;">キャンセル</button>
+            <button class="m-btn" onclick="holdAbort()" style="flex:1; background:#7f1d1d; color:#fecaca; border:1px solid #b91c1c;">🚫 中断（破棄）</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ★v0.7★ 本部連絡モーダル -->
+      <div class="modal-bd" id="holdContactModal">
+        <div class="modal" style="width: 440px; max-height: 96%; overflow-y:auto;">
+          <h2 style="font-size:16px; color:#93c5fd;">📢 本部連絡</h2>
+          <p class="sub" style="font-size:11px; color:#94a3b8; margin-bottom:8px;">分類を選び補足を入力。送信先：管理PC「連絡」タブ。</p>
+
+          <div style="font-size:10px; color:#94a3b8; margin-bottom:4px; letter-spacing:1px;">▼ 分類（必須）</div>
+          <div id="holdCatBtns" style="display:grid; grid-template-columns:repeat(2,1fr); gap:6px; margin-bottom:10px;">
+            <button class="cat-btn" onclick="holdSelectCategory(this,'noshi','🎁 のし')">
+              <div class="ic">🎁</div><div class="lbl">のし</div>
+            </button>
+            <button class="cat-btn" onclick="holdSelectCategory(this,'product','📦 商品')">
+              <div class="ic">📦</div><div class="lbl">商品</div>
+            </button>
+            <button class="cat-btn" onclick="holdSelectCategory(this,'input','✏ 入力内容')">
+              <div class="ic">✏</div><div class="lbl">入力内容</div>
+            </button>
+            <button class="cat-btn" onclick="holdSelectCategory(this,'web','🌐 WEB')">
+              <div class="ic">🌐</div><div class="lbl">WEB</div>
+            </button>
+          </div>
+          <input type="hidden" id="holdSelectedCat" value="">
+
+          <div style="background:#0f172a; border-left:3px solid #fbbf24; padding:6px 10px; border-radius:4px; font-size:11px; color:#fed7aa; margin-bottom:8px;">
+            選択：<b id="holdCategory" style="color:#fbbf24">未選択</b>
+          </div>
+
+          <div style="font-size:10px; color:#94a3b8; margin-bottom:3px; letter-spacing:1px;">▼ 補足（任意）</div>
+          <textarea id="holdContactBody" rows="3" style="width:100%; background:#0f172a; border:1px solid #334155; color:#e2e8f0; padding:6px 8px; border-radius:4px; font-size:12px; font-family:inherit; margin-bottom:10px;" placeholder="例：のし台紙が破損／JANと指示が違う／顧客電話番号が空欄／WEB側のクーポン入力誤り 等"></textarea>
+
+          <div class="modal-actions" style="display:flex; gap:6px;">
+            <button class="m-btn neutral" onclick="closeHoldMenu()" style="flex:1;">キャンセル</button>
+            <button class="m-btn warning" id="holdSendBtn" onclick="holdSendContact()" disabled style="flex:1.4;">📤 本部送信</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- QRラベル再発行（特殊梱包フラグの立った伝票・任意実行） -->
+      <div class="modal-bd" id="reprintModal">
+        <div class="modal reprint-m">
+          <h2>🖨 QRラベル 再発行</h2>
+          <p class="sub" style="color:#94a3b8; font-size:10px;">対象伝票を<b>バーコードスキャン</b>で確定してください。</p>
+          <div class="reprint-wait" id="reprintWait">
+            <div class="e">📷</div>
+            <div class="t">スキャン待機中…</div>
+            <div class="s">ピッキングNo / 納品書No</div>
+          </div>
+          <div class="reprint-confirm" id="reprintConfirm">
+            <div style="font-size:10px; color:#94a3b8">確定した伝票</div>
+            <div class="p" id="reprintPkNo">-</div>
+            <div class="s" id="reprintInfo">-</div>
+          </div>
+          <div class="modal-actions">
+            <button class="m-btn neutral" onclick="closeReprint()">戻る</button>
+            <button class="m-btn warning" onclick="simulateReprintScan()">(デモ)スキャン</button>
+            <button class="m-btn primary" id="reprintDoBtn" onclick="doReprint()" disabled>🖨 発行</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="scan-flash" id="flash"></div>
+    </div>
+
+    <!-- ★v0.3★ BT-A500 物理キー（実機レイアウト準拠） -->
+    <div class="hw-zone">
+      <div class="hw-title">
+        <span>BT-A500 物理キー（画面と連動）</span>
+        <small>クリック／PCキーボードで操作可能</small>
+      </div>
+
+      <!-- F1〜F4 -->
+      <div class="hw-row hw-fkeys">
+        <button class="hw-key" id="kF1" onclick="hwKey('F1')">F1<small>連絡</small></button>
+        <button class="hw-key" id="kF2" onclick="hwKey('F2')">F2<small>強制OK/QR</small></button>
+        <button class="hw-key" id="kF3" onclick="hwKey('F3')">F3<small>同梱</small></button>
+        <button class="hw-key" id="kF4" onclick="hwKey('F4')">F4<small>一括検品</small></button>
+      </div>
+
+      <!-- 中段：D-pad + テンキー -->
+      <div class="hw-mid">
+        <!-- D-pad（5方向） -->
+        <div class="dpad">
+          <button class="dp dp-up"     id="kUp"     onclick="hwKey('Up')"     title="↑ 前の行">▲</button>
+          <button class="dp dp-left"   id="kLeft"   onclick="hwKey('Left')"   title="← 同梱戻し">◀</button>
+          <button class="dp dp-center" id="kEnt"    onclick="hwKey('Enter')"  title="ENT 選択行を+1スキャン">ENT</button>
+          <button class="dp dp-right"  id="kRight"  onclick="hwKey('Right')"  title="→ 同梱次へ">▶</button>
+          <button class="dp dp-down"   id="kDown"   onclick="hwKey('Down')"   title="↓ 次の行">▼</button>
+        </div>
+
+        <!-- テンキー -->
+        <div class="numpad">
+          <button class="num" id="kN1" onclick="hwKey('1')">1</button>
+          <button class="num" id="kN2" onclick="hwKey('2')">2</button>
+          <button class="num" id="kN3" onclick="hwKey('3')">3</button>
+          <button class="num" id="kN4" onclick="hwKey('4')">4</button>
+          <button class="num" id="kN5" onclick="hwKey('5')">5</button>
+          <button class="num" id="kN6" onclick="hwKey('6')">6</button>
+          <button class="num" id="kN7" onclick="hwKey('7')">7</button>
+          <button class="num" id="kN8" onclick="hwKey('8')">8</button>
+          <button class="num" id="kN9" onclick="hwKey('9')">9</button>
+          <button class="num util" id="kCLR" onclick="hwKey('Clear')" title="入力クリア">CLR</button>
+          <button class="num" id="kN0" onclick="hwKey('0')">0</button>
+          <button class="num util" id="kBS"  onclick="hwKey('Backspace')" title="一文字削除">←</button>
+        </div>
+      </div>
+
+      <!-- 側面トリガー＋メイントリガー -->
+      <div class="hw-row hw-trig-row">
+        <button class="hw-side" id="kSideL" onclick="hwKey('SideL')" title="左側面トリガー＝スキャン">⊳<small>L<br>SCAN</small></button>
+        <button class="hw-trigger" id="kTrig" onclick="hwKey('Trigger')">◉ メイン トリガー（SCAN）</button>
+        <button class="hw-side" id="kSideR" onclick="hwKey('SideR')" title="右側面トリガー＝スキャン">⊲<small>R<br>SCAN</small></button>
+      </div>
+
+      <!-- メタキー -->
+      <div class="hw-row hw-meta">
+        <button class="hw-key" id="kEsc" onclick="hwKey('Escape')">ESC<small>中断</small></button>
+        <button class="hw-key" id="kTab" onclick="hwKey('Tab')">TAB<small>次項目</small></button>
+        <button class="hw-key" id="kVolP" onclick="hwKey('VolUp')">VOL+<small>音量</small></button>
+        <button class="hw-key" id="kVolM" onclick="hwKey('VolDown')">VOL−<small>音量</small></button>
+        <button class="hw-key" id="kPwr"  onclick="hwKey('Power')">⏻<small>電源</small></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- === 右側：説明パネル === -->
+  <div class="side">
+    <h2>LogiSmile ハンディ（BT-A500）モック v0.13</h2>
+    <p>タブレット v0.10 の仕様（保留時スキャン状態保持）をベースに、<b>KEYENCE BT-A500</b>（Android／3.5inch 480×800／物理キー＋レーザースキャナ）向けに再構成したモックです。<b>v0.3 では実機の物理キー配列（F1-F4／5方向D-pad／テンキー／側面トリガー／メイン・トリガー／ESC・TAB・音量・電源）を全て配置</b>し、画面上のボタンとタッチ操作を最小化しています。</p>
+
+    <h3>🎮 デモ操作</h3>
+    <div class="demo-btns">
+      <button class="primary" onclick="loadOrder(0)">① 一般顧客（通常／2SKU）</button>
+      <button class="primary" onclick="loadOrder(1)">② 熨斗あり（構成品3SKU）</button>
+      <button class="special" onclick="loadOrder(2)">③ 冷凍・特殊梱包対象</button>
+      <button class="primary" onclick="loadOrder(3)">④ 企業顧客・同梱多数</button>
+      <button onclick="simulateScanProduct()">商品スキャン(正)</button>
+      <button onclick="simulateScanProduct(true)">商品スキャン(誤)</button>
+      <button class="warn" onclick="openForceOK()">強制OK</button>
+      <button onclick="skipAndFinish()">⏭ 検品省略・梱包完了</button>
+      <button onclick="finishInspection()">📋 最終チェック（手動）</button>
+      <button style="background:#0e7490; color:white;" onclick="simulateInvoiceScan()">📷 納品書スキャン（梱包完了）</button>
+      <button class="warn" onclick="simulateScanCompleted()">✓ 検品済み 再スキャン（PK-NO）</button>
+      <button class="warn" onclick="simulateScanHeld()">⏸ 保留中 再スキャン（PK-NO）</button>
+      <button onclick="openQRReprint()">QR再発行</button>
+      <button class="warn" onclick="NOTICES.forEach(n=>n.checked=false); openNotices()">📢 連絡事項 再表示</button>
+      <button onclick="backToIdle()">待機に戻る</button>
+    </div>
+
+    <h3>🔑 物理キー割当（v0.3 拡張）</h3>
+    <div class="spec-box">
+      <b>メイン トリガー（前面・大）／側面トリガー L／R</b>：スキャン<br>
+      <small>　待機画面：ピッキング№バーコード読取（モックではダミー伝票読込） ／ 検品中：商品スキャン ／ 最終チェック画面：納品書バーコードで自動完了（サンドイッチ方式）</small>
+      <div class="keymap">
+        <span class="k">F1</span><span class="v">待機＝連絡事項を再表示</span>
+        <span class="k">F2</span><span class="v">検品＝強制OK ／ 待機＝QRラベル再発行</span>
+        <span class="k">F3</span><span class="v">同梱物を1件ずつON（次の未チェック）</span>
+        <span class="k">F4</span><span class="v">📋 一括検品（残数確認後・全件完了扱い→最終チェック画面へ）</span>
+        <span class="k">▲▼</span><span class="v">検品行カーソル移動（青枠＝選択中）</span>
+        <span class="k">ENT</span><span class="v">選択行を +1スキャン／モーダルでは「確定」</span>
+        <span class="k">◀▶</span><span class="v">同梱トグル（▶＝次へON／◀＝直近をOFF）</span>
+        <span class="k">0〜9</span><span class="v">数量入力（直接打鍵で数量モーダル自動起動）</span>
+        <span class="k">CLR</span><span class="v">数量入力をクリア</span>
+        <span class="k">←(BS)</span><span class="v">数量入力を一文字削除</span>
+        <span class="k">TAB</span><span class="v">次の検品行へカーソル移動</span>
+        <span class="k">ESC</span><span class="v">モーダル閉じる／中断（待機へ戻る）</span>
+        <span class="k">VOL+/-</span><span class="v">操作音量調整（モック）</span>
+        <span class="k">⏻</span><span class="v">電源（モック）</span>
+      </div>
+    </div>
+
+    <h3>🔧 タブレットとの差異（ハンディ仕様）</h3>
+    <div class="spec-box">
+      ・<b>特殊梱包QR印刷は実行しない</b>（対象伝票はタブレット梱包ステーションで再スキャン要）<br>
+      ・画面幅が狭いため、ピッキング情報は上部バー／商品リスト／下部同梱の3段構成<br>
+      ・同梱物は画面下にコンパクト表示（F3で順次チェック）<br>
+      ・数量キーパッドは画面全体をほぼ使う大型配置（誤タップ回避）<br>
+      ・左上「PK-NO」バーにピッキングNoを常時表示（現場での口頭確認対応）
+    </div>
+
+    <h3>📝 動作確認手順（v0.10 サンドイッチ方式）</h3>
+    <div class="spec-box">
+      1. 起動 → 連絡事項4件を☑ → 「作業開始」（ENTでも可）<br>
+      2. 「① 一般顧客」を読込（＝<b style="color:#67e8f9">ピッキング№バーコードスキャン</b>）→ <b>メイントリガー</b>または<b>L/R側面トリガー</b>で商品スキャン<br>
+      3. <b>▲▼ で検品行カーソル移動</b>（青枠表示）→ <b>ENT</b>で選択行を +1スキャン<br>
+      4. 数量が多い商品：<b>0〜9 を直接押下</b>で数量モーダル自動起動／<b>CLR/←(BS)/ENT</b>で操作<br>
+      5. <b>F3 や ▶</b> で同梱物を順次チェック<br>
+      6. 全点完了 → <b>自動的に最終チェック画面が開く</b>（F4押下不要）→ ☑ → <b style="color:#67e8f9">納品書バーコードをスキャン</b> → ✓ 梱包完了 トースト表示 → 完了画面<br>
+      6'. 検品を省略したい場合 → <b>F4（⏭検品省略）</b>→ 残数確認 → 自動で最終チェックへ → 納品書スキャンで完了<br>
+      0. 「✓ 検品済み 再スキャン」でピッキング№再読込ポップアップ（確認 / 検品戻し）<br>
+      7. 待機戻り → 「③ 冷凍・特殊梱包」を読込 → 完了時に「タブレット梱包ステーションへ回送」表示<br>
+      8. 待機画面 → F2（または「QR再発行」）→ (デモ)スキャン → 発行<br><br>
+      <b>※ 物理キー操作は PC キーボードでも検証可能</b>（実機ではすべて物理キー、画面タッチは最小化）
+    </div>
+
+    <div class="change-log">
+      <b>v0.11（今回）★UI最適化＋ブランディング</b><br>
+      ・<b>F1-F4 ボタンを SVG アイコン化</b>（絵文字撤去：📷⚠📦📋⏸ → バーコード／盾＋✓／箱／クリップボード＋✓／ブックマーク）<br>
+      ・<b>最終モーダルから「商品検品状況」サマリーを撤去</b>（ハンディ画面狭く小さい文字が目視確認難のため）<br>
+      ・<b>のし枠を白背景＋黒文字＋大きめテキストに刷新</b>、サブラベル「のし（基幹データ）」を撤去<br>
+      ・<b>同梱指示／同梱物の各行を白背景＋黒文字＋大きめテキストに刷新</b>、サブラベル「📋 同梱指示（補助マスタ）」「📦 同梱物（基幹データ）」を撤去（本番ではない認識のため）<br>
+      ・<b>納品書スキャン待ちのプロンプト枠を撤去</b>。代わりに納品書スキャンボタンを小型化（h:full→36px）し、全☑後に <b style="color:#67e8f9">水色グラデ＋脈動アニメ</b> で強調する仕様に変更<br>
+      <br>
+      <b>v0.10 ★サンドイッチ方式へ移行（現場レビュー反映）</b><br>
+      ・<b>開始トリガーを「納品書バーコード」→「ピッキング№バーコード」に変更</b><br>
+      　- 待機画面の見出し／フローステップ①／動作確認手順 を全て更新<br>
+      　- 待機画面に「※ 完了時は納品書バーコードをスキャン」のサブテキスト追記<br>
+      ・<b>梱包完了「✓ 梱包完了」ボタンを撤去 → 納品書バーコードスキャンで自動完了</b>（サンドイッチ方式）<br>
+      　- 最終チェックモーダル内に <b style="color:#67e8f9">📷 納品書スキャン待ち</b> プロンプト新設<br>
+      　- 同梱物・のし が全☑になると「受付中」（点線→水色枠＋脈動）に切替<br>
+      　- スキャンで <b style="color:#86efac">✓ 梱包完了</b> トースト表示（1.4秒）→ 完了画面へ自動遷移<br>
+      　- デモパネルに「📷 納品書スキャン（梱包完了）」ボタン追加<br>
+      ・<b>検品済み／保留中の再スキャン デモ ボタン名を「PK-NO 再スキャン」に変更</b>（トリガー一致）<br>
+      <br>
+      <b>v0.9 ★構成商品ラベル統一</b><br>
+      ・<b>「商品」→「構成商品」表記に統一</b>（基幹IF認識合わせに基づく）<br>
+      　- ハンディは画面省スペースのため scan-line は商品コード単独表記を維持<br>
+      　- 親商品（受注単位／JANなし）と構成商品（出荷単位／JANあり）の階層を明示<br>
+      　- WMS が受信するのは構成商品レベル<br>
+      <br>
+      <b>v0.8 ★保留時スキャン状態保持</b><br>
+      ・<b>検品保留時にスキャン状態を保持</b>（HELD_ORDERS レジストリ）<br>
+      　- 数量／同梱物☑／のし☑ 全てスナップショット保存<br>
+      　- 同じ納品書を再スキャンすると「保留中」ポップアップ表示<br>
+      　- <b>「▶ 続きから」</b>で前回状態を完全復元 ／ <b>「↻ 最初から」</b>で破棄<br>
+      ・<b>本部連絡（📢）も同じ仕組みで保留</b>（指示待ち中も検品済み数量保持）<br>
+      ・デモパネルに「⏸ 保留中伝票 再スキャン」ボタン追加<br>
+      <br>
+      <b>v0.7 ★一括検品＋保留メニュー追加</b><br>
+      ・<b>F4 ボタン名・色を変更</b>：「⏭ 検品省略」→「<span style="color:#86efac">📋 一括検品</span>」（fb-success 緑）<br>
+      ・<b>中断（ESC/btnBack）に保留メニュー追加</b>：従来の即破棄から、<b>「⏸ 検品保留」「📢 本部連絡」「🚫 中断（破棄）」</b> の3択に拡張<br>
+      　- 本部連絡：4分類ボタン（<span style="color:#fbcfe8">🎁のし</span> / <span style="color:#86efac">📦商品</span> / <span style="color:#fbbf24">✏入力内容</span> / <span style="color:#67e8f9">🌐WEB</span>）+ 補足テキスト<br>
+      　- 送信先：管理PC「連絡」タブ → 着信バッジで通知<br>
+      　- ペイロード：from / pkNo / invoice / category / body / sentAt / read（未読フラグ）<br>
+      <br>
+      <b>v0.6 ★自動最終チェック＋検品省略</b><br>
+      ・<span style="color:#fbbf24">v0.5 で要件解釈ミスがあったため再仕様化</span><br>
+      ・<b>商品検品完了で「最終チェック画面が自動展開」</b>（F4押下を省略）<br>
+      　- 全商品スキャン完了で 0.35秒後に自動でモーダルが開く<br>
+      ・<b>F4を「⏭ 検品省略」用途に転用</b>（オレンジ色／<small>検品省略</small>表示）<br>
+      　- 押下→残数確認ダイアログ→OK→全件完了扱い→自動で最終チェック画面へ<br>
+      　- 強制OK（F2）と異なり理由コード不要（検品の流れそのものを省略する用途）<br>
+      　- 監査ログには「検品省略・梱包完了 残N点を省略」を記録<br>
+      ・F2=強制OK は別系統として維持（理由コード必須）<br>
+      <br>
+      <b>v0.5 ★最終チェック画面統合（取消）</b><br>
+      ・F4を"📋最終Chk"にしてボタン押下を残していた仕様は取消<br>
+      <br>
+      <b>v0.4 ★納品書トリガー＋同梱物モーダル＋検品戻し</b><br>
+      ・<b>F4 を「梱包完了」→「📋 最終チェック」に変更</b>（強制OKと役割分離）<br>
+      ・<b>最終チェック画面に「✓ 商品検品状況」セクション追加</b>：全アイテムの検品状況と強制OK状況を一画面で確認<br>
+      ・<b>のし関連の同梱物項目を表示から除外</b>（上部のし表示と重複しないよう "熨斗"/"のし"/"台紙" を含む koudoku/instructions は描画スキップ）<br>
+      ・確定ボタンを「✓ 梱包完了」に変更<br>
+      ・フロー: 「①納品書 → ②商品 → ③📋最終Chk」に簡素化<br>
+      <br>
+      <b>v0.4 ★納品書トリガー＋同梱物モーダル＋検品戻し</b><br>
+      ・<b>トリガーを「納品書バーコード」に一本化</b>：v0.3までのサンドイッチ検品（①ピッキングNo→②商品→③納品書）を撤廃。納品書1枚で①読み込み →②商品検品 →③同梱物確認 →完了。<br>
+      ・<b>同梱物モーダル</b>：商品検品完了後（F4＝梱包完了）に表示。<b style="color:#fbbf24">のし種類・名称</b>（基幹データ）と<b style="color:#f472b6">同梱指示</b>（補助マスタ／取込なし）を分けて☑可能。全☑で完了画面へ進行。<br>
+      ・<b>検品済み再スキャン ポップアップ</b>：完了済みの納品書を読むと「✓ 検品済み」と表示。「確認」で待機戻り、「検品戻し」で完了状態を解除→再検品（操作ログ記録）。<br>
+      <br>
+      <b>v0.3 ★物理キー対応</b><br>
+      ・物理キー配列を <b>BT-A500 実機準拠</b> に拡張（F1-F4／5方向D-pad／12キー数字パッド／L・R 側面トリガー／メイン・トリガー／ESC・TAB・VOL±・電源）<br>
+      ・<b>D-pad ▲▼ で検品行カーソル移動</b>（青枠）→ <b>ENT で選択行を +1 スキャン</b>。タッチ不要で全行スキャン可能に<br>
+      ・<b>テンキー 0〜9 直接打鍵</b>で数量モーダルを自動起動（カーソル行 or 次未完行が対象）。<b>CLR/←(BS)/ENT で確定</b>までキーボードのみで完結<br>
+      ・<b>◀▶</b>で同梱物を双方向トグル（F3は従来どおり「次の未チェック」）<br>
+      ・<b>側面トリガー L／R</b>を追加（実機ではどちらでもスキャン可能を再現）<br>
+      ・全キーに<b>押下時の黄色フラッシュ視覚フィードバック</b>を追加（120ms）<br>
+      ・モーダル内では ENT＝確定／ESC＝キャンセル／0-9＝入力／BS＝削除／CLR＝クリア に統一<br>
+      ・物理キーはすべて <b>onclick + キーボード両方</b>で動作（hwKey ハンドラに統一）<br>
+      <br>
+      <b>v0.2</b><br>
+      ・数量キーパッドを<b>残数入力モード</b>に変更（例：6個中1スキャン済なら「5」を入力、既存スキャン数に加算）<br>
+      ・残数超過時は<b>赤エラー表示</b>で確定不可に（リアルタイム検証＋確定時再検証）<br>
+      ・キーパッドモーダル上部に「既◯／全◯／残◯」の情報表示を追加<br>
+      ・特殊梱包フラグはタブレット側のみで使用（ハンディでは特殊梱包QR印刷は実行しない）<br>
+      <br>
+      <b>v0.1</b><br>
+      ・タブレット v0.4 のデータモデル・フロー・連絡事項・数量キーパッド・Sticky強制検品・QR再発行をハンディ縦画面に移植<br>
+      ・特殊梱包QR印刷はハンディで<b>実行しない</b>方針を反映（完了画面で「タブレット側で再スキャン」メッセージを表示）<br>
+      ・BT-A500 物理キー配置を画面下にイメージ配置（クリックで対応機能が動く）
+    </div>
+  </div>
+</div>
+
+<script>
+// === クロック ===
+function updateClock() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  document.getElementById('hClock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+setInterval(updateClock, 1000); updateClock();
+
+// === 連絡事項データ（タブレットと同じ） ===
+const NOTICES = [
+  { id:'N-20260423-01', priority:'high',   author:'本部・田口', datetime:'2026/04/23 07:45',
+    title:'【重要】母の日ギフト対応', body:'本日は母の日ギフト出荷ピーク。熨斗・メッセージカードの同梱漏れに注意。該当伝票は画面上部にアラート表示。',
+    checked:false },
+  { id:'N-20260423-02', priority:'high',   author:'本部・小原', datetime:'2026/04/23 08:10',
+    title:'【冷凍】金賞ソーセージ JAN修正', body:'昨日の誤登録を正規JAN(2800002635101)に修正。読取不可時はR02強制OK+管理PCへ報告。',
+    checked:false },
+  { id:'N-20260423-03', priority:'normal', author:'本部・浦川', datetime:'2026/04/23 08:20',
+    title:'ヤマト便 集荷 17:30（30分前倒し）', body:'I・V・O テーブルは優先的に進行。',
+    checked:false },
+  { id:'N-20260423-04', priority:'normal', author:'本部・山根', datetime:'2026/04/23 08:25',
+    title:'H-07 スキャナ動作確認済', body:'昨日の読取不良は再ペアリングで解消。異常時は即申告。',
+    checked:false },
+];
+
+function renderNotices() {
+  const list = document.getElementById('noticeList');
+  list.innerHTML = '';
+  NOTICES.forEach((n,i) => {
+    const el = document.createElement('div');
+    el.className = 'notice-item' + (n.checked?' checked':'') + (n.priority==='high'?' priority-high':'');
+    el.onclick = () => toggleNotice(i);
+    el.innerHTML = `
+      <div class="cb">${n.checked?'✓':''}</div>
+      <div>
+        <div class="notice-meta">
+          <span class="tag ${n.priority==='high'?'high':'norm'}">${n.priority==='high'?'重要':'連絡'}</span>
+          <span>${n.author}</span>
+          <span>${n.datetime}</span>
+        </div>
+        <div class="notice-title">${n.title}</div>
+        <div class="notice-body">${n.body}</div>
+      </div>
+    `;
+    list.appendChild(el);
+  });
+  updateNoticeProgress();
+}
+function toggleNotice(i) { NOTICES[i].checked = !NOTICES[i].checked; renderNotices(); }
+function updateNoticeProgress() {
+  const n = NOTICES.filter(x=>x.checked).length;
+  const t = NOTICES.length;
+  document.getElementById('noticeCheckedN').textContent = n;
+  document.getElementById('noticeTotalN').textContent = t;
+  document.getElementById('noticeFill').style.width = (t?Math.round(n/t*100):0)+'%';
+  document.getElementById('noticeStartBtn').disabled = (n < t);
+}
+function openNotices() { renderNotices(); document.getElementById('noticeModal').classList.add('active'); }
+function startWork()   { document.getElementById('noticeModal').classList.remove('active'); }
+function skipNotices() { document.getElementById('noticeModal').classList.remove('active'); }
+
+// === 伝票サンプル ===
+const ORDERS = [
+  {
+    table:'C', pkNo:'SC01208830001', shipDate:'2026/04/23',
+    carrier:'ヤマト運輸', carrierBadge:'badge-yamato',
+    invoice:'00059456840001',
+    zip:'680-041', addr:'鳥取県八頭郡八頭町橋本８７７', name:'佐藤 友子',
+    noshi:null, frozen:false, corp:false, special:false,
+    deliveryDate:'2026/04/24',
+    items: [
+      { code:'7003', name:'Ｍサイズパック',     jan:'2800002001234', qty:12 },
+      { code:'0100', name:'送料無料セット',     jan:'2800000000010', qty:1 },
+    ],
+    koudoku: [
+      { label:'ヤマト伝票 封入', checked:false },
+    ],
+    instructions: ['お届け日指定なし／不在再配達OK', '玄関前置き配 不可（要対面）'],
+  },
+  {
+    table:'I', pkNo:'SI01208830033', shipDate:'2026/04/23',
+    carrier:'ゆうパック', carrierBadge:'badge-jp',
+    invoice:'00059507690001',
+    zip:'680-041', addr:'鳥取県八頭郡八頭町橋本８７７', name:'池田 敏之・節子',
+    noshi:'御中元', noshiName:'大江 太郎',
+    frozen:false, corp:false, special:false,
+    deliveryDate:null,
+    items: [
+      { code:'7001', name:'特撰ぱうむ 6個入',   jan:'2800002070011', qty:1 },
+      { code:'7012', name:'焼菓子アソート',     jan:'2800002070125', qty:1 },
+      { code:'7022', name:'季節ジュース 200ml', jan:'2800002070224', qty:2 },
+    ],
+    koudoku: [
+      { label:'熨斗（御中元／大江 太郎）', checked:false },
+      { label:'挨拶状 同封', checked:false },
+    ],
+    instructions: ['熨斗台紙 A04（御中元／白黒）', '挨拶状 No.12（春版）同封', '伝票はお届け先名で出力'],
+  },
+  {
+    table:'V', pkNo:'SV01208830045', shipDate:'2026/04/23',
+    carrier:'ヤマト運輸', carrierBadge:'badge-yamato',
+    invoice:'00059411670001',
+    zip:'244-0812', addr:'神奈川県横浜市戸塚区柏尾町１２-３', name:'アイブリッジ株式会社',
+    noshi:null, frozen:true, corp:true, special:true,
+    deliveryDate:'2026/04/24',
+    items: [
+      { code:'26351', name:'金賞ソーセージ3種',   jan:'2800002635101', qty:1 },
+      { code:'70081', name:'ハーブ①粗挽き',       jan:'2800002700811', qty:1 },
+      { code:'70082', name:'ハーブ②ニュルン',     jan:'2800002700821', qty:1 },
+    ],
+    koudoku: [
+      { label:'請求書 同梱（月末）', checked:false },
+      { label:'クール便送り状', checked:false },
+    ],
+    instructions: ['月末締め請求書 同梱', '冷凍便のため 16:30 までに引渡', '配達指定 4/24 午前指定厳守'],
+  },
+  {
+    table:'O', pkNo:'SO01208830032', shipDate:'2026/04/23',
+    carrier:'ゆうパック', carrierBadge:'badge-jp',
+    invoice:'00058581230001',
+    zip:'135-0063', addr:'東京都江東区有明１丁目', name:'株式会社サンプル商事',
+    noshi:null, frozen:false, corp:true, special:false,
+    deliveryDate:null,
+    items: [
+      { code:'7000',  name:'定期パック',      jan:'2800001000027', qty:6 },
+      { code:'70071', name:'水引ＭＳパック',   jan:'2800002007112', qty:3 },
+      { code:'0100',  name:'送料無料セット',   jan:'2800000000010', qty:1 },
+    ],
+    koudoku: [
+      { label:'請求書 同梱', checked:false },
+      { label:'納品書 別送なし', checked:false },
+      { label:'挨拶状 同封', checked:false },
+    ],
+    instructions: ['請求書はAR部宛で送付', '挨拶状（春）同封', '宛名はお届け先名で出力'],
+  },
+];
+
+let currentOrder = null;
+let scanned = [];
+let screenState = 'idle';
+let selectedReason = null;
+let selectedReasonLabel = null;
+let itemsAllScanned = false;
+let stickyForce = false;
+let stickyForceReason = null;
+let stickyForceReasonCode = null;
+
+// v0.4: 完了済みレジストリ（再スキャン検出用）
+const COMPLETED = {};
+let pendingCompleted = null;
+
+// ★v0.8★ 保留中伝票レジストリ（検品状態スナップショット）
+const HELD_ORDERS = {};
+let pendingHeld = null;
+
+function showScreen(which) {
+  screenState = which;
+  document.getElementById('scrIdle').style.display      = (which==='idle') ? 'flex' : 'none';
+  document.getElementById('scrInspect').classList.toggle('show', which==='inspect');
+  document.getElementById('scrComplete').classList.toggle('show', which==='complete');
+  document.getElementById('footerBar').style.display    = (which==='inspect') ? 'flex' : 'none';
+}
+
+function updateFlowSteps(step) {
+  const s1 = document.getElementById('step1');
+  const s2 = document.getElementById('step2');
+  const s3 = document.getElementById('step3');
+  [s1,s2,s3].forEach(x=>x.classList.remove('active','done'));
+  if (step >= 1) s1.classList.add('done');
+  if (step === 2) s2.classList.add('active');
+  else if (step >= 3) s2.classList.add('done');
+  if (step === 3) s3.classList.add('active');
+  else if (step >= 4) s3.classList.add('done');
+}
+
+function loadOrder(idx) {
+  const target = ORDERS[idx];
+  // v0.4: 完了済みなら検品済みポップアップ
+  if (COMPLETED[target.invoice]) {
+    showCompletedPopup(COMPLETED[target.invoice], idx);
+    return;
+  }
+  // ★v0.8★ 保留中なら保留ポップアップ
+  if (HELD_ORDERS[target.invoice]) {
+    showHeldPopup(HELD_ORDERS[target.invoice], idx);
+    return;
+  }
+  currentOrder = JSON.parse(JSON.stringify(ORDERS[idx]));
+  scanned = currentOrder.items.map(()=>0);
+  itemsAllScanned = false;
+  if (typeof SELECTED_ROW !== 'undefined') SELECTED_ROW = -1;
+
+  document.getElementById('hTable').textContent = currentOrder.table;
+  document.getElementById('pkNo').textContent = currentOrder.pkNo;
+  document.getElementById('sName').textContent = currentOrder.name;
+  document.getElementById('sAddr').textContent = '〒' + currentOrder.zip + '　' + currentOrder.addr;
+
+  const badge = document.getElementById('carrierBadge');
+  badge.className = 'carrier-badge ' + currentOrder.carrierBadge;
+  badge.textContent = currentOrder.carrier === 'ヤマト運輸' ? 'ヤマト' : 'JP';
+
+  const ab = document.getElementById('alertBar');
+  ab.classList.remove('frozen','special','show');
+  const hasAny = currentOrder.noshi || currentOrder.frozen || currentOrder.corp || currentOrder.special || currentOrder.deliveryDate;
+  if (hasAny) ab.classList.add('show');
+  if (currentOrder.special) ab.classList.add('special');
+  else if (currentOrder.frozen) ab.classList.add('frozen');
+  document.getElementById('alNoshi').style.display   = currentOrder.noshi   ? 'inline' : 'none';
+  document.getElementById('alFrozen').style.display  = currentOrder.frozen  ? 'inline' : 'none';
+  document.getElementById('alCorp').style.display    = currentOrder.corp    ? 'inline' : 'none';
+  document.getElementById('alSpecial').style.display = currentOrder.special ? 'inline' : 'none';
+  document.getElementById('alDate').style.display    = currentOrder.deliveryDate ? 'inline' : 'none';
+  if (currentOrder.deliveryDate) document.getElementById('alDateVal').textContent = currentOrder.deliveryDate.slice(5);
+
+  renderItems();
+  renderKoudoku();
+  updateFlowSteps(2);
+
+  if (stickyForce) {
+    scanned = currentOrder.items.map(it => it.qty);
+    renderItems();
+    itemsAllScanned = true;
+    updateFlowSteps(3);
+  }
+
+  showScreen('inspect');
+}
+
+function renderItems() {
+  const list = document.getElementById('scanList');
+  list.innerHTML = '';
+  let totalQ = 0, doneQ = 0;
+  const curIdx = currentOrder.items.findIndex((it,i) => scanned[i] < it.qty);
+  currentOrder.items.forEach((it, i) => {
+    const done = scanned[i];
+    const line = document.createElement('div');
+    line.className = 'scan-line';
+    if (done >= it.qty) line.classList.add('done');
+    else if (i === curIdx) line.classList.add('current');
+    if (i === SELECTED_ROW) line.classList.add('sel');
+    line.innerHTML = `
+      <div class="pname">${it.name}</div>
+      <div class="pcode">${it.code} ／ JAN ${it.jan}</div>
+      <div class="bottom">
+        <div class="qty"><span>${done}</span><small>/</small><span>${it.qty}</span><small>個</small></div>
+        <div class="row-actions">
+          ${done<it.qty ? `
+            <button class="row-btn" onclick="simulateScanItem(${i})">+1</button>
+            <button class="row-btn qty" onclick="openQtyKeypad(${i})">🔢数量</button>
+          `:''}
+        </div>
+      </div>
+    `;
+    list.appendChild(line);
+    totalQ += it.qty;
+    doneQ += Math.min(done, it.qty);
+  });
+  document.getElementById('progNow').textContent = doneQ;
+  document.getElementById('progTotal').textContent = totalQ;
+
+  const wasComplete = itemsAllScanned;
+  itemsAllScanned = (doneQ >= totalQ) && totalQ > 0;
+  const btnInv = document.getElementById('btnInvoice');
+  if (itemsAllScanned) {
+    btnInv.classList.remove('highlight');
+    updateFlowSteps(3);
+  } else {
+    btnInv.classList.remove('highlight');
+  }
+
+  document.getElementById('koudokuStrip').style.display = (currentOrder.koudoku.length>0) ? 'block' : 'none';
+
+  // ★v0.6★ 商品検品完了で自動的に最終チェック画面を開く（F4押下省略）
+  if (itemsAllScanned && !wasComplete && !document.getElementById('koudokuModal').classList.contains('active')) {
+    setTimeout(() => {
+      if (itemsAllScanned && screenState === 'inspect') {
+        openKoudokuModal();
+      }
+    }, 350);
+  }
+}
+
+function renderKoudoku() {
+  const list = document.getElementById('koudokuList');
+  if (!currentOrder || !currentOrder.koudoku.length) { list.innerHTML=''; return; }
+  list.innerHTML = '';
+  currentOrder.koudoku.forEach((k, i) => {
+    const el = document.createElement('div');
+    el.className = 'koudoku-item' + (k.checked ? ' checked' : '');
+    el.onclick = () => { k.checked = !k.checked; renderKoudoku(); };
+    el.innerHTML = `<div class="cb">${k.checked?'✓':''}</div><div>${k.label}</div>`;
+    list.appendChild(el);
+  });
+}
+
+function flash(kind='ok') {
+  const el = document.getElementById('flash');
+  el.classList.remove('ng','invoice','show');
+  if (kind==='ng') el.classList.add('ng');
+  if (kind==='invoice') el.classList.add('invoice');
+  void el.offsetWidth;
+  el.classList.add('show');
+}
+
+function simulateScanProduct(wrong=false) {
+  if (screenState !== 'inspect' || !currentOrder) return;
+  if (wrong) {
+    flash('ng');
+    return;
+  }
+  const idx = scanned.findIndex((s,i) => s < currentOrder.items[i].qty);
+  if (idx === -1) return;
+  simulateScanItem(idx);
+}
+
+function simulateScanItem(i) {
+  if (!currentOrder || scanned[i] >= currentOrder.items[i].qty) return;
+  scanned[i]++;
+  flash('ok');
+  renderItems();
+}
+
+// === 数量キーパッド ===
+let qpTargetIdx = -1;
+let qpBuffer = '';
+
+function openQtyKeypad(i) {
+  if (!currentOrder) return;
+  const it = currentOrder.items[i];
+  const already = scanned[i];
+  const remain = it.qty - already;
+  if (remain <= 0) return;
+  qpTargetIdx = i;
+  qpBuffer = '';
+  document.getElementById('qtyTargetName').textContent = it.name;
+  document.getElementById('qtyTargetCode').textContent = `${it.code} ／ JAN ${it.jan}`;
+  document.getElementById('qtyAlready').textContent = already;
+  document.getElementById('qtyAll').textContent = it.qty;
+  document.getElementById('qtyRemain').textContent = remain;
+  document.getElementById('qtyTotal').textContent = remain;
+  hideQtyError();
+  refreshQtyDisplay();
+  document.getElementById('qtyModal').classList.add('active');
+}
+function currentRemain() {
+  if (qpTargetIdx < 0 || !currentOrder) return 0;
+  const it = currentOrder.items[qpTargetIdx];
+  return it.qty - scanned[qpTargetIdx];
+}
+function refreshQtyDisplay() {
+  const v = qpBuffer === '' ? 0 : parseInt(qpBuffer, 10);
+  const disp = document.getElementById('qtyDisplay');
+  disp.textContent = String(v);
+  const remain = currentRemain();
+  if (v > remain) {
+    showQtyError(`入力 ${v} は残 ${remain} 超過`);
+    disp.style.color = '#fca5a5';
+  } else {
+    hideQtyError();
+    disp.style.color = '#fbbf24';
+  }
+}
+function showQtyError(msg) {
+  const box = document.getElementById('qtyError');
+  document.getElementById('qtyErrorMsg').textContent = msg;
+  box.style.display = 'block';
+}
+function hideQtyError() {
+  document.getElementById('qtyError').style.display = 'none';
+}
+function qpNum(n) {
+  if (qpBuffer.length >= 3) return;
+  qpBuffer = (qpBuffer === '0' ? '' : qpBuffer) + String(n);
+  refreshQtyDisplay();
+}
+function qpBack()  { qpBuffer = qpBuffer.slice(0, -1); refreshQtyDisplay(); }
+function qpClear() { qpBuffer = ''; refreshQtyDisplay(); }
+function qpCancel(){ document.getElementById('qtyModal').classList.remove('active'); qpTargetIdx = -1; }
+function qpConfirm() {
+  if (qpTargetIdx < 0) return;
+  const it = currentOrder.items[qpTargetIdx];
+  const n = qpBuffer === '' ? 0 : parseInt(qpBuffer, 10);
+  const remain = it.qty - scanned[qpTargetIdx];
+  if (n <= 0) {
+    showQtyError('1以上の数量を入力してください');
+    flash('ng');
+    return;
+  }
+  if (n > remain) {
+    showQtyError(`入力 ${n} は残 ${remain} を超えています`);
+    flash('ng');
+    return;
+  }
+  scanned[qpTargetIdx] = scanned[qpTargetIdx] + n;
+  flash('ok');
+  document.getElementById('qtyModal').classList.remove('active');
+  qpTargetIdx = -1;
+  renderItems();
+}
+
+// === 同梱物 ===
+function toggleNextKoudoku() {
+  if (!currentOrder) return;
+  const idx = currentOrder.koudoku.findIndex(k=>!k.checked);
+  if (idx === -1) return;
+  currentOrder.koudoku[idx].checked = true;
+  renderKoudoku();
+}
+
+// === ★v0.6★ 検品全完了で手動展開する場合（通常はrenderItemsから自動展開） ===
+function finishInspection() {
+  if (screenState !== 'inspect' || !currentOrder) return;
+  if (!itemsAllScanned) {
+    alert('検品未完了\n・残りをスキャン\n・F4=⏭検品省略 で全件省略\n・F2=強制OK で個別承認');
+    return;
+  }
+  const hasNoshi = !!currentOrder.noshi;
+  const hasKoudoku = currentOrder.koudoku && currentOrder.koudoku.length>0;
+  const hasInstr = currentOrder.instructions && currentOrder.instructions.length>0;
+  if (hasNoshi || hasKoudoku || hasInstr) {
+    openKoudokuModal();
+  } else {
+    flash('invoice');
+    updateFlowSteps(4);
+    toComplete();
+  }
+}
+
+// === ★v0.6★ 検品省略 → 全件完了扱い → 自動展開フローへ合流（F4） ===
+function skipAndFinish() {
+  if (screenState !== 'inspect' || !currentOrder) return;
+  if (itemsAllScanned) {
+    if (!document.getElementById('koudokuModal').classList.contains('active')) {
+      openKoudokuModal();
+    }
+    return;
+  }
+  let remain = 0;
+  currentOrder.items.forEach((it, i) => { remain += Math.max(0, it.qty - (scanned[i] || 0)); });
+  const msg = `一括検品（残数を一括完了扱い）を実行しますか？\n\n残り未検品: ${remain} 点\n（強制OKと異なり理由コードは記録されません）`;
+  if (!confirm(msg)) return;
+  scanned = currentOrder.items.map(it => it.qty);
+  console.log(`[監査ログ] 一括検品 PK=${currentOrder.pkNo} 残${remain}点を一括完了`);
+  renderItems();
+}
+
+function openKoudokuModal() {
+  // ★v0.11★ 商品検品状況サマリーは撤去済み（ハンディ画面では文字が小さすぎるため）
+  let totalQ = 0, doneQ = 0;
+  currentOrder.items.forEach((it, i) => {
+    const done = scanned[i] || 0;
+    totalQ += it.qty;
+    doneQ += Math.min(done, it.qty);
+  });
+  // ★v0.12★ finalItemForce div は撤去済み（HTMLなし）のため参照を除去
+
+  // ▼ のし表示
+  const noshiBox = document.getElementById('kdkNoshi');
+  if (currentOrder.noshi) {
+    noshiBox.style.display = 'block';
+    document.getElementById('kdkNoshiKind').textContent = '🎁 ' + currentOrder.noshi;
+    document.getElementById('kdkNoshiName').textContent = currentOrder.noshiName || '（名入れなし）';
+    document.getElementById('kdkNoshiCb').checked = false;
+  } else {
+    noshiBox.style.display = 'none';
+  }
+
+  // ▼ リスト：のし関連は除外（重複防止）
+  const list = document.getElementById('kdkList');
+  list.innerHTML = '';
+  (currentOrder.instructions || []).forEach((txt, i) => {
+    if (isNoshiText(txt)) return;  // ★v0.5★ のし重複除外
+    const el = document.createElement('div');
+    el.className = 'kdk-row-light-h';
+    el.dataset.kind = 'instr';
+    el.dataset.idx = i;
+    el.dataset.checked = '0';
+    el.innerHTML = `<div class="cb">✓</div><div style="flex:1;"><div class="ttl">${txt}</div></div>`;
+    el.onclick = () => toggleKdkRow(el);
+    list.appendChild(el);
+  });
+  (currentOrder.koudoku || []).forEach((k, i) => {
+    if (isNoshiText(k.label)) return;  // ★v0.5★ のし重複除外
+    const el = document.createElement('div');
+    el.className = 'kdk-row-light-h' + (k.checked ? ' checked' : '');
+    el.dataset.kind = 'koudoku';
+    el.dataset.idx = i;
+    el.dataset.checked = k.checked ? '1' : '0';
+    el.innerHTML = `<div class="cb">${k.checked ? '✓' : ''}</div><div style="flex:1;"><div class="ttl">${k.label}</div></div>`;
+    el.onclick = () => toggleKdkRow(el);
+    list.appendChild(el);
+  });
+  if (list.children.length === 0) {
+    list.innerHTML = '<div style="text-align:center; padding:10px; color:#64748b; font-size:11px;">同梱指示／同梱物 なし</div>';
+  }
+  updateKdkProgress();
+  document.getElementById('koudokuModal').classList.add('active');
+}
+
+// ★v0.5★ のし関連テキスト判定（重複除外用）
+function isNoshiText(txt) {
+  if (!txt) return false;
+  return /熨斗|のし|台紙/.test(txt);
+}
+
+function toggleKdkRow(el) {
+  const checked = el.dataset.checked === '1';
+  el.dataset.checked = checked ? '0' : '1';
+  if (!checked) {
+    el.classList.add('checked');
+    if (el.dataset.kind === 'koudoku') currentOrder.koudoku[parseInt(el.dataset.idx)].checked = true;
+  } else {
+    el.classList.remove('checked');
+    if (el.dataset.kind === 'koudoku') currentOrder.koudoku[parseInt(el.dataset.idx)].checked = false;
+  }
+  el.querySelector('.cb').textContent = checked ? '' : '✓';
+  updateKdkProgress();
+}
+
+function updateKdkProgress() {
+  const list = document.getElementById('kdkList');
+  const rows = Array.from(list.querySelectorAll('[data-kind]'));
+  let total = rows.length;
+  let done = rows.filter(r => r.dataset.checked === '1').length;
+  const noshiBox = document.getElementById('kdkNoshi');
+  if (noshiBox.style.display !== 'none') {
+    total += 1;
+    if (document.getElementById('kdkNoshiCb').checked) done += 1;
+  }
+  document.getElementById('kdkCheckedN').textContent = done;
+  document.getElementById('kdkTotalN').textContent = total;
+  document.getElementById('kdkFill').style.width = (total ? Math.round(done/total*100) : 100) + '%';
+
+  // ★v0.11★ サンドイッチ方式：全☑後にスキャンボタンを脈動状態へ
+  const ready = (done >= total);
+  const scanBtn = document.getElementById('kdkScanInvoiceBtn');
+  if (scanBtn) {
+    if (ready) {
+      scanBtn.disabled = false;
+      scanBtn.classList.remove('scan-cta-disabled-h');
+      scanBtn.classList.add('scan-cta-emphasis-h');
+    } else {
+      scanBtn.disabled = true;
+      scanBtn.classList.remove('scan-cta-emphasis-h');
+      scanBtn.classList.add('scan-cta-disabled-h');
+    }
+  }
+  if (currentOrder) renderKoudoku();
+}
+
+// ★v0.13★ のし/梱包物チェック：Enterキーで順次チェック
+function kdkEnterCheck() {
+  // のしチェック（表示中かつ未チェックなら最優先）
+  const noshiBox = document.getElementById('kdkNoshi');
+  const noshiCb  = document.getElementById('kdkNoshiCb');
+  if (noshiBox && noshiBox.style.display !== 'none' && !noshiCb.checked) {
+    noshiCb.checked = true;
+    updateKdkProgress();
+    return;
+  }
+  // kdkList 内で最初の未チェック行をチェック
+  const list = document.getElementById('kdkList');
+  if (list) {
+    const unchecked = list.querySelector('.kdk-row-light-h:not(.checked)');
+    if (unchecked) { toggleKdkRow(unchecked); return; }
+  }
+  // 全チェック済みなら納品書スキャン実行
+  const scanBtn = document.getElementById('kdkScanInvoiceBtn');
+  if (scanBtn && !scanBtn.disabled) simulateInvoiceScan();
+}
+
+function closeKoudokuModal() {
+  document.getElementById('koudokuModal').classList.remove('active');
+}
+
+// ★v0.10★ 納品書バーコードスキャン → 自動完了（サンドイッチ方式）
+function simulateInvoiceScan() {
+  const scanBtn = document.getElementById('kdkScanInvoiceBtn');
+  if (scanBtn && scanBtn.disabled) {
+    alert('同梱物の確認が完了していません。\n全項目を☑してから納品書をスキャンしてください。');
+    return;
+  }
+  if (!currentOrder) return;
+  flash('invoice');
+  showInvoiceScannedToast(currentOrder.invoice);
+  setTimeout(() => {
+    closeKoudokuModal();
+    updateFlowSteps(4);
+    toComplete();
+  }, 500);
+}
+
+// ★v0.10★ 納品書スキャン後のフィードバック（"✓ 梱包完了" を画面前面に瞬時表示）
+function showInvoiceScannedToast(invoiceNo) {
+  let toast = document.getElementById('__invoiceScanToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = '__invoiceScanToast';
+    toast.style.cssText = 'position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); '
+      + 'background:linear-gradient(135deg,#10b981,#34d399); color:white; padding:18px 24px; '
+      + 'border-radius:12px; font-size:18px; font-weight:bold; box-shadow:0 12px 32px rgba(16,185,129,0.45); '
+      + 'z-index:9999; text-align:center; pointer-events:none; opacity:0; transition:opacity 0.2s;';
+    document.body.appendChild(toast);
+  }
+  toast.innerHTML = '✓ 梱包完了<br>'
+    + '<span style="font-size:11px; font-weight:normal; opacity:0.9;">納品書 ' + (invoiceNo || '') + '</span>';
+  toast.style.opacity = '1';
+  setTimeout(() => { toast.style.opacity = '0'; }, 1400);
+}
+
+// ★v0.10★ 旧仕様の互換用（一括検品など他経路から呼ばれる）
+function finishKoudokuConfirm() {
+  closeKoudokuModal();
+  flash('invoice');
+  updateFlowSteps(4);
+  toComplete();
+}
+
+// v0.4: 検品済み再スキャン
+function showCompletedPopup(rec, orderIdx) {
+  pendingCompleted = { rec: rec, orderIdx: orderIdx };
+  document.getElementById('cpdPkNo').textContent = rec.pkNo;
+  document.getElementById('cpdInvoice').textContent = rec.invoice;
+  document.getElementById('cpdName').textContent = rec.name;
+  document.getElementById('cpdDoneAt').textContent = rec.doneAt;
+  document.getElementById('cpdDoneBy').textContent = rec.doneBy;
+  document.getElementById('cpdQty').textContent = rec.qty + ' 点';
+  document.getElementById('completedModal').classList.add('active');
+  flash('invoice');
+}
+function confirmCompleted() {
+  document.getElementById('completedModal').classList.remove('active');
+  pendingCompleted = null;
+  if (screenState !== 'inspect') backToIdle();
+}
+function reopenCompletedOrder() {
+  if (!pendingCompleted) return;
+  if (!confirm('検品戻しを実行します。\n完了状態を解除し、再検品可能にします。\n（操作はログ記録）')) return;
+  const inv = pendingCompleted.rec.invoice;
+  console.log(`[監査ログ] 検品戻し 納品書=${inv} 元完了=${pendingCompleted.rec.doneAt}`);
+  delete COMPLETED[inv];
+  document.getElementById('completedModal').classList.remove('active');
+  const idx = pendingCompleted.orderIdx;
+  pendingCompleted = null;
+  loadOrder(idx);
+}
+
+// ★v0.8★ 保留中伝票の再スキャン デモ
+function simulateScanHeld() {
+  let invKeys = Object.keys(HELD_ORDERS);
+  if (invKeys.length === 0) {
+    const o = ORDERS[1];
+    const halfScanned = o.items.map(it => Math.floor(it.qty / 2));
+    const orderSnap = JSON.parse(JSON.stringify(o));
+    if (orderSnap.koudoku && orderSnap.koudoku.length > 0) orderSnap.koudoku[0].checked = true;
+    HELD_ORDERS[o.invoice] = {
+      orderIdx: 1,
+      orderSnapshot: orderSnap,
+      scanned: halfScanned,
+      heldAt: '2026/04/23 13:25:42',
+      heldBy: '前任者・池田 玲奈（H-01）',
+      kind: 'contact',
+      contactCat: 'noshi',
+      contactCatLabel: '🎁 のし',
+      contactBody: 'のし台紙が破損。代替品の確認待ち。',
+    };
+    invKeys = [o.invoice];
+  }
+  const inv = invKeys[Math.floor(Math.random()*invKeys.length)];
+  const rec = HELD_ORDERS[inv];
+  const idx = ORDERS.findIndex(o => o.invoice === inv);
+  showHeldPopup(rec, idx);
+}
+
+function simulateScanCompleted() {
+  let invKeys = Object.keys(COMPLETED);
+  if (invKeys.length === 0) {
+    COMPLETED[ORDERS[0].invoice] = {
+      pkNo: ORDERS[0].pkNo,
+      invoice: ORDERS[0].invoice,
+      name: ORDERS[0].name,
+      doneAt: '2026/04/23 09:42:18',
+      doneBy: '田中 結衣（H-04）',
+      qty: ORDERS[0].items.reduce((a,b)=>a+b.qty, 0)
+    };
+    invKeys = [ORDERS[0].invoice];
+  }
+  const inv = invKeys[Math.floor(Math.random()*invKeys.length)];
+  const rec = COMPLETED[inv];
+  const idx = ORDERS.findIndex(o => o.invoice === inv);
+  showCompletedPopup(rec, idx);
+}
+
+
+// ★v0.7★ 保留メニュー
+function openHoldMenu() {
+  if (screenState !== 'inspect' || !currentOrder) {
+    SELECTED_ROW = -1; backToIdle(); return;
+  }
+  document.getElementById('holdMenuModal').classList.add('active');
+}
+function closeHoldMenu() {
+  const a = document.getElementById('holdMenuModal');
+  const b = document.getElementById('holdContactModal');
+  if (a) a.classList.remove('active');
+  if (b) b.classList.remove('active');
+}
+function holdSubmitInspection() {
+  if (!currentOrder) { closeHoldMenu(); return; }
+  // ★v0.8★ 検品保留：状態保持
+  const inv = currentOrder.invoice;
+  const scannedSnap = scanned.slice();
+  const orderSnap = JSON.parse(JSON.stringify(currentOrder));
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const heldAt = `${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const orderIdx = ORDERS.findIndex(o => o.invoice === inv);
+  HELD_ORDERS[inv] = {
+    orderIdx: orderIdx,
+    orderSnapshot: orderSnap,
+    scanned: scannedSnap,
+    heldAt: heldAt,
+    heldBy: '担当者A（H-04）',
+    kind: 'inspection',
+    contactCat: null,
+    contactBody: '',
+  };
+  console.log(`[監査ログ] 検品保留（状態保持） PK=${currentOrder.pkNo} 納品書=${inv} スキャン済み=${scannedSnap.reduce((a,b)=>a+b,0)}点`);
+  closeHoldMenu();
+  alert(`⏸ 検品保留（スキャン状態保持）\n\n伝票: ${currentOrder.pkNo}\nスキャン済: ${scannedSnap.reduce((a,b)=>a+b,0)}点\n\n同じピッキング№を再スキャンで「続きから」可能。`);
+  SELECTED_ROW = -1; backToIdle();
+}
+function holdGoToContact() {
+  document.getElementById('holdMenuModal').classList.remove('active');
+  document.getElementById('holdCategory').textContent = '未選択';
+  document.getElementById('holdContactBody').value = '';
+  document.querySelectorAll('#holdCatBtns .cat-btn').forEach(b => b.classList.remove('on'));
+  document.getElementById('holdSelectedCat').value = '';
+  document.getElementById('holdSendBtn').disabled = true;
+  document.getElementById('holdContactModal').classList.add('active');
+}
+function holdSelectCategory(btn, code, label) {
+  document.querySelectorAll('#holdCatBtns .cat-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById('holdCategory').textContent = label;
+  document.getElementById('holdSelectedCat').value = code;
+  document.getElementById('holdSendBtn').disabled = false;
+}
+function holdSendContact() {
+  const cat = document.getElementById('holdSelectedCat').value;
+  const catLabel = document.getElementById('holdCategory').textContent;
+  const body = document.getElementById('holdContactBody').value.trim();
+  if (!cat) { alert('分類を選択してください'); return; }
+  if (!currentOrder) { closeHoldMenu(); return; }
+  const payload = {
+    id: 'HC-' + Date.now(),
+    from: '担当者A（H-04）',
+    pkNo: currentOrder.pkNo,
+    invoice: currentOrder.invoice,
+    category: cat,
+    categoryLabel: catLabel,
+    body: body,
+    sentAt: new Date().toISOString(),
+    read: false,
+  };
+  console.log('[監査ログ] 本部連絡送信', payload);
+  // ★v0.8★ 本部連絡も保留扱いとして状態保持
+  const inv = currentOrder.invoice;
+  const scannedSnap = scanned.slice();
+  const orderSnap = JSON.parse(JSON.stringify(currentOrder));
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const heldAt = `${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const orderIdx = ORDERS.findIndex(o => o.invoice === inv);
+  HELD_ORDERS[inv] = {
+    orderIdx: orderIdx,
+    orderSnapshot: orderSnap,
+    scanned: scannedSnap,
+    heldAt: heldAt,
+    heldBy: '担当者A（H-04）',
+    kind: 'contact',
+    contactCat: cat,
+    contactCatLabel: catLabel,
+    contactBody: body,
+  };
+  closeHoldMenu();
+  alert(`📢 本部連絡 送信（検品状態保持）\n\n分類: ${catLabel}\n伝票: ${currentOrder.pkNo}\n${body?'内容: '+body+'\n':''}\n※ 管理PC「連絡」タブにバッジ通知\n※ 同じピッキング№を再スキャンで続きから可能`);
+  SELECTED_ROW = -1; backToIdle();
+}
+function holdAbort() {
+  if (!confirm('伝票を中断（破棄）し、待機画面に戻ります。よろしいですか？')) return;
+  closeHoldMenu();
+  SELECTED_ROW = -1; backToIdle();
+}
+
+
+// ★v0.8★ 保留中伝票 ポップアップ
+function showHeldPopup(rec, orderIdx) {
+  pendingHeld = { rec: rec, orderIdx: orderIdx };
+  document.getElementById('hpkPkNo').textContent      = rec.orderSnapshot.pkNo;
+  document.getElementById('hpkInvoice').textContent   = rec.orderSnapshot.invoice;
+  document.getElementById('hpkName').textContent      = rec.orderSnapshot.name;
+  document.getElementById('hpkHeldAt').textContent    = rec.heldAt;
+  document.getElementById('hpkHeldBy').textContent    = rec.heldBy;
+  let totalQ = 0, doneQ = 0;
+  rec.orderSnapshot.items.forEach((it, i) => {
+    totalQ += it.qty;
+    doneQ += Math.min(rec.scanned[i] || 0, it.qty);
+  });
+  document.getElementById('hpkScanProg').textContent  = `${doneQ}/${totalQ} 点 ${doneQ>=totalQ?'(完了)':'(残'+(totalQ-doneQ)+')'}`;
+  const kindLabel = rec.kind === 'contact'
+    ? `📢 本部連絡（${rec.contactCatLabel || ''}）${rec.contactBody?'：'+rec.contactBody:''}`
+    : '⏸ 検品保留';
+  document.getElementById('hpkKind').textContent = kindLabel;
+  document.getElementById('heldModal').classList.add('active');
+  flash('invoice');
+}
+
+// 続きから検品：保留時の状態を復元
+function resumeHeldOrder() {
+  if (!pendingHeld) return;
+  const rec = pendingHeld.rec;
+  console.log(`[監査ログ] 検品再開（保留復元） 納品書=${rec.orderSnapshot.invoice} 元保留=${rec.heldAt}`);
+  currentOrder = JSON.parse(JSON.stringify(rec.orderSnapshot));
+  scanned = rec.scanned.slice();
+  delete HELD_ORDERS[rec.orderSnapshot.invoice];
+  document.getElementById('heldModal').classList.remove('active');
+  pendingHeld = null;
+  itemsAllScanned = false;
+  // 画面構築
+  document.getElementById('hTable').textContent = currentOrder.table;
+  document.getElementById('pkNo').textContent = currentOrder.pkNo;
+  document.getElementById('sName').textContent = currentOrder.name;
+  document.getElementById('sAddr').textContent = '〒' + currentOrder.zip + '　' + currentOrder.addr;
+  const badge = document.getElementById('carrierBadge');
+  badge.className = 'carrier-badge ' + currentOrder.carrierBadge;
+  badge.textContent = currentOrder.carrier === 'ヤマト運輸' ? 'ヤマト' : 'JP';
+  const ab = document.getElementById('alertBar');
+  ab.classList.remove('frozen','special','show');
+  const hasAny = currentOrder.noshi || currentOrder.frozen || currentOrder.corp || currentOrder.special || currentOrder.deliveryDate;
+  if (hasAny) ab.classList.add('show');
+  if (currentOrder.special) ab.classList.add('special');
+  else if (currentOrder.frozen) ab.classList.add('frozen');
+  document.getElementById('alNoshi').style.display   = currentOrder.noshi   ? 'inline' : 'none';
+  document.getElementById('alFrozen').style.display  = currentOrder.frozen  ? 'inline' : 'none';
+  document.getElementById('alCorp').style.display    = currentOrder.corp    ? 'inline' : 'none';
+  document.getElementById('alSpecial').style.display = currentOrder.special ? 'inline' : 'none';
+  document.getElementById('alDate').style.display    = currentOrder.deliveryDate ? 'inline' : 'none';
+  if (currentOrder.deliveryDate) document.getElementById('alDateVal').textContent = currentOrder.deliveryDate.slice(5);
+  renderItems();
+  renderKoudoku();
+  updateFlowSteps(2);
+  showScreen('inspect');
+  alert(`▶ 保留中の検品を再開\nスキャン済: ${scanned.reduce((a,b)=>a+b,0)}点（同梱物☑も復元）`);
+}
+
+function restartHeldOrder() {
+  if (!pendingHeld) return;
+  if (!confirm('保留状態を破棄して最初から検品します。よろしいですか？')) return;
+  const rec = pendingHeld.rec;
+  const idx = pendingHeld.orderIdx;
+  console.log(`[監査ログ] 検品最初から（保留破棄） 納品書=${rec.orderSnapshot.invoice}`);
+  delete HELD_ORDERS[rec.orderSnapshot.invoice];
+  document.getElementById('heldModal').classList.remove('active');
+  pendingHeld = null;
+  loadOrder(idx);
+}
+
+function cancelHeldPopup() {
+  document.getElementById('heldModal').classList.remove('active');
+  pendingHeld = null;
+}
+
+function toComplete() {
+  const cnt = scanned.reduce((a,b)=>a+b, 0);
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const doneAt = `${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  COMPLETED[currentOrder.invoice] = {
+    pkNo: currentOrder.pkNo,
+    invoice: currentOrder.invoice,
+    name: currentOrder.name,
+    doneAt: doneAt,
+    doneBy: '担当者A（H-04）',
+    qty: cnt
+  };
+  console.log(`[監査ログ] 検品完了 PK=${currentOrder.pkNo} INV=${currentOrder.invoice} 数量=${cnt}`);
+  const summary = `PK-NO: ${currentOrder.pkNo}\n${currentOrder.name}`;
+  document.getElementById('completeSummary').textContent = summary;
+  const extras = [];
+  if (currentOrder.frozen)  extras.push('❄ 冷凍便');
+  if (currentOrder.noshi)   extras.push('🎁 熨斗');
+  if (currentOrder.special) extras.push('⚠ 特殊梱包対象 → タブレット梱包ステーションで再スキャン');
+  document.getElementById('completeExtra').textContent = extras.join('　／　');
+  showScreen('complete');
+  setTimeout(()=> backToIdle(), 4000);
+}
+
+function backToIdle() {
+  currentOrder = null;
+  scanned = [];
+  itemsAllScanned = false;
+  if (typeof SELECTED_ROW !== 'undefined') SELECTED_ROW = -1;
+  showScreen('idle');
+}
+
+// === 強制OK ===
+function openForceOK() {
+  if (screenState !== 'inspect' || !currentOrder) return;
+  selectedReason = null;
+  selectedReasonLabel = null;
+  document.querySelectorAll('.reason-btn').forEach(b=>b.classList.remove('selected'));
+  document.getElementById('stickyCb').checked = stickyForce;
+  document.getElementById('forceModal').classList.add('active');
+}
+function closeForceOK() {
+  document.getElementById('forceModal').classList.remove('active');
+}
+function selectReason(el, code, label) {
+  selectedReason = code;
+  selectedReasonLabel = label;
+  document.querySelectorAll('.reason-btn').forEach(b=>b.classList.remove('selected'));
+  el.classList.add('selected');
+}
+function confirmForceOK() {
+  if (!selectedReason) { alert('理由コードを選択してください'); return; }
+  const sticky = document.getElementById('stickyCb').checked;
+  stickyForce = sticky;
+  stickyForceReason = sticky ? selectedReasonLabel : null;
+  stickyForceReasonCode = sticky ? selectedReason : null;
+  scanned = currentOrder.items.map(it => it.qty);
+  renderItems();
+  itemsAllScanned = true;
+  updateFlowSteps(3);
+  closeForceOK();
+  updateForceBanner();
+  console.log(`[監査ログ] 強制OK 理由=${selectedReason}:${selectedReasonLabel} Sticky=${sticky} PK=${currentOrder.pkNo}`);
+}
+function updateForceBanner() {
+  const bn = document.getElementById('forceBanner');
+  if (stickyForce) {
+    bn.classList.add('show');
+    document.getElementById('forceReasonLabel').textContent = `${stickyForceReasonCode} ${stickyForceReason}`;
+  } else {
+    bn.classList.remove('show');
+  }
+}
+function releaseForce() {
+  stickyForce = false;
+  stickyForceReason = null;
+  stickyForceReasonCode = null;
+  updateForceBanner();
+}
+
+// === QRラベル再発行（スキャン確定式） ===
+let reprintTarget = null;
+function openQRReprint() {
+  reprintTarget = null;
+  document.getElementById('reprintWait').style.display = 'block';
+  document.getElementById('reprintConfirm').style.display = 'none';
+  document.getElementById('reprintDoBtn').disabled = true;
+  document.getElementById('reprintModal').classList.add('active');
+}
+function closeReprint() {
+  document.getElementById('reprintModal').classList.remove('active');
+  reprintTarget = null;
+}
+function simulateReprintScan() {
+  const pool = [
+    { pk:'SC01208830001', name:'佐藤 友子',             zip:'680-041', carrier:'ヤマト運輸' },
+    { pk:'SV01208830045', name:'アイブリッジ株式会社', zip:'244-0812', carrier:'ヤマト運輸' },
+    { pk:'SI01208830033', name:'池田 敏之・節子',     zip:'680-041', carrier:'ゆうパック' },
+    { pk:'SO01208830032', name:'株式会社サンプル商事', zip:'135-0063', carrier:'ゆうパック' },
+  ];
+  reprintTarget = pool[Math.floor(Math.random()*pool.length)];
+  document.getElementById('reprintWait').style.display = 'none';
+  document.getElementById('reprintConfirm').style.display = 'block';
+  document.getElementById('reprintPkNo').textContent = reprintTarget.pk;
+  document.getElementById('reprintInfo').textContent = `${reprintTarget.name} ／ 〒${reprintTarget.zip} ／ ${reprintTarget.carrier}`;
+  document.getElementById('reprintDoBtn').disabled = false;
+  flash('invoice');
+}
+function doReprint() {
+  if (!reprintTarget) return;
+  const pk = reprintTarget.pk;
+  closeReprint();
+  alert(`QRラベル再発行\n対象: ${pk}\n出力先: SATO CT4-LX（梱包ST1）\n※ハンディからは印刷指示のみ`);
+  console.log(`[監査ログ] QRラベル再発行 対象=${pk} 時刻=${new Date().toISOString()}`);
+}
+
+// === ★v0.3★ 物理キー（BT-A500）ハンドラ ==========================
+let SELECTED_ROW = -1;
+
+function isModalOpen(id) {
+  const el = document.getElementById(id);
+  return el && el.classList.contains('active');
+}
+function anyModalOpen() {
+  return ['forceModal','qtyModal','reprintModal','noticeModal','holdMenuModal','holdContactModal','koudokuModal','completedModal','heldModal'].some(isModalOpen);
+}
+
+const KEY_ID_MAP = {
+  'F1':'kF1','F2':'kF2','F3':'kF3','F4':'kF4',
+  'Up':'kUp','Down':'kDown','Left':'kLeft','Right':'kRight','Enter':'kEnt',
+  '0':'kN0','1':'kN1','2':'kN2','3':'kN3','4':'kN4','5':'kN5','6':'kN6','7':'kN7','8':'kN8','9':'kN9',
+  'Clear':'kCLR','Backspace':'kBS',
+  'Escape':'kEsc','Tab':'kTab',
+  'Trigger':'kTrig','SideL':'kSideL','SideR':'kSideR',
+  'VolUp':'kVolP','VolDown':'kVolM','Power':'kPwr',
+};
+function pulseKey(key) {
+  const id = KEY_ID_MAP[key];
+  if (!id) return;
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.add('pressed');
+  setTimeout(()=> el.classList.remove('pressed'), 130);
+}
+
+function moveSelectedRow(delta) {
+  if (!currentOrder) return;
+  const n = currentOrder.items.length;
+  if (n === 0) return;
+  if (SELECTED_ROW < 0) {
+    SELECTED_ROW = currentOrder.items.findIndex((it,i)=> scanned[i] < it.qty);
+    if (SELECTED_ROW < 0) SELECTED_ROW = 0;
+  } else {
+    SELECTED_ROW = (SELECTED_ROW + delta + n) % n;
+  }
+  renderItems();
+}
+
+function untoggleLastKoudoku() {
+  if (!currentOrder) return;
+  for (let i = currentOrder.koudoku.length - 1; i >= 0; i--) {
+    if (currentOrder.koudoku[i].checked) {
+      currentOrder.koudoku[i].checked = false;
+      renderKoudoku();
+      return;
+    }
+  }
+}
+
+function hwTrigger() {
+  if (screenState === 'idle') {
+    loadOrder(Math.floor(Math.random()*ORDERS.length));
+  } else if (screenState === 'inspect') {
+    simulateScanProduct();
+  }
+}
+function hwF2() {
+  if (screenState === 'idle') { openQRReprint(); return; }
+  if (screenState === 'inspect') { openForceOK(); return; }
+}
+
+function hwKey(key) {
+  pulseKey(key);
+
+  if (/^[0-9]$/.test(key)) {
+    if (isModalOpen('qtyModal')) { qpNum(parseInt(key,10)); return; }
+    if (screenState === 'inspect' && currentOrder) {
+      let target = (SELECTED_ROW >= 0 && scanned[SELECTED_ROW] < currentOrder.items[SELECTED_ROW].qty)
+        ? SELECTED_ROW
+        : currentOrder.items.findIndex((it,i)=> scanned[i] < it.qty);
+      if (target >= 0) {
+        openQtyKeypad(target);
+        qpNum(parseInt(key,10));
+      }
+    }
+    return;
+  }
+  if (key === 'Backspace') {
+    if (isModalOpen('qtyModal')) qpBack();
+    return;
+  }
+  if (key === 'Clear') {
+    if (isModalOpen('qtyModal')) qpClear();
+    return;
+  }
+
+  if (key === 'Up' || key === 'Down') {
+    if (isModalOpen('qtyModal') || isModalOpen('forceModal') || isModalOpen('reprintModal') || isModalOpen('noticeModal')) return;
+    if (screenState !== 'inspect') return;
+    moveSelectedRow(key === 'Up' ? -1 : 1);
+    return;
+  }
+  if (key === 'Right') {
+    if (anyModalOpen()) return;
+    toggleNextKoudoku();
+    return;
+  }
+  if (key === 'Left') {
+    if (anyModalOpen()) return;
+    untoggleLastKoudoku();
+    return;
+  }
+
+  if (key === 'Enter') {
+    if (isModalOpen('qtyModal'))    { qpConfirm(); return; }
+    if (isModalOpen('forceModal'))  { confirmForceOK(); return; }
+    if (isModalOpen('reprintModal')){
+      const btn = document.getElementById('reprintDoBtn');
+      if (btn && !btn.disabled) doReprint();
+      return;
+    }
+    if (isModalOpen('noticeModal')) {
+      const btn = document.getElementById('noticeStartBtn');
+      if (btn && !btn.disabled) startWork();
+      return;
+    }
+    // ★v0.13★ koudokuModal: Enter でのし→同梱物を順次チェック
+    if (isModalOpen('koudokuModal')) { kdkEnterCheck(); return; }
+    if (screenState === 'inspect' && currentOrder) {
+      const target = (SELECTED_ROW >= 0) ? SELECTED_ROW
+        : currentOrder.items.findIndex((it,i)=> scanned[i] < it.qty);
+      if (target >= 0 && scanned[target] < currentOrder.items[target].qty) {
+        simulateScanItem(target);
+        return;
+      }
+    }
+    hwTrigger();
+    return;
+  }
+
+  if (key === 'F1') {
+    if (anyModalOpen()) return;
+    if (screenState === 'idle') openNotices();
+    return;
+  }
+  if (key === 'F2') { if (anyModalOpen()) return; hwF2(); return; }
+  if (key === 'F3') { if (anyModalOpen()) return; toggleNextKoudoku(); return; }
+  if (key === 'F4') { if (anyModalOpen()) return; skipAndFinish(); return; }
+
+  if (key === 'Escape') {
+    if (isModalOpen('forceModal'))      closeForceOK();
+    else if (isModalOpen('qtyModal'))   qpCancel();
+    else if (isModalOpen('reprintModal'))closeReprint();
+    else if (isModalOpen('holdMenuModal'))   closeHoldMenu();
+    else if (isModalOpen('holdContactModal'))closeHoldMenu();
+    else if (isModalOpen('koudokuModal'))    closeKoudokuModal();
+    else if (isModalOpen('completedModal'))  document.getElementById('completedModal').classList.remove('active');
+    else if (isModalOpen('heldModal'))       cancelHeldPopup();
+    else if (isModalOpen('noticeModal')) { /* 起動時連絡事項はESC不可 */ }
+    else if (screenState === 'inspect') {
+      // ★v0.7★ 検品中は保留メニューを開く（即破棄ではなく）
+      openHoldMenu();
+    } else {
+      SELECTED_ROW = -1; backToIdle();
+    }
+    return;
+  }
+
+  if (key === 'Tab') {
+    if (anyModalOpen() || screenState !== 'inspect') return;
+    moveSelectedRow(1);
+    return;
+  }
+
+  if (key === 'Trigger' || key === 'SideL' || key === 'SideR') {
+    if (anyModalOpen()) return;
+    hwTrigger();
+    return;
+  }
+
+  if (key === 'VolUp')   { return; }
+  if (key === 'VolDown') { return; }
+  if (key === 'Power')   { alert('電源キー：実機では長押しでスリープ／シャットダウン（モック）'); return; }
+}
+
+// === キーボード→hwKey にブリッジ ===
+document.addEventListener('keydown', e=>{
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+
+  let mapped = null;
+  if (/^F[1-4]$/.test(e.key))               mapped = e.key;
+  else if (e.key === 'ArrowUp')             mapped = 'Up';
+  else if (e.key === 'ArrowDown')           mapped = 'Down';
+  else if (e.key === 'ArrowLeft')           mapped = 'Left';
+  else if (e.key === 'ArrowRight')          mapped = 'Right';
+  else if (e.key === 'Enter')               mapped = 'Enter';
+  else if (e.key === 'Escape')              mapped = 'Escape';
+  else if (e.key === 'Tab')                 mapped = 'Tab';
+  else if (e.key === 'Backspace')           mapped = 'Backspace';
+  else if (e.key === 'Delete')              mapped = 'Clear';
+  else if (/^[0-9]$/.test(e.key))           mapped = e.key;
+  else if (e.key === ' ' || e.code === 'Space') mapped = 'Trigger';
+  else if (e.key === '+')                   mapped = 'VolUp';
+  else if (e.key === '-')                   mapped = 'VolDown';
+
+  if (mapped) {
+    e.preventDefault();
+    hwKey(mapped);
+  }
+});
+
+showScreen('idle');
+openNotices();
+</script>
+</body>
+</html>

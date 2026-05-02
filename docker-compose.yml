@@ -1,0 +1,28 @@
+services:
+  db:
+    image: postgres:16
+    container_name: wms_db
+    environment:
+      POSTGRES_USER: wms_user
+      POSTGRES_PASSWORD: wms_password_change_me
+      POSTGRES_DB: wms_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: wms_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@wms.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
