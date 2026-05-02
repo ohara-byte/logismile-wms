@@ -1,21 +1,13 @@
 /**
- * GET /api/master/boxes/suggest
- * 箱候補提案（簡易版）
+ * GET /api/master/boxes/suggest?pkNo=
+ * 箱候補提案（Phase 6 完成版）
  *
- * クエリ:
- *  - pkNo（必須）: 出荷指示のピッキング№
- *
- * 簡易ロジック（Phase 6 で精緻化予定）:
- *  1. 注文に冷凍商品があれば frozen=true の箱から優先
- *  2. set_comps に固定箱があればそれを最優先
- *  3. なければ可変箱から、商品個数 ≥ 3 で sizeRank 80、それ以外は 60 を提案
- *
- * box-selector.ts として切り出すと Phase 6 のテストに流用しやすい。
+ * 内部実装は src/lib/box-selector.ts に集約。容積計算 + 親商品逆引き + 冷凍判定を行う。
  */
 
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { selectBoxForOrder } from '@/lib/box-selector';
 
 export async function GET(req: Request) {
   const guard = await requireRole('admin', 'manager', 'staff');
@@ -30,71 +22,18 @@ export async function GET(req: Request) {
     );
   }
 
-  const order = await prisma.shippingOrder.findFirst({
-    where: { pkNo, deletedAt: null },
-    select: {
-      items: {
-        select: {
-          qty: true,
-          productCode: true,
-          product: { select: { frozen: true, special: true } },
-        },
-      },
-    },
-  });
-  if (!order) {
+  try {
+    const result = await selectBoxForOrder(pkNo);
+    return NextResponse.json({ data: result, message: 'OK' });
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (msg.includes('見つかりません')) {
+      return NextResponse.json({ error: 'NOT_FOUND', message: msg }, { status: 404 });
+    }
+    console.error('[GET /api/master/boxes/suggest]', e);
     return NextResponse.json(
-      { error: 'NOT_FOUND', message: `ピッキング№が見つかりません: ${pkNo}` },
-      { status: 404 },
+      { error: 'INTERNAL', message: '箱選定処理に失敗しました' },
+      { status: 500 },
     );
   }
-
-  const totalQty = order.items.reduce((s, i) => s + i.qty, 0);
-  const hasFrozen = order.items.some((i) => i.product.frozen);
-
-  // ① 親商品から固定箱を逆引き
-  const itemCodes = order.items.map((i) => i.productCode);
-  let fixed: { code: string; name: string; sizeRank: number } | null = null;
-  if (itemCodes.length > 0) {
-    const setComp = await prisma.setComp.findFirst({
-      where: {
-        fixedBoxCode: { not: null },
-        children: { some: { childCode: { in: itemCodes } } },
-      },
-      include: { fixedBox: { select: { code: true, name: true, sizeRank: true } } },
-    });
-    if (setComp?.fixedBox) fixed = setComp.fixedBox;
-  }
-
-  // ② 候補リスト（冷凍 / 可変）
-  const variableBoxes = await prisma.box.findMany({
-    where: {
-      type: hasFrozen ? 'fixed' : 'variable',
-      ...(hasFrozen ? { frozen: true } : {}),
-    },
-    orderBy: [{ priority: 'asc' }, { sizeRank: 'asc' }],
-    select: { code: true, name: true, sizeRank: true, type: true, frozen: true },
-  });
-
-  // ③ おすすめ：商品個数で sizeRank 推定
-  const targetRank = totalQty >= 5 ? 100 : totalQty >= 3 ? 80 : 60;
-  const recommended =
-    fixed ??
-    variableBoxes.find((b) => b.sizeRank === targetRank) ??
-    variableBoxes[0] ??
-    null;
-
-  return NextResponse.json({
-    data: {
-      recommended,
-      candidates: fixed ? [fixed, ...variableBoxes] : variableBoxes,
-      reasoning: {
-        totalQty,
-        hasFrozen,
-        targetRank,
-        usedFixed: !!fixed,
-      },
-    },
-    message: 'OK',
-  });
 }
