@@ -1,6 +1,6 @@
 /**
  * GET /api/dashboard/progress?date=YYYY-MM-DD
- * 全体進捗 + グループ別進捗 + 段階目標 vs 予測
+ * 全体進捗 + グループ別進捗 + 段階目標 + 1時間別実績 + 30分要員配置
  */
 
 import { NextResponse } from 'next/server';
@@ -9,6 +9,8 @@ import {
   getOverallProgress,
   getGroupProgresses,
   getHourlyProgress,
+  getHourlyChart,
+  getStaffAllocationGrid,
 } from '@/lib/dashboard/progress';
 
 export async function GET(req: Request) {
@@ -26,11 +28,15 @@ export async function GET(req: Request) {
   }
 
   const overall = await getOverallProgress(date);
-  const groups = await getGroupProgresses(date);
-  const hourly = await getHourlyProgress(date, overall.total, overall.packed);
+  const [groups, hourly, hourlyChart, staffGrid] = await Promise.all([
+    getGroupProgresses(date),
+    getHourlyProgress(date, overall.total, overall.packed),
+    getHourlyChart(date),
+    getStaffAllocationGrid(date),
+  ]);
 
   return NextResponse.json({
-    data: { overall, groups, hourly },
+    data: { overall, groups, hourly, hourlyChart, staffGrid },
     message: 'OK',
   });
 }
