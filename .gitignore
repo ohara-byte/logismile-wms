@@ -41,3 +41,7 @@ next-env.d.ts
 
 # Prisma generated client
 /prisma/generated/
+
+# Claude Code worktrees / agent state（一時的な作業領域）
+/.claude/worktrees/
+/.claude/agent-state/
