@@ -1,22 +1,10 @@
 import type { Metadata } from 'next';
-import localFont from 'next/font/local';
 import './globals.css';
 import { Providers } from '@/components/providers';
 
-const geistSans = localFont({
-  src: './fonts/GeistVF.woff',
-  variable: '--font-geist-sans',
-  weight: '100 900',
-});
-const geistMono = localFont({
-  src: './fonts/GeistMonoVF.woff',
-  variable: '--font-geist-mono',
-  weight: '100 900',
-});
-
 export const metadata: Metadata = {
-  title: '大江ノ郷自然牧場 WMS',
-  description: '倉庫管理システム',
+  title: 'LogiSmile — 大江ノ郷自然牧場 倉庫管理システム',
+  description: '大江ノ郷自然牧場の倉庫管理システム LogiSmile',
 };
 
 export default function RootLayout({
@@ -24,7 +12,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ja">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className="font-sans antialiased bg-surface-base text-ink min-h-screen">
         <Providers>{children}</Providers>
       </body>
     </html>

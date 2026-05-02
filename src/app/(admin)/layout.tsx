@@ -8,7 +8,19 @@
 import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { authOptions } from '@/lib/auth/auth-options';
+import { LogiSmileLogo } from '@/components/brand/logismile-logo';
 import { signOutAction } from './_actions';
+import { AdminClock } from './_components/admin-clock';
+
+const NAV_ITEMS: { href: string; label: string; icon: string }[] = [
+  { href: '/dashboard', label: 'ダッシュボード', icon: '📊' },
+  { href: '/orders', label: '出荷指示', icon: '📦' },
+  { href: '/imports', label: 'CSV取込', icon: '📥' },
+  { href: '/notices', label: '連絡事項', icon: '📢' },
+  { href: '/shift', label: 'シフト', icon: '📅' },
+  { href: '/assignment', label: '割当', icon: '👥' },
+  { href: '/reports', label: 'レポート', icon: '📈' },
+];
 
 export default async function AdminLayout({
   children,
@@ -21,44 +33,55 @@ export default async function AdminLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <span className="font-bold text-gray-800">大江ノ郷WMS 管理PC</span>
-            <nav className="flex gap-3 text-sm">
-              <a href="/dashboard" className="text-gray-700 hover:text-blue-600">
-                ダッシュボード
+    <div className="min-h-screen bg-surface-base text-ink">
+      <header className="bg-gradient-to-b from-surface-panel to-surface-base border-b border-surface-border sticky top-0 z-30">
+        <div className="max-w-[1600px] mx-auto px-4 h-14 flex items-center gap-6">
+          {/* ブランド */}
+          <a href="/dashboard" className="flex items-center gap-2.5 shrink-0">
+            <LogiSmileLogo height={26} />
+            <div className="hidden sm:flex flex-col leading-tight">
+              <span className="text-3xs text-ink-subtle uppercase tracking-wider">
+                大江ノ郷自然牧場
+              </span>
+              <span className="text-3xs text-ink-muted">管理コンソール</span>
+            </div>
+          </a>
+
+          {/* ナビ */}
+          <nav className="flex-1 flex items-center gap-1 overflow-x-auto">
+            {NAV_ITEMS.map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                className="px-3 py-1.5 rounded text-sm text-ink-subtle hover:text-accent-amber hover:bg-surface-panel transition-colors flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <span className="text-base">{item.icon}</span>
+                <span className="hidden md:inline">{item.label}</span>
               </a>
-              <a href="/orders" className="text-gray-700 hover:text-blue-600">
-                出荷指示
-              </a>
-              <a href="/imports" className="text-gray-700 hover:text-blue-600">
-                CSV取込
-              </a>
-              <a href="/notices" className="text-gray-700 hover:text-blue-600">
-                連絡事項
-              </a>
-              <a href="/shift" className="text-gray-700 hover:text-blue-600">
-                シフト
-              </a>
-              <a href="/assignment" className="text-gray-700 hover:text-blue-600">
-                割当
-              </a>
-              <a href="/reports" className="text-gray-700 hover:text-blue-600">
-                レポート
-              </a>
-            </nav>
-          </div>
-          <div className="flex items-center gap-3 text-sm">
-            <span className="text-gray-600">
-              {session.user.name} ({session.user.role})
-            </span>
-            <form action={signOutAction}>
-              <button className="text-blue-600 hover:underline" type="submit">
-                ログアウト
-              </button>
-            </form>
+            ))}
+          </nav>
+
+          {/* 右側: 時計 + ユーザー */}
+          <div className="flex items-center gap-3 shrink-0">
+            <AdminClock />
+            <div className="flex items-center gap-2 px-2.5 py-1 bg-surface-panel rounded border border-surface-border">
+              <span className="w-7 h-7 rounded-full bg-brand-primary/20 text-brand-primary flex items-center justify-center text-xs font-bold">
+                {session.user.name?.[0] ?? '?'}
+              </span>
+              <div className="hidden sm:flex flex-col leading-tight">
+                <span className="text-xs font-bold text-ink-strong">{session.user.name}</span>
+                <span className="text-3xs text-ink-muted uppercase">{session.user.role}</span>
+              </div>
+              <form action={signOutAction}>
+                <button
+                  type="submit"
+                  className="ml-1 text-3xs text-ink-subtle hover:text-status-error transition-colors"
+                  title="ログアウト"
+                >
+                  ⏻
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </header>
