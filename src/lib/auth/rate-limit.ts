@@ -4,8 +4,8 @@
  * ★ 単一プロセス前提。本番がマルチインスタンス化した場合は Redis に移行。
  *
  * 仕様:
- *  - キー（emp_code or IP）ごとに、固定ウィンドウで失敗試行を計上
- *  - 上限を超えるとロックアウト時間中は早期に拒否
+ *  - キー（emp_code or IP）ごとに、windowSec 内の失敗試行を計上
+ *  - maxAttempts に達したら lockoutSec の間ロックアウト
  *  - 成功時はキーをリセット
  *
  * 同時に「IP ベース」と「emp_code ベース」の両方で制限することで、
@@ -16,18 +16,20 @@
 
 interface Bucket {
   count: number;
-  /** ロック解除時刻（ms epoch） */
+  /** ウィンドウ起算点（最初の失敗試行時刻、ms epoch） */
+  firstAttemptAt: number;
+  /** ロック解除時刻（ms epoch）。未ロックは 0。 */
   unlockAt: number;
 }
 
 const buckets = new Map<string, Bucket>();
 
 export interface RateLimitOptions {
-  /** ウィンドウ（秒）。失敗試行をカウントする期間。 */
+  /** ウィンドウ（秒）。最初の失敗から何秒の間に maxAttempts 失敗するとロック。 */
   windowSec: number;
-  /** 上限を超えたらロック（秒）。 */
+  /** ロックアウト時間（秒）。 */
   lockoutSec: number;
-  /** 上限。 */
+  /** 失敗回数の上限（達したらロック）。 */
   maxAttempts: number;
 }
 
@@ -37,26 +39,32 @@ const DEFAULT_OPTS: RateLimitOptions = {
   maxAttempts: 5,
 };
 
-/** 失敗を 1 つ計上し、ロックアウト中なら true を返す。 */
-export function recordFailure(key: string, opts: Partial<RateLimitOptions> = {}): {
-  locked: boolean;
-  retryAfterSec?: number;
-  attempts: number;
-} {
+/** 失敗を 1 つ計上。返り値の `locked` がロックアウト判定。 */
+export function recordFailure(
+  key: string,
+  opts: Partial<RateLimitOptions> = {},
+): { locked: boolean; retryAfterSec?: number; attempts: number } {
   const o = { ...DEFAULT_OPTS, ...opts };
   const now = Date.now();
   let b = buckets.get(key);
-  if (!b || now >= b.unlockAt + o.windowSec * 1000) {
-    b = { count: 0, unlockAt: 0 };
+
+  // バケット未作成 or ロック解除済 or ウィンドウ超過 → 新規ウィンドウ開始
+  const lockExpired = b !== undefined && b.unlockAt > 0 && now >= b.unlockAt;
+  const windowExpired = b !== undefined && b.unlockAt === 0 && now - b.firstAttemptAt > o.windowSec * 1000;
+  if (!b || lockExpired || windowExpired) {
+    b = { count: 0, firstAttemptAt: now, unlockAt: 0 };
   }
+
   b.count += 1;
   if (b.count >= o.maxAttempts) {
     b.unlockAt = now + o.lockoutSec * 1000;
   }
   buckets.set(key, b);
+
+  const locked = now < b.unlockAt;
   return {
-    locked: now < b.unlockAt,
-    retryAfterSec: now < b.unlockAt ? Math.ceil((b.unlockAt - now) / 1000) : undefined,
+    locked,
+    retryAfterSec: locked ? Math.ceil((b.unlockAt - now) / 1000) : undefined,
     attempts: b.count,
   };
 }
@@ -66,7 +74,7 @@ export function isLocked(key: string): { locked: boolean; retryAfterSec?: number
   const b = buckets.get(key);
   if (!b) return { locked: false };
   const now = Date.now();
-  if (now >= b.unlockAt) return { locked: false };
+  if (b.unlockAt === 0 || now >= b.unlockAt) return { locked: false };
   return { locked: true, retryAfterSec: Math.ceil((b.unlockAt - now) / 1000) };
 }
 

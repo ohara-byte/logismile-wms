@@ -8,7 +8,11 @@ import { useRouter, useSearchParams } from 'next/navigation';
 export default function AdminLoginPage() {
   const router = useRouter();
   const params = useSearchParams();
-  const callbackUrl = params.get('callbackUrl') || '/imports';
+  // callbackUrl は同一オリジン内パス（先頭 "/" + 2文字目が "/" でない）のみ許可。
+  // "//evil.com" のようなプロトコル相対 URL は弾く（オープンリダイレクト対策）。
+  const rawCallback = params.get('callbackUrl') || '/imports';
+  const callbackUrl =
+    rawCallback.startsWith('/') && !rawCallback.startsWith('//') ? rawCallback : '/imports';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

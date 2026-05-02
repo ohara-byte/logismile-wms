@@ -2,7 +2,12 @@
  * POST /api/print/qr
  * QR印刷指示（手動）
  *
- * 用途: 検品画面の「印刷」ボタン、管理PCからの再発行 など
+ * 権限: admin / manager / staff
+ *
+ * deviceCode の解決:
+ *  - mobile セッション（タブレット/ハンディ）→ 自セッションの deviceCode を使用
+ *    （Body の値は無視。他人のプリンターへ印刷指示できないようにする）
+ *  - PC セッション（admin/manager）→ Body の deviceCode 必須
  *
  * 処理:
  *  1. shipping_orders.qr_print_flag = false なら 422
@@ -18,7 +23,7 @@ import { runPrintJob } from '@/lib/print-job';
 
 const Body = z.object({
   pkNo: z.string().min(1),
-  deviceCode: z.string().min(1),
+  deviceCode: z.string().min(1).optional(),
 });
 
 export async function POST(req: Request) {
@@ -34,13 +39,25 @@ export async function POST(req: Request) {
     );
   }
 
+  // モバイル経路は自セッションの deviceCode のみ。PC は Body 必須。
+  const deviceCode =
+    guard.auth.source === 'mobile'
+      ? guard.auth.deviceCode
+      : parsed.data.deviceCode;
+  if (!deviceCode) {
+    return NextResponse.json(
+      { error: 'VALIDATION', message: 'deviceCode を解決できません（PC は Body で指定してください）' },
+      { status: 422 },
+    );
+  }
+
   const order = await prisma.shippingOrder.findFirst({
     where: { pkNo: parsed.data.pkNo, deletedAt: null },
     select: { id: true, pkNo: true, qrPrintFlag: true, invoiceNo: true },
   });
   if (!order) {
     return NextResponse.json(
-      { error: 'NOT_FOUND', message: `ピッキング№が見つかりません: ${parsed.data.pkNo}` },
+      { error: 'NOT_FOUND', message: 'ピッキング№が見つかりません' },
       { status: 404 },
     );
   }
@@ -55,7 +72,7 @@ export async function POST(req: Request) {
     orderId: order.id,
     pkNo: order.pkNo,
     invoiceNo: order.invoiceNo,
-    deviceCode: parsed.data.deviceCode,
+    deviceCode,
     staffCode: guard.auth.staffCode,
     isReprint: false,
   });

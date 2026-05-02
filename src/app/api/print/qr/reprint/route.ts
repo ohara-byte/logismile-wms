@@ -14,7 +14,7 @@ import { runPrintJob } from '@/lib/print-job';
 
 const Body = z.object({
   pkNo: z.string().min(1),
-  deviceCode: z.string().min(1),
+  deviceCode: z.string().min(1).optional(),
   reason: z.string().min(1),
 });
 
@@ -31,13 +31,23 @@ export async function POST(req: Request) {
     );
   }
 
+  // モバイル経路は自セッションの deviceCode のみ
+  const deviceCode =
+    guard.auth.source === 'mobile' ? guard.auth.deviceCode : parsed.data.deviceCode;
+  if (!deviceCode) {
+    return NextResponse.json(
+      { error: 'VALIDATION', message: 'deviceCode を解決できません（PC は Body で指定してください）' },
+      { status: 422 },
+    );
+  }
+
   const order = await prisma.shippingOrder.findFirst({
     where: { pkNo: parsed.data.pkNo, deletedAt: null },
     select: { id: true, pkNo: true, qrPrintFlag: true, invoiceNo: true },
   });
   if (!order) {
     return NextResponse.json(
-      { error: 'NOT_FOUND', message: `ピッキング№が見つかりません: ${parsed.data.pkNo}` },
+      { error: 'NOT_FOUND', message: 'ピッキング№が見つかりません' },
       { status: 404 },
     );
   }
@@ -52,7 +62,7 @@ export async function POST(req: Request) {
     orderId: order.id,
     pkNo: order.pkNo,
     invoiceNo: order.invoiceNo,
-    deviceCode: parsed.data.deviceCode,
+    deviceCode,
     staffCode: guard.auth.staffCode,
     isReprint: true,
   });

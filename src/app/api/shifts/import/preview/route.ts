@@ -21,6 +21,12 @@ export async function POST(req: Request) {
       );
     }
     const buffer = Buffer.from(await file.arrayBuffer());
+    if (buffer.length > 5 * 1024 * 1024) {
+      return NextResponse.json(
+        { error: 'PAYLOAD_TOO_LARGE', message: 'GPシフトCSV は 5MB 以下にしてください' },
+        { status: 413 },
+      );
+    }
     const preview = await previewShiftCsv(buffer);
     return NextResponse.json({ data: preview, message: 'OK' });
   } catch (e) {

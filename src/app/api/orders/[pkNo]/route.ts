@@ -2,7 +2,12 @@
  * GET /api/orders/[pkNo]
  * 出荷指示詳細（ピッキング№で検索）
  *
- * 権限: admin / manager / staff（検品作業のため staff も可）
+ * 権限:
+ *   admin / manager — 全件アクセス可
+ *   staff — 以下のいずれかを満たす伝票のみアクセス可（IDOR 対策）
+ *     a) status='pending'（誰でも検品可能なキュー上の伝票）
+ *     b) 自分が検品セッションを持っている伝票
+ *
  * 論理削除されたものは返さない（deleted_at IS NULL）。
  */
 
@@ -43,9 +48,24 @@ export async function GET(
 
   if (!order) {
     return NextResponse.json(
-      { error: 'NOT_FOUND', message: `ピッキング№が見つかりません: ${pkNo}` },
+      { error: 'NOT_FOUND', message: 'ピッキング№が見つかりません' },
       { status: 404 },
     );
+  }
+
+  // staff 権限の場合は IDOR 防止: 自分が関与しない伝票へのアクセスは制限する。
+  // ただし pending（未着手）はキューとして誰でも見えてよい（検品開始の起点）。
+  if (guard.auth.role === 'staff') {
+    const isPending = order.status === 'pending';
+    const isOwnSession =
+      order.inspSession?.staffCode != null &&
+      order.inspSession.staffCode === guard.auth.staffCode;
+    if (!isPending && !isOwnSession) {
+      return NextResponse.json(
+        { error: 'FORBIDDEN', message: '他の担当者が検品中の伝票です' },
+        { status: 403 },
+      );
+    }
   }
 
   return NextResponse.json({ data: order, message: 'OK' });

@@ -32,6 +32,12 @@ export async function POST(req: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    if (buffer.length > 20 * 1024 * 1024) {
+      return NextResponse.json(
+        { error: 'PAYLOAD_TOO_LARGE', message: 'CSV は 20MB 以下にしてください' },
+        { status: 413 },
+      );
+    }
     const filename = file.name;
 
     // ヘッダだけ先に解析してファイル種別を判定
