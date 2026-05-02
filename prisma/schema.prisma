@@ -149,6 +149,10 @@ model Staff {
   joined              DateTime? @db.Date
   assignable          Boolean   @default(true)
   active              Boolean   @default(true)
+  /// スキル係数（1.000 = 標準。Phase 6-9 で実績ログから自動更新）
+  skillCoefficient    Decimal   @default(1.000) @map("skill_coefficient") @db.Decimal(4, 3)
+  /// スキル係数 最終更新日時（Phase 6-9 cron 用）
+  skillUpdatedAt      DateTime? @map("skill_updated_at") @db.Timestamptz
   note                String?   @db.Text
 
   employmentType    EmploymentType?    @relation(fields: [employmentTypeCode], references: [code])
