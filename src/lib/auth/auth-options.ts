@@ -14,6 +14,22 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/db';
 
+// 起動時の弱いシークレット検出（本番では起動を拒否する）
+const _secret = process.env.NEXTAUTH_SECRET ?? '';
+if (
+  process.env.NODE_ENV === 'production' &&
+  (_secret === '' || /change|please|dev/i.test(_secret))
+) {
+  // ロード時にスローしてサーバ起動を停止
+  throw new Error(
+    'NEXTAUTH_SECRET を本番用のランダム値に変更してください（現在の値は弱いデフォルトのままです）',
+  );
+}
+
+// email enumeration 対策の dummy bcrypt（compare の所要時間を平均化）
+// 値そのものは bcrypt.hashSync('placeholder', 10) で生成。
+const DUMMY_HASH = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+
 export const authOptions: NextAuthOptions = {
   session: { strategy: 'jwt', maxAge: 60 * 60 * 8 }, // 8 時間
   providers: [
@@ -40,9 +56,12 @@ export const authOptions: NextAuthOptions = {
           },
         });
 
-        if (!user || !user.active) return null;
-        const ok = await bcrypt.compare(credentials.password, user.passwordHash);
-        if (!ok) return null;
+        // user が存在しなくても dummy hash で bcrypt を回し、応答時間を平均化する
+        // （email 列挙攻撃対策）
+        const hashToCompare = user?.passwordHash ?? DUMMY_HASH;
+        const ok = await bcrypt.compare(credentials.password, hashToCompare);
+
+        if (!user || !user.active || !ok) return null;
 
         // last_login 更新（fire-and-forget）
         prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } }).catch(() => {});
