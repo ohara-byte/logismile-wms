@@ -124,11 +124,12 @@ export class CsvAdapter implements IntegrationAdapter {
         });
         successCount++;
       } catch (e) {
+        console.error('[csv-adapter products row]', { rowIndex: i + 1, code }, e);
         errors.push({
           rowIndex: i + 1,
           productCode: code,
           reason: 'parse_error',
-          message: `DB書込失敗: ${(e as Error).message}`,
+          message: 'DB書込失敗（詳細はサーバログ）',
         });
       }
     }
@@ -374,11 +375,12 @@ export class CsvAdapter implements IntegrationAdapter {
         });
         successCount++;
       } catch (e) {
+        console.error('[csv-adapter orders row]', { pkNo }, e);
         errors.push({
           rowIndex: group.items[0]?.rowIndex ?? 0,
           pkNo,
           reason: 'parse_error',
-          message: `DB書込失敗: ${(e as Error).message}`,
+          message: 'DB書込失敗（詳細はサーバログ）',
         });
       }
     }

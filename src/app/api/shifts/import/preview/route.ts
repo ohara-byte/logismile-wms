@@ -24,8 +24,9 @@ export async function POST(req: Request) {
     const preview = await previewShiftCsv(buffer);
     return NextResponse.json({ data: preview, message: 'OK' });
   } catch (e) {
+    console.error('[POST /api/shifts/import/preview]', e);
     return NextResponse.json(
-      { error: 'INTERNAL', message: (e as Error).message },
+      { error: 'INTERNAL', message: 'GPシフトCSV のプレビュー処理に失敗しました' },
       { status: 500 },
     );
   }

@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     console.error('[POST /api/orders/import]', e);
     return NextResponse.json(
-      { error: 'INTERNAL', message: (e as Error).message },
+      { error: 'INTERNAL', message: 'CSV 取込処理中にサーバ内部エラーが発生しました' },
       { status: 500 },
     );
   }
