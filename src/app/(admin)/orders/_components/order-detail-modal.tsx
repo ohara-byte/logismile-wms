@@ -30,6 +30,15 @@ interface OrderDetail {
   }>;
 }
 
+interface AuditLog {
+  id: number;
+  action: string;
+  actedAt: string;
+  reason: string | null;
+  diff: unknown;
+  staff: { code: string; name: string };
+}
+
 interface Props {
   pkNo: string;
   onClose: () => void;
@@ -39,6 +48,8 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showAuditLogs, setShowAuditLogs] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
   async function load() {
     const res = await fetch(`/api/orders/${encodeURIComponent(pkNo)}`);
@@ -46,6 +57,12 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
     if (res.ok) setOrder(j.data);
     else setError(j.message ?? `HTTP ${res.status}`);
   }
+  async function loadAuditLogs() {
+    const res = await fetch(`/api/orders/${encodeURIComponent(pkNo)}/audit-logs`);
+    const j = await res.json();
+    if (res.ok) setAuditLogs(j.data?.items ?? []);
+  }
+
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -61,6 +78,47 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
     });
     setBusy(false);
     load();
+  }
+
+  async function onDelete() {
+    if (!order) return;
+    const reason = prompt('削除理由を入力してください（必須）');
+    if (!reason) return;
+    setBusy(true);
+    const res = await fetch(`/api/orders/${encodeURIComponent(order.pkNo)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    setBusy(false);
+    if (res.ok) {
+      load();
+    } else {
+      const j = await res.json();
+      alert(j.message ?? `エラー: HTTP ${res.status}`);
+    }
+  }
+
+  async function onRestore() {
+    if (!order) return;
+    const reason = prompt('復活理由を入力してください（必須）');
+    if (!reason) return;
+    setBusy(true);
+    const res = await fetch(
+      `/api/orders/${encodeURIComponent(order.pkNo)}/restore`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      },
+    );
+    setBusy(false);
+    if (res.ok) {
+      load();
+    } else {
+      const j = await res.json();
+      alert(j.message ?? `エラー: HTTP ${res.status}`);
+    }
   }
 
   return (
@@ -92,17 +150,20 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
                   <div className="text-xs text-gray-500">QR印刷フラグ</div>
                   <button
                     onClick={onTogglePrintFlag}
-                    disabled={busy}
+                    disabled={busy || !!order.deletedAt}
                     className={`px-3 py-1 rounded text-sm font-medium ${
                       order.qrPrintFlag ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
-                    }`}
+                    } disabled:opacity-50`}
                   >
                     {order.qrPrintFlag ? '🖨 ON' : '○ OFF'}
                   </button>
                 </div>
               </div>
 
-              <Field label="配送先" value={`${order.destName ?? '—'} / ${order.destZip ?? ''} ${order.destAddr ?? ''}`} />
+              <Field
+                label="配送先"
+                value={`${order.destName ?? '—'} / ${order.destZip ?? ''} ${order.destAddr ?? ''}`}
+              />
 
               {order.deletedAt && (
                 <div className="bg-red-50 border border-red-200 rounded p-3 text-sm">
@@ -167,6 +228,81 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
                   </tbody>
                 </table>
               </div>
+
+              {/* 操作ボタン */}
+              <div className="border-t pt-4 flex flex-wrap gap-2 justify-between items-center">
+                <button
+                  onClick={() => {
+                    if (!showAuditLogs) loadAuditLogs();
+                    setShowAuditLogs((s) => !s);
+                  }}
+                  className="text-sm text-blue-600 hover:underline"
+                >
+                  📜 監査ログ {showAuditLogs ? '隠す' : '表示'}
+                </button>
+                <div className="flex gap-2">
+                  {order.deletedAt ? (
+                    <button
+                      onClick={onRestore}
+                      disabled={busy}
+                      className="px-4 py-2 bg-green-600 text-white rounded text-sm font-medium disabled:bg-gray-300"
+                    >
+                      ♻ 復活
+                    </button>
+                  ) : (
+                    <button
+                      onClick={onDelete}
+                      disabled={busy || order.status === 'inspecting'}
+                      className="px-4 py-2 bg-red-600 text-white rounded text-sm font-medium disabled:bg-gray-300"
+                      title={
+                        order.status === 'inspecting'
+                          ? '検品中の伝票は削除できません（先に保留へ）'
+                          : ''
+                      }
+                    >
+                      🗑 削除
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {showAuditLogs && (
+                <div className="border rounded-lg p-3 bg-gray-50">
+                  <h3 className="font-semibold text-sm mb-2">監査ログ ({auditLogs.length})</h3>
+                  {auditLogs.length === 0 ? (
+                    <p className="text-xs text-gray-400">操作履歴はありません</p>
+                  ) : (
+                    <ul className="space-y-2 text-xs">
+                      {auditLogs.map((log) => (
+                        <li key={log.id} className="border-l-2 border-gray-300 pl-2">
+                          <div>
+                            <span className="font-mono font-medium">{log.action}</span>{' '}
+                            <span className="text-gray-500">
+                              by {log.staff.name} ({log.staff.code})
+                            </span>
+                          </div>
+                          <div className="text-gray-500">
+                            {new Date(log.actedAt).toLocaleString('ja-JP')}
+                          </div>
+                          {log.reason && (
+                            <div className="text-gray-700">理由: {log.reason}</div>
+                          )}
+                          {log.diff !== null && log.diff !== undefined && (
+                            <details>
+                              <summary className="cursor-pointer text-gray-500">
+                                差分
+                              </summary>
+                              <pre className="bg-white p-1 mt-1 rounded text-[10px] overflow-x-auto">
+                                {JSON.stringify(log.diff, null, 2)}
+                              </pre>
+                            </details>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
