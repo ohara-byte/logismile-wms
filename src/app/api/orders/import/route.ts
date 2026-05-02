@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDefaultAdapter } from '@/lib/integration/adapter';
 import { detectFileType, parseCsv } from '@/lib/integration/csv-parser';
+import { requireRole } from '@/lib/auth/permissions';
 
 /**
  * POST /api/orders/import
  * Thomas CSV 取込（IFアダプタ層経由）
+ *
+ * 権限: admin / manager のみ
  *
  * リクエスト: multipart/form-data
  *   - file: CSV ファイル
@@ -13,10 +16,11 @@ import { detectFileType, parseCsv } from '@/lib/integration/csv-parser';
  *  1. 文字コード自動判定（Shift-JIS / UTF-8）
  *  2. ファイル種別判定（products / orders / sort）
  *  3. アダプタを呼び出し → DB 投入
- *
- * TODO(Phase 1-7): admin/manager 認証チェック
  */
 export async function POST(req: NextRequest) {
+  const guard = await requireRole('admin', 'manager');
+  if (!guard.ok) return guard.response;
+
   try {
     const form = await req.formData();
     const file = form.get('file');
@@ -35,11 +39,12 @@ export async function POST(req: NextRequest) {
     const fileType = detectFileType(headers);
 
     const adapter = getDefaultAdapter();
+    const ctx = { importedBy: guard.auth.staffCode ?? undefined };
     const result =
       fileType === 'products'
-        ? await adapter.importProducts({ kind: 'csv', buffer, filename }, {})
+        ? await adapter.importProducts({ kind: 'csv', buffer, filename }, ctx)
         : fileType === 'orders'
-          ? await adapter.importShippingOrders({ kind: 'csv', buffer, filename }, {})
+          ? await adapter.importShippingOrders({ kind: 'csv', buffer, filename }, ctx)
           : null;
 
     if (!result) {
