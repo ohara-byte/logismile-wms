@@ -49,7 +49,7 @@ export async function GET(req: Request) {
   }
 
   let rows: Array<Record<string, unknown>> = [];
-  let filename = `report-${type}-${from}-${to}.csv`;
+  const filename = `report-${type}-${from}-${to}.csv`;
 
   if (type === 'summary') {
     const r = await summaryReport(new Date(from), new Date(to));

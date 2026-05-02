@@ -2,13 +2,15 @@
  * POST /api/inspect/start
  * 検品セッション開始
  *
- * リクエスト: { pkNo, staffCode?, deviceCode? }
- *   staffCode/deviceCode はモバイル系の自動セット可（社員番号セッションから）。
+ * リクエスト: { pkNo }
+ *   ★ staffCode / deviceCode は **必ず認証情報から取得**（Body 受領を廃止）。
+ *     Body 受領を許すと別人名義の検品セッションを作成できる IDOR / 監査偽装になる。
  *
  * 処理:
- *  1. shipping_orders.pk_no で order を取得（deleted_at IS NULL, status pending|inspecting|held）
- *  2. 既存セッションがあればそれを返す（途中再開）
- *  3. なければ新規 insp_sessions レコード作成 + status='inspecting'
+ *  1. shipping_orders.pk_no で order を取得（deleted_at IS NULL）
+ *  2. packed/shipped なら 409
+ *  3. 既存セッションがあれば、所有者一致時のみ RESUMED（staff ロールは他人のセッションに継続できない）
+ *  4. なければ新規 insp_sessions レコード作成 + status='inspecting'
  */
 
 import { NextResponse } from 'next/server';
@@ -18,8 +20,6 @@ import { requireRole } from '@/lib/auth/permissions';
 
 const Body = z.object({
   pkNo: z.string().min(1),
-  staffCode: z.string().optional(),
-  deviceCode: z.string().optional(),
 });
 
 export async function POST(req: Request) {
@@ -35,13 +35,13 @@ export async function POST(req: Request) {
     );
   }
 
-  // 認証情報から自動補完。明示指定があればそちらを優先。
-  const staffCode = parsed.data.staffCode ?? guard.auth.staffCode;
-  const deviceCode = parsed.data.deviceCode ?? guard.auth.deviceCode;
+  // 認証情報のみを信頼する。Body での上書きは受け付けない。
+  const staffCode = guard.auth.staffCode;
+  const deviceCode = guard.auth.deviceCode;
   if (!staffCode) {
     return NextResponse.json(
-      { error: 'VALIDATION', message: 'staffCode を解決できません' },
-      { status: 422 },
+      { error: 'FORBIDDEN', message: '検品作業には staff レコードに紐付くアカウントが必要です' },
+      { status: 403 },
     );
   }
 
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
   });
   if (!order) {
     return NextResponse.json(
-      { error: 'NOT_FOUND', message: `ピッキング№が見つかりません: ${parsed.data.pkNo}` },
+      { error: 'NOT_FOUND', message: `ピッキング№が見つかりません` },
       { status: 404 },
     );
   }
@@ -62,12 +62,19 @@ export async function POST(req: Request) {
     );
   }
 
-  // 既存セッションがあればそれを返す
+  // 既存セッションがあれば、所有者一致時のみ RESUMED。
+  // staff ロールは自分のセッションのみ継続可（admin/manager は再開可）。
   const existing = await prisma.inspSession.findUnique({
     where: { orderId: order.id },
     select: { id: true, staffCode: true, deviceCode: true, startedAt: true, completedAt: true },
   });
   if (existing) {
+    if (guard.auth.role === 'staff' && existing.staffCode !== staffCode) {
+      return NextResponse.json(
+        { error: 'CONFLICT', message: '他の担当者が検品中です' },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ data: existing, message: 'RESUMED' });
   }
 

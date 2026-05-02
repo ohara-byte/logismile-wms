@@ -13,7 +13,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireRole } from '@/lib/auth/permissions';
+import { requireRole, ownsSession } from '@/lib/auth/permissions';
 
 const Body = z.object({
   sessionId: z.string().min(1),
@@ -36,10 +36,16 @@ export async function POST(req: Request) {
 
   const session = await prisma.inspSession.findUnique({
     where: { id: parsed.data.sessionId },
-    select: { id: true, orderId: true, completedAt: true },
+    select: { id: true, orderId: true, staffCode: true, completedAt: true },
   });
   if (!session) {
     return NextResponse.json({ error: 'NOT_FOUND', message: 'セッションがありません' }, { status: 404 });
+  }
+  if (!ownsSession(guard.auth, session)) {
+    return NextResponse.json(
+      { error: 'FORBIDDEN', message: '他の担当者のセッションは操作できません' },
+      { status: 403 },
+    );
   }
   if (session.completedAt) {
     return NextResponse.json(

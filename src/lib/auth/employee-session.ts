@@ -43,15 +43,25 @@ function signPayload(payload: Omit<EmployeeSession, never>): string {
 }
 
 function verifyAndParse(token: string): EmployeeSession | null {
-  const [b64, sig] = token.split('.');
-  if (!b64 || !sig) return null;
-  const expected = crypto.createHmac('sha256', getSecret()).update(b64).digest('base64url');
-  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
-
+  // 攻撃者制御の Cookie 値が入る経路。長さ違いの sig や壊れた base64 で
+  // RangeError / TypeError が出ても 500 にせず、すべて null を返して認証失敗扱いにする。
   try {
+    const [b64, sig] = token.split('.');
+    if (!b64 || !sig) return null;
+
+    const expected = crypto.createHmac('sha256', getSecret()).update(b64).digest('base64url');
+    const sigBuf = Buffer.from(sig);
+    const expBuf = Buffer.from(expected);
+    if (sigBuf.length !== expBuf.length) return null; // timingSafeEqual の RangeError 防止
+    if (!crypto.timingSafeEqual(sigBuf, expBuf)) return null;
+
     const obj = JSON.parse(Buffer.from(b64, 'base64url').toString('utf8')) as EmployeeSession;
-    if (typeof obj !== 'object' || !obj) return null;
-    if (obj.exp < Math.floor(Date.now() / 1000)) return null;
+    if (!obj || typeof obj !== 'object') return null;
+    if (typeof obj.exp !== 'number' || obj.exp < Math.floor(Date.now() / 1000)) return null;
+    if (typeof obj.staffCode !== 'string' || typeof obj.empCode !== 'string') return null;
+    if (typeof obj.role !== 'string' || !['admin', 'manager', 'staff'].includes(obj.role)) {
+      return null;
+    }
     return obj;
   } catch {
     return null;

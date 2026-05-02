@@ -14,7 +14,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireRole } from '@/lib/auth/permissions';
+import { requireRole, ownsSession } from '@/lib/auth/permissions';
 import { judgeScan } from '@/lib/inspection';
 
 const Body = z.object({
@@ -50,6 +50,12 @@ export async function POST(req: Request) {
   });
   if (!session) {
     return NextResponse.json({ error: 'NOT_FOUND', message: 'セッションがありません' }, { status: 404 });
+  }
+  if (!ownsSession(guard.auth, session)) {
+    return NextResponse.json(
+      { error: 'FORBIDDEN', message: '他の担当者のセッションは操作できません' },
+      { status: 403 },
+    );
   }
   if (session.completedAt) {
     return NextResponse.json(
