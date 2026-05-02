@@ -86,7 +86,9 @@ export async function setEmployeeSession(
   cookies().set(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    // ★ HTTPS でない URL（社内 LAN の HTTP テスト運用 等）では Secure を付けない。
+    // NEXTAUTH_URL が https:// で始まる場合のみ Secure を付与する（NextAuth と同様の挙動）。
+    secure: (process.env.NEXTAUTH_URL ?? '').startsWith('https://'),
     path: '/',
     maxAge: COOKIE_MAX_AGE_SEC,
   });
