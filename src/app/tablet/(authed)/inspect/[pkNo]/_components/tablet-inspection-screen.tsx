@@ -18,6 +18,7 @@ import { NoshiConfirmationModal } from '@/components/inspection/noshi-confirmati
 import { AccompaniesModal } from '@/components/inspection/accompanies-modal';
 import { BoxSuggestion } from '@/components/inspection/box-suggestion';
 import { ForceOkModal } from '@/components/inspection/force-ok-modal';
+import { QtyKeypadModal } from '@/components/inspection/qty-keypad-modal';
 import { useStickyForceOk } from '@/lib/use-sticky-force-ok';
 
 export interface InspectionItem {
@@ -93,6 +94,7 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
   const [showAccompanies, setShowAccompanies] = useState(false);
   const [accompaniesConfirmed, setAccompaniesConfirmed] = useState(false);
   const [forceTarget, setForceTarget] = useState<InspectionItem | null>(null);
+  const [qtyTarget, setQtyTarget] = useState<InspectionItem | null>(null);
 
   // Sticky 強制検品モード（A-15）
   const sticky = useStickyForceOk();
@@ -266,6 +268,45 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
     }
   }
 
+  // テンキー残数入力（A-16）: 商品コードを scanValue として一括加算
+  async function applyManualQty(item: InspectionItem, addedQty: number) {
+    if (!sessionId) return;
+    setBusy(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch('/api/inspect/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          scanValue: item.productCode,
+          qty: addedQty,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        setErrorMsg(j.message ?? '数量入力失敗');
+        triggerFlash('red');
+        throw new Error(j.message ?? `HTTP ${res.status}`);
+      }
+      setLastResult(j.data);
+      if (j.data.result === 'matched') {
+        triggerFlash('green');
+        await refreshOrder();
+      } else if (j.data.result === 'over_scan') {
+        triggerFlash('red');
+        throw new Error('残数を超えています');
+      } else if (j.data.result === 'already_done') {
+        triggerFlash('blue');
+      } else {
+        triggerFlash('red');
+      }
+    } finally {
+      setBusy(false);
+      scanInputRef.current?.focus();
+    }
+  }
+
   async function onTogglePrintFlag() {
     setBusy(true);
     try {
@@ -412,6 +453,21 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
         onConfirm={applyForceOkFromModal}
         onCancel={() => setForceTarget(null)}
       />
+      <QtyKeypadModal
+        open={qtyTarget !== null}
+        productName={qtyTarget?.productName ?? ''}
+        productCode={qtyTarget?.productCode ?? ''}
+        productJan={qtyTarget?.productJan ?? null}
+        alreadyScanned={qtyTarget?.scannedQty ?? 0}
+        totalQty={qtyTarget?.qty ?? 0}
+        onConfirm={async (n) => {
+          if (qtyTarget) {
+            await applyManualQty(qtyTarget, n);
+          }
+          setQtyTarget(null);
+        }}
+        onCancel={() => setQtyTarget(null)}
+      />
 
       {/* Sticky 強制検品中バナー（A-15） */}
       {sticky.active && (
@@ -477,6 +533,7 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
           errorMsg={errorMsg}
           allInspected={allInspected}
           onForceOk={onForceOk}
+          onOpenKeypad={(it) => setQtyTarget(it)}
         />
         {!portrait && (
           <RightPane
@@ -667,6 +724,7 @@ function CenterPane({
   errorMsg,
   allInspected,
   onForceOk,
+  onOpenKeypad,
 }: {
   items: InspectionItem[];
   scanMode: 'product' | 'invoice';
@@ -674,6 +732,7 @@ function CenterPane({
   errorMsg: string | null;
   allInspected: boolean;
   onForceOk: (item: InspectionItem) => void;
+  onOpenKeypad: (item: InspectionItem) => void;
 }) {
   const totalQty = items.reduce((s, i) => s + i.qty, 0);
   const scannedQty = items.reduce((s, i) => s + (i.forceOk ? i.qty : i.scannedQty), 0);
@@ -701,6 +760,7 @@ function CenterPane({
             isLast={lastResult?.itemId === it.id}
             lastResult={lastResult}
             onForceOk={onForceOk}
+            onOpenKeypad={onOpenKeypad}
           />
         ))}
       </div>
@@ -761,11 +821,13 @@ function ScanLine({
   isLast,
   lastResult,
   onForceOk,
+  onOpenKeypad,
 }: {
   item: InspectionItem;
   isLast: boolean;
   lastResult: { result: ScanResult; itemId: number | null } | null;
   onForceOk: (i: InspectionItem) => void;
+  onOpenKeypad: (i: InspectionItem) => void;
 }) {
   const done = item.forceOk || item.scannedQty >= item.qty;
   const warn = isLast && lastResult?.result === 'over_scan';
@@ -814,15 +876,22 @@ function ScanLine({
         </div>
       </div>
       <div className="text-right">
-        <div
-          className={cn(
-            'text-base font-bold tabular-nums font-mono',
-            done ? 'text-status-ok' : 'text-ink-strong',
-          )}
-        >
-          {item.scannedQty}
-          <span className="text-ink-muted text-xs"> / {item.qty}</span>
-        </div>
+        {done ? (
+          <div className="text-base font-bold tabular-nums font-mono text-status-ok">
+            {item.scannedQty}
+            <span className="text-ink-muted text-xs"> / {item.qty}</span>
+          </div>
+        ) : (
+          <button
+            onClick={() => onOpenKeypad(item)}
+            title="数量入力（残数を加算）"
+            className="text-base font-bold tabular-nums font-mono text-ink-strong hover:text-accent-amber underline-offset-2 hover:underline"
+          >
+            {item.scannedQty}
+            <span className="text-ink-muted text-xs"> / {item.qty}</span>
+            <span className="ml-1 text-3xs text-ink-muted">🔢</span>
+          </button>
+        )}
       </div>
       <div className="text-right">
         {!done && (
