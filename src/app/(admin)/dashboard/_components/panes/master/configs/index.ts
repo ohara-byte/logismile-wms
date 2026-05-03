@@ -10,10 +10,20 @@ import type { MasterSubTabId } from '../master-tabs-config';
 import { staffConfig } from './staff-config';
 import { carrierConfig } from './carrier-config';
 import { boxConfig } from './box-config';
+import { deviceConfig } from './device-config';
+import { productConfig } from './product-config';
+import { groupConfig } from './group-config';
+import { stdTimeConfig } from './stdtime-config';
+import { skillConfig } from './skill-config';
 
 const REGISTRY: Partial<Record<MasterSubTabId, MasterConfig<Record<string, unknown>>>> = {
   staff: staffConfig as unknown as MasterConfig<Record<string, unknown>>,
+  device: deviceConfig as unknown as MasterConfig<Record<string, unknown>>,
+  product: productConfig as unknown as MasterConfig<Record<string, unknown>>,
   carrier: carrierConfig as unknown as MasterConfig<Record<string, unknown>>,
+  group: groupConfig as unknown as MasterConfig<Record<string, unknown>>,
+  stdtime: stdTimeConfig as unknown as MasterConfig<Record<string, unknown>>,
+  skill: skillConfig as unknown as MasterConfig<Record<string, unknown>>,
   box: boxConfig as unknown as MasterConfig<Record<string, unknown>>,
 };
 
