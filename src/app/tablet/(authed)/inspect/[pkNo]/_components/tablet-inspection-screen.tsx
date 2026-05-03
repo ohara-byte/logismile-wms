@@ -19,6 +19,8 @@ import { AccompaniesModal } from '@/components/inspection/accompanies-modal';
 import { BoxSuggestion } from '@/components/inspection/box-suggestion';
 import { ForceOkModal } from '@/components/inspection/force-ok-modal';
 import { QtyKeypadModal } from '@/components/inspection/qty-keypad-modal';
+import { HoldMenuModal } from '@/components/inspection/hold-menu-modal';
+import { HoldContactModal } from '@/components/inspection/hold-contact-modal';
 import { useStickyForceOk } from '@/lib/use-sticky-force-ok';
 
 export interface InspectionItem {
@@ -95,6 +97,8 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
   const [accompaniesConfirmed, setAccompaniesConfirmed] = useState(false);
   const [forceTarget, setForceTarget] = useState<InspectionItem | null>(null);
   const [qtyTarget, setQtyTarget] = useState<InspectionItem | null>(null);
+  const [holdMenuOpen, setHoldMenuOpen] = useState(false);
+  const [holdContactOpen, setHoldContactOpen] = useState(false);
 
   // Sticky 強制検品モード（A-15）
   const sticky = useStickyForceOk();
@@ -353,10 +357,19 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
     }
   }
 
-  async function onHold() {
-    const reason = prompt('保留理由を入力してください');
-    if (!reason || !sessionId) return;
+  // F5 / フッタ「中断」: 保留メニューを開く（A-17）
+  function onHold() {
+    setHoldMenuOpen(true);
+  }
+
+  // 保留メニュー → 検品保留 (デフォルト理由は「現場保留」)
+  async function submitInspectionHold(reason = '現場保留') {
+    if (!sessionId) {
+      setHoldMenuOpen(false);
+      return;
+    }
     setBusy(true);
+    setHoldMenuOpen(false);
     try {
       const res = await fetch('/api/inspect/hold', {
         method: 'POST',
@@ -467,6 +480,25 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
           setQtyTarget(null);
         }}
         onCancel={() => setQtyTarget(null)}
+      />
+      <HoldMenuModal
+        open={holdMenuOpen}
+        onSelectInspectionHold={() => submitInspectionHold()}
+        onSelectContact={() => {
+          setHoldMenuOpen(false);
+          setHoldContactOpen(true);
+        }}
+        onCancel={() => setHoldMenuOpen(false)}
+      />
+      <HoldContactModal
+        open={holdContactOpen}
+        pkNo={order.pkNo}
+        staffCode={employee?.staffCode}
+        onSent={() => {
+          setHoldContactOpen(false);
+          // 連絡送信後はそのまま検品継続（保留しない）
+        }}
+        onCancel={() => setHoldContactOpen(false)}
       />
 
       {/* Sticky 強制検品中バナー（A-15） */}
