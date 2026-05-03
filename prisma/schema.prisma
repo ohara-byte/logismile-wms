@@ -416,6 +416,8 @@ model InspSession {
   box    Box?          @relation(fields: [boxCode], references: [code])
   logs   InspLog[]
 
+  @@index([completedAt])
+  @@index([completedAt, staffCode])
   @@map("insp_sessions")
 }
 
@@ -431,6 +433,8 @@ model InspLog {
 
   session InspSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
+  @@index([sessionId])
+  @@index([type, createdAt])
   @@map("insp_logs")
 }
 
@@ -451,6 +455,7 @@ model ThomasImport {
   importer       Staff?          @relation(fields: [importedBy], references: [code])
   shippingOrders ShippingOrder[]
 
+  @@index([importedAt])
   @@map("thomas_imports")
 }
 
