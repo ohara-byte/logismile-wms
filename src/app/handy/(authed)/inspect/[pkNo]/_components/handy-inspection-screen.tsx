@@ -16,6 +16,13 @@ import { cn } from '@/lib/cn';
 import { NoticesModal } from '@/components/inspection/notices-modal';
 import { NoshiConfirmationModal } from '@/components/inspection/noshi-confirmation-modal';
 import { AccompaniesModal } from '@/components/inspection/accompanies-modal';
+import { ForceOkModal } from '@/components/inspection/force-ok-modal';
+import { QtyKeypadModal } from '@/components/inspection/qty-keypad-modal';
+import { HoldMenuModal } from '@/components/inspection/hold-menu-modal';
+import { HoldContactModal } from '@/components/inspection/hold-contact-modal';
+import { ReprintModal } from '@/components/inspection/reprint-modal';
+import { useStickyForceOk } from '@/lib/use-sticky-force-ok';
+import { useHardwareKeys } from '@/lib/use-hardware-keys';
 
 export interface InspectionItem {
   id: number;
@@ -83,10 +90,31 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
   const [showNoshi, setShowNoshi] = useState(false);
   const [showAccompanies, setShowAccompanies] = useState(false);
   const [accompaniesConfirmed, setAccompaniesConfirmed] = useState(false);
+  const [forceTarget, setForceTarget] = useState<InspectionItem | null>(null);
+  const [qtyTarget, setQtyTarget] = useState<InspectionItem | null>(null);
+  const [holdMenuOpen, setHoldMenuOpen] = useState(false);
+  const [holdContactOpen, setHoldContactOpen] = useState(false);
+  const [reprintOpen, setReprintOpen] = useState(false);
+
+  // 選択行（Up/Down で移動、Enter or Trigger で +1 スキャン）
+  const [selectedRow, setSelectedRow] = useState<number>(-1);
+
+  // Sticky 強制検品モード（A-15）
+  const sticky = useStickyForceOk();
 
   const scanInputRef = useRef<HTMLInputElement>(null);
 
   const allInspected = order.items.every((it) => it.forceOk || it.scannedQty >= it.qty);
+
+  const anyModalOpen =
+    showNotices ||
+    showNoshi ||
+    showAccompanies ||
+    forceTarget !== null ||
+    qtyTarget !== null ||
+    holdMenuOpen ||
+    holdContactOpen ||
+    reprintOpen;
 
   const triggerFlash = useCallback((color: FlashColor) => {
     setFlash(color);
@@ -204,9 +232,33 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     }
   }
 
+  // 強制OK ボタン押下 → Sticky 有効時は即実行、無効時は ForceOkModal を起動
   async function onForceOk(item: InspectionItem) {
-    const reason = prompt(`「${item.productName}」を強制OKにする理由`);
-    if (!reason || !sessionId) return;
+    if (!sessionId) return;
+    if (sticky.active && sticky.reason) {
+      await applyForceOk(item, sticky.reason);
+      return;
+    }
+    setForceTarget(item);
+  }
+
+  async function applyForceOkFromModal(args: {
+    code: string;
+    reason: string;
+    sticky: boolean;
+  }) {
+    if (!forceTarget || !sessionId) {
+      setForceTarget(null);
+      return;
+    }
+    const target = forceTarget;
+    setForceTarget(null);
+    if (args.sticky) sticky.activate(args.code as never, args.reason);
+    else sticky.deactivate();
+    await applyForceOk(target, args.reason);
+  }
+
+  async function applyForceOk(item: InspectionItem, reason: string) {
     setBusy(true);
     try {
       const res = await fetch('/api/inspect/force-ok', {
@@ -218,6 +270,45 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
       else setErrorMsg((await res.json()).message ?? '強制OK失敗');
     } finally {
       setBusy(false);
+      scanInputRef.current?.focus();
+    }
+  }
+
+  // テンキー残数入力（A-16）: 商品コードを scanValue として一括加算
+  async function applyManualQty(item: InspectionItem, addedQty: number) {
+    if (!sessionId) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/inspect/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          scanValue: item.productCode,
+          qty: addedQty,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        setErrorMsg(j.message ?? '数量入力失敗');
+        triggerFlash('red');
+        throw new Error(j.message ?? `HTTP ${res.status}`);
+      }
+      setLastResult(j.data);
+      if (j.data.result === 'matched') {
+        triggerFlash('green');
+        await refreshOrder();
+      } else if (j.data.result === 'over_scan') {
+        triggerFlash('red');
+        throw new Error('残数を超えています');
+      } else if (j.data.result === 'already_done') {
+        triggerFlash('blue');
+      } else {
+        triggerFlash('red');
+      }
+    } finally {
+      setBusy(false);
+      scanInputRef.current?.focus();
     }
   }
 
@@ -267,10 +358,18 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     }
   }
 
-  async function onHold() {
-    const reason = prompt('保留理由');
-    if (!reason || !sessionId) return;
+  // 保留メニューを開く（A-17）
+  function onHold() {
+    setHoldMenuOpen(true);
+  }
+
+  async function submitInspectionHold(reason = '現場保留') {
+    if (!sessionId) {
+      setHoldMenuOpen(false);
+      return;
+    }
     setBusy(true);
+    setHoldMenuOpen(false);
     try {
       const res = await fetch('/api/inspect/hold', {
         method: 'POST',
@@ -283,6 +382,119 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
       setBusy(false);
     }
   }
+
+  // 選択行を上下に移動（未完了行のみ対象）
+  function moveSelectedRow(delta: 1 | -1) {
+    const itemsArr = order.items;
+    if (itemsArr.length === 0) return;
+    const cur = selectedRow >= 0 ? selectedRow : 0;
+    let next = cur;
+    for (let i = 0; i < itemsArr.length; i++) {
+      next = (next + delta + itemsArr.length) % itemsArr.length;
+      // 完了済みでもナビは可能（モック準拠）
+      break;
+    }
+    setSelectedRow(next);
+  }
+
+  // ハードキー Enter / Trigger: 選択行を +1 スキャン or 次の未完了をスキャン
+  async function onTriggerScan() {
+    if (!sessionId) return;
+    const target =
+      selectedRow >= 0
+        ? selectedRow
+        : order.items.findIndex(
+            (it) => !it.forceOk && it.scannedQty < it.qty,
+          );
+    if (target < 0) return;
+    const it = order.items[target];
+    if (it.forceOk || it.scannedQty >= it.qty) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/inspect/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          scanValue: it.productCode,
+          qty: 1,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        setErrorMsg(j.message ?? `エラー: HTTP ${res.status}`);
+        triggerFlash('red');
+      } else {
+        setLastResult(j.data);
+        if (j.data.result === 'matched') {
+          triggerFlash('green');
+          await refreshOrder();
+        } else triggerFlash('red');
+      }
+    } finally {
+      setBusy(false);
+      scanInputRef.current?.focus();
+    }
+  }
+
+  // F4 一括検品: 残全件を強制OK 扱いで完了させる（モック skipAndFinish 準拠）
+  async function onBulkComplete() {
+    if (!sessionId) return;
+    if (!confirm('残り全ての商品を一括検品で完了させますか？（強制OK 相当）')) return;
+    const targets = order.items.filter(
+      (it) => !it.forceOk && it.scannedQty < it.qty,
+    );
+    setBusy(true);
+    try {
+      for (const it of targets) {
+        await fetch('/api/inspect/force-ok', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId,
+            itemId: it.id,
+            reason: 'F4 一括検品',
+          }),
+        });
+      }
+      await refreshOrder();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ハードウェアキー（A-18）— モーダル開いてないときのみ反応
+  useHardwareKeys({
+    enabled: !anyModalOpen,
+    onF1: () => {
+      // 待機画面では連絡再表示のみ（idle 時は別画面なので通常ここには来ない）
+      setShowNotices(true);
+    },
+    onF2: () => {
+      // F2 = 強制OK（選択行 or 先頭の未完了行）
+      const target =
+        selectedRow >= 0
+          ? order.items[selectedRow]
+          : order.items.find((it) => !it.forceOk && it.scannedQty < it.qty);
+      if (target) onForceOk(target);
+    },
+    onF3: () => {
+      // F3 = 次の同梱物 toggle（同梱モーダルが開いていなければ何もしない）
+      // 同梱物モーダルは AccompaniesModal 側で対応想定。ここでは noop。
+    },
+    onF4: () => {
+      onBulkComplete();
+    },
+    onUp: () => moveSelectedRow(-1),
+    onDown: () => moveSelectedRow(1),
+    onTab: () => moveSelectedRow(1),
+    onEnter: () => onTriggerScan(),
+    onTrigger: () => onTriggerScan(),
+    onEscape: () => {
+      // 検品中の Esc は保留メニュー（モック準拠）
+      setHoldMenuOpen(true);
+    },
+  });
 
   // 仮 boxCode（ハンディは選択 UI を出さず、API のおすすめを採用）
   useEffect(() => {
@@ -376,6 +588,58 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
           onCancel={() => setShowAccompanies(false)}
         />
       )}
+      <ForceOkModal
+        open={forceTarget !== null}
+        productName={forceTarget?.productName}
+        vertical
+        onConfirm={applyForceOkFromModal}
+        onCancel={() => setForceTarget(null)}
+      />
+      <QtyKeypadModal
+        open={qtyTarget !== null}
+        productName={qtyTarget?.productName ?? ''}
+        productCode={qtyTarget?.productCode ?? ''}
+        productJan={qtyTarget?.productJan ?? null}
+        alreadyScanned={qtyTarget?.scannedQty ?? 0}
+        totalQty={qtyTarget?.qty ?? 0}
+        onConfirm={async (n) => {
+          if (qtyTarget) await applyManualQty(qtyTarget, n);
+          setQtyTarget(null);
+        }}
+        onCancel={() => setQtyTarget(null)}
+      />
+      <HoldMenuModal
+        open={holdMenuOpen}
+        onSelectInspectionHold={() => submitInspectionHold()}
+        onSelectContact={() => {
+          setHoldMenuOpen(false);
+          setHoldContactOpen(true);
+        }}
+        onCancel={() => setHoldMenuOpen(false)}
+      />
+      <HoldContactModal
+        open={holdContactOpen}
+        pkNo={order.pkNo}
+        staffCode={employee?.staffCode}
+        onSent={() => setHoldContactOpen(false)}
+        onCancel={() => setHoldContactOpen(false)}
+      />
+      <ReprintModal open={reprintOpen} onClose={() => setReprintOpen(false)} />
+
+      {/* Sticky 強制検品中バナー */}
+      {sticky.active && (
+        <div className="bg-status-warn text-black px-2 py-1 flex items-center justify-between gap-2 z-40 border-b border-amber-700">
+          <span className="text-2xs font-bold leading-tight">
+            ⚠ 強制検品中 / <span className="font-mono">{sticky.code}</span>
+          </span>
+          <button
+            onClick={sticky.deactivate}
+            className="px-1.5 py-0.5 rounded bg-black/30 text-2xs font-bold border border-black/40"
+          >
+            解除
+          </button>
+        </div>
+      )}
 
       {/* ヘッダ（薄め） */}
       <header className="bg-surface-panel border-b border-surface-border h-9 flex items-center px-2 gap-2 shrink-0">
@@ -433,13 +697,15 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
 
       {/* 商品リスト */}
       <div className="flex-1 overflow-auto px-1.5 py-1.5 space-y-1">
-        {order.items.map((it) => (
+        {order.items.map((it, idx) => (
           <ScanLine
             key={it.id}
             item={it}
             isLast={lastResult?.itemId === it.id}
             lastResult={lastResult}
             onForceOk={onForceOk}
+            onOpenKeypad={(item) => setQtyTarget(item)}
+            isSelected={selectedRow === idx}
           />
         ))}
         {order.items.length === 0 && (
@@ -514,11 +780,15 @@ function ScanLine({
   isLast,
   lastResult,
   onForceOk,
+  onOpenKeypad,
+  isSelected,
 }: {
   item: InspectionItem;
   isLast: boolean;
   lastResult: { result: ScanResult; itemId: number | null } | null;
   onForceOk: (i: InspectionItem) => void;
+  onOpenKeypad: (i: InspectionItem) => void;
+  isSelected?: boolean;
 }) {
   const done = item.forceOk || item.scannedQty >= item.qty;
   const warn = isLast && lastResult?.result === 'over_scan';
@@ -532,6 +802,7 @@ function ScanLine({
           : done
             ? 'border-l-status-ok bg-emerald-950/40'
             : 'border-l-surface-border-strong bg-surface-panel',
+        isSelected && 'ring-2 ring-accent-amber',
       )}
       style={{ gridTemplateColumns: '24px 1fr 56px 44px' }}
     >
@@ -564,15 +835,21 @@ function ScanLine({
         </div>
       </div>
       <div className="text-right">
-        <div
-          className={cn(
-            'text-sm font-bold tabular-nums font-mono',
-            done ? 'text-status-ok' : 'text-ink-strong',
-          )}
-        >
-          {item.scannedQty}
-          <span className="text-ink-muted text-2xs">/{item.qty}</span>
-        </div>
+        {done ? (
+          <div className="text-sm font-bold tabular-nums font-mono text-status-ok">
+            {item.scannedQty}
+            <span className="text-ink-muted text-2xs">/{item.qty}</span>
+          </div>
+        ) : (
+          <button
+            onClick={() => onOpenKeypad(item)}
+            className="text-sm font-bold tabular-nums font-mono text-ink-strong hover:text-accent-amber"
+            title="数量入力"
+          >
+            {item.scannedQty}
+            <span className="text-ink-muted text-2xs">/{item.qty}</span>
+          </button>
+        )}
       </div>
       <div className="text-right">
         {!done && (
