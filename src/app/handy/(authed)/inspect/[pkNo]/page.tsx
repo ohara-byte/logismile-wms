@@ -1,12 +1,12 @@
 /**
  * /handy/inspect/[pkNo]
- * ハンディ検品メイン画面（共通コンポーネントを variant="handy" で使う）
+ * ハンディ検品メイン画面（Phase 7-4 — モック準拠 UI）
  */
 
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/db';
 import { getEmployeeSession } from '@/lib/auth/employee-session';
-import { InspectionScreen } from '@/components/inspection/inspection-screen';
+import { HandyInspectionScreen } from './_components/handy-inspection-screen';
 
 export default async function HandyInspectPage({
   params,
@@ -32,8 +32,7 @@ export default async function HandyInspectPage({
   const session = await getEmployeeSession();
 
   return (
-    <InspectionScreen
-      variant="handy"
+    <HandyInspectionScreen
       order={{
         id: order.id,
         pkNo: order.pkNo,

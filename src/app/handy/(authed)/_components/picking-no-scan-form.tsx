@@ -37,26 +37,26 @@ export function PickingNoScanForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-3">
+    <form onSubmit={onSubmit} className="space-y-2">
       <input
         type="text"
         autoFocus
         value={pkNo}
         onChange={(e) => setPkNo(e.target.value)}
-        className="w-full border-2 rounded-lg px-3 py-3 text-base font-mono"
+        className="w-full bg-surface-panel border-2 border-accent-amber/50 rounded-lg px-3 py-3 text-lg font-mono text-ink-strong text-center tabular-nums focus:outline-none focus:border-accent-amber focus:ring-2 focus:ring-accent-amber/20"
         placeholder="SA01208680006"
       />
       {errorMsg && (
-        <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">
+        <div className="text-3xs text-status-error bg-status-error-bg border border-status-error/40 rounded p-2 text-center">
           {errorMsg}
         </div>
       )}
       <button
         type="submit"
         disabled={busy || !pkNo.trim()}
-        className="w-full bg-blue-600 text-white rounded-lg py-3 text-base font-medium hover:bg-blue-700 disabled:bg-gray-300"
+        className="w-full bg-blue-700 hover:bg-blue-600 text-white rounded-lg py-2.5 text-sm font-bold border border-blue-500 disabled:bg-surface-raised disabled:text-ink-muted disabled:border-surface-border"
       >
-        {busy ? '読み込み中…' : '検品開始'}
+        {busy ? '読み込み中…' : '検品開始 (Enter)'}
       </button>
     </form>
   );
