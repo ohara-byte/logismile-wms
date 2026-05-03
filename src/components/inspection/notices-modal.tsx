@@ -58,17 +58,19 @@ export function NoticesModal({ variant, onClose }: Props) {
   const wide = variant === 'tablet-launch';
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/65 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
       <div
-        className={`bg-white rounded-2xl shadow-2xl ${
+        className={`bg-surface-panel border border-surface-border rounded-2xl shadow-modal ${
           wide ? 'max-w-xl' : 'max-w-md'
-        } w-full p-6`}
+        } w-full p-6 border-t-[6px] border-t-status-warn`}
       >
         <div className="flex justify-between items-center mb-3">
-          <h2 className="text-lg font-bold">📢 連絡事項 {idx + 1} / {notices.length}</h2>
+          <h2 className="text-base font-bold text-accent-amber uppercase tracking-wider">
+            📢 連絡事項 <span className="text-ink-subtle ml-1">{idx + 1} / {notices.length}</span>
+          </h2>
         </div>
-        <h3 className="text-xl font-semibold mb-2">{cur.title}</h3>
-        <p className="text-sm text-gray-700 whitespace-pre-wrap mb-6 min-h-[2em]">
+        <h3 className="text-xl font-semibold text-ink-strong mb-2">{cur.title}</h3>
+        <p className="text-sm text-ink whitespace-pre-wrap mb-6 min-h-[2em]">
           {cur.body ?? ''}
         </p>
         <div className="flex justify-end gap-2">
@@ -77,12 +79,12 @@ export function NoticesModal({ variant, onClose }: Props) {
               if (idx < notices.length - 1) setIdx((i) => i + 1);
               else onClose();
             }}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium"
+            className="px-6 py-3 bg-blue-700 hover:bg-blue-600 text-white rounded-lg font-bold border border-blue-500"
           >
             ☑ 確認 {idx < notices.length - 1 ? '(次へ)' : '(閉じる)'}
           </button>
         </div>
-        <p className="text-xs text-gray-400 text-center mt-3">Enter キーで進めます</p>
+        <p className="text-2xs text-ink-muted text-center mt-3">Enter キーで進めます</p>
       </div>
     </div>
   );

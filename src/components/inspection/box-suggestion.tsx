@@ -65,37 +65,41 @@ export function BoxSuggestion({ pkNo, selectedBoxCode, onSelect, density = 'wide
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pkNo]);
 
-  if (!data) return <div className="text-xs text-gray-400">箱候補を読み込み中…</div>;
+  if (!data) return <div className="text-2xs text-ink-muted">箱候補を読み込み中…</div>;
 
   const compact = density === 'compact';
   const r = data.reasoning;
 
   return (
-    <div className={`${compact ? 'text-xs' : 'text-sm'}`}>
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold">📦 推奨の箱</h3>
-        <div className="text-xs text-gray-500">
+    <div className={compact ? 'text-2xs' : 'text-xs'}>
+      <div className="flex items-center justify-between mb-1.5">
+        <h3 className="text-2xs font-bold text-accent-amber uppercase tracking-wider">
+          📦 推奨の箱
+        </h3>
+        <div className="text-3xs text-ink-muted">
           {STRATEGY_LABEL[r.strategy]}
           {r.hasFrozen ? ' / 冷凍' : ''}
           {r.hasNoshi ? ' / のし' : ''}
         </div>
       </div>
       {data.recommended && (
-        <div className="border-2 border-blue-300 bg-blue-50 rounded p-2 mb-2">
-          <div className="font-medium">{data.recommended.name}</div>
-          <div className="text-xs text-gray-600 font-mono">
+        <div className="border-2 border-status-info bg-blue-950/40 rounded p-2 mb-2">
+          <div className="font-bold text-ink-strong text-sm">{data.recommended.name}</div>
+          <div className="text-3xs text-ink-subtle font-mono">
             {data.recommended.code} / size {data.recommended.sizeRank}
             {data.recommended.frozen && ' / 冷凍可'}
           </div>
           {r.notes && r.notes.length > 0 && (
-            <div className="text-xs text-gray-600 mt-1">{r.notes[0]}</div>
+            <div className="text-3xs text-ink-muted mt-1">{r.notes[0]}</div>
           )}
         </div>
       )}
       <select
         value={selectedBoxCode ?? ''}
         onChange={(e) => onSelect(e.target.value || null)}
-        className={`w-full border rounded px-2 py-2 ${compact ? '' : 'text-sm'}`}
+        className={`w-full bg-surface-base border border-surface-border-strong text-ink-strong rounded px-2 py-1.5 ${
+          compact ? 'text-2xs' : 'text-xs'
+        } focus:outline-none focus:border-accent-amber`}
       >
         <option value="">— 箱を選択 —</option>
         {data.candidates.map((b) => (

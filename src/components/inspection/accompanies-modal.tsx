@@ -62,29 +62,29 @@ export function AccompaniesModal({ pkNo, onConfirm, onCancel }: Props) {
   const cur = accompanies[idx];
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+    <div className="fixed inset-0 bg-black/65 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+      <div className="bg-surface-panel border border-surface-border rounded-2xl shadow-modal max-w-md w-full p-6 border-t-[6px] border-t-pink-500">
         <div className="flex justify-between items-center mb-3">
-          <h2 className="text-lg font-bold">
-            🎁 同梱物確認 {idx + 1} / {accompanies.length}
+          <h2 className="text-base font-bold text-pink-300 uppercase tracking-wider">
+            🎁 同梱物確認 <span className="text-ink-subtle ml-1">{idx + 1} / {accompanies.length}</span>
           </h2>
         </div>
-        <div className="bg-pink-50 border border-pink-200 rounded p-3 mb-4">
-          <div className="text-xs text-gray-600">{cur.type}</div>
-          <div className="text-lg font-semibold mt-1">{cur.name}</div>
+        <div className="bg-pink-950/40 border border-pink-700/40 rounded p-3 mb-4">
+          <div className="text-2xs text-ink-subtle uppercase">{cur.type}</div>
+          <div className="text-lg font-semibold text-ink-strong mt-1">{cur.name}</div>
           {cur.packingNote && (
-            <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{cur.packingNote}</p>
+            <p className="text-sm text-ink mt-2 whitespace-pre-wrap">{cur.packingNote}</p>
           )}
         </div>
         {packingNote && idx === 0 && (
-          <p className="text-xs text-gray-500 bg-gray-50 rounded p-2 mb-4">
-            梱包メモ: {packingNote}
+          <p className="text-2xs text-ink-subtle bg-surface-base rounded p-2 mb-4 border border-surface-border">
+            📝 梱包メモ: {packingNote}
           </p>
         )}
         <div className="flex gap-2 justify-end">
           <button
             onClick={onCancel}
-            className="px-4 py-3 border rounded-lg text-gray-700 hover:bg-gray-50"
+            className="px-4 py-3 border border-surface-border-strong rounded-lg text-ink hover:bg-surface-raised"
           >
             キャンセル
           </button>
@@ -93,12 +93,12 @@ export function AccompaniesModal({ pkNo, onConfirm, onCancel }: Props) {
               if (idx < accompanies.length - 1) setIdx((i) => i + 1);
               else onConfirm();
             }}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium"
+            className="px-6 py-3 bg-blue-700 hover:bg-blue-600 text-white rounded-lg font-bold border border-blue-500"
           >
             ☑ 確認 {idx < accompanies.length - 1 ? '(次へ)' : '(完了)'}
           </button>
         </div>
-        <p className="text-xs text-gray-400 text-center mt-3">Enter で進めます</p>
+        <p className="text-2xs text-ink-muted text-center mt-3">Enter で進めます</p>
       </div>
     </div>
   );

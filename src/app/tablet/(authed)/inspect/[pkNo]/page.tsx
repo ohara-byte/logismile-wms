@@ -1,12 +1,12 @@
 /**
  * /tablet/inspect/[pkNo]
- * タブレット検品メイン画面
+ * タブレット検品メイン画面（Phase 7-3 — モック準拠 UI）
  */
 
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/db';
 import { getEmployeeSession } from '@/lib/auth/employee-session';
-import { InspectionScreen } from '@/components/inspection/inspection-screen';
+import { TabletInspectionScreen } from './_components/tablet-inspection-screen';
 
 export default async function InspectPage({
   params,
@@ -32,8 +32,7 @@ export default async function InspectPage({
   const session = await getEmployeeSession();
 
   return (
-    <InspectionScreen
-      variant="tablet"
+    <TabletInspectionScreen
       order={{
         id: order.id,
         pkNo: order.pkNo,
