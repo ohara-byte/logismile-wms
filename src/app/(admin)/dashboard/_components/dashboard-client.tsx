@@ -1,24 +1,31 @@
 'use client';
 
 /**
- * 管理PC ダッシュボード メインクライアント（Phase 7-2）
+ * 管理PC ダッシュボード メインクライアント
  *
- * 4 段グリッド:
- *  - 108px: KPI ストリップ
- *  - 1fr  : テーブルグループ別進捗
- *  - 96px : 独立作業エリア
- *  - 208px: 1時間別実績 + 30分要員配置
+ * モック準拠 2 ペイン構造（管理用PCモック_v0.22.html L2300-2463）:
+ *  - 左ペイン (1fr) : 進捗ダッシュボード本体
+ *      行1 108px : KPI ストリップ
+ *      行2 1fr   : テーブルグループ別進捗（全幅）
+ *      行3 96px  : 独立作業エリア
+ *      行4 208px : 1時間別実績 + 30分要員配置
+ *  - 右ペイン (560px) : 10タブ ナビゲーション（A-02 でスカフォールド）
  *
- * ポーリング 5 秒間隔で全データを更新。
+ * Sprint A-04 以降で右ペイン各タブの本実装を進める。
+ * 旧アラートパネルは右ペインの「🔔 アラート」タブへ集約予定（A-04）。
+ *
+ * ポーリング 5 秒間隔で進捗データを更新。
  */
 
 import { useEffect, useState } from 'react';
-import { Panel, PanelHeader, PanelBody } from '@/components/ui/panel';
+import { Panel, PanelHeader } from '@/components/ui/panel';
 import { KpiStrip } from './kpi-strip';
 import { GroupProgressGrid } from './group-progress-grid';
 import { IndependentWorkArea } from './independent-work-area';
 import { HourlyChart } from './hourly-chart';
 import { StaffAllocationGrid } from './staff-allocation-grid';
+import { DashboardRightPane } from './dashboard-right-pane';
+import type { TabId } from './tabs-config';
 
 interface Overall {
   date: string;
@@ -126,11 +133,6 @@ export function DashboardClient() {
     return () => clearInterval(id);
   }, []);
 
-  async function resolveAlert(id: number) {
-    await fetch(`/api/alerts/${id}/resolve`, { method: 'PUT' });
-    reload();
-  }
-
   if (!data) {
     return (
       <div className="p-6 text-ink-muted text-sm flex items-center gap-2">
@@ -140,26 +142,39 @@ export function DashboardClient() {
     );
   }
 
+  // 右ペインのバッジ件数（A-02 はアラート件数のみ実値、他はモックダミー）
+  const badges: Partial<Record<TabId, number>> = {
+    alerts: alerts.length,
+    force: data.overall.forceOkPending,
+    ann: 0, // A-06 で実値接続
+    link: 0, // A-11 で実値接続
+    match: 0, // A-12 で実値接続
+  };
+
   return (
     <div
-      className="grid gap-2 p-2 max-w-[1600px] mx-auto"
+      className="grid gap-2 p-2 max-w-[1920px] mx-auto"
       style={{
-        gridTemplateRows: '108px 1fr 96px 208px',
+        gridTemplateColumns: '1fr 560px',
         height: 'calc(100vh - 56px)',
       }}
     >
       {error && (
-        <div className="absolute top-2 right-2 bg-status-error-bg text-status-error border border-status-error rounded p-2 text-xs">
+        <div className="absolute top-2 right-2 bg-status-error-bg text-status-error border border-status-error rounded p-2 text-xs z-50">
           {error}
         </div>
       )}
 
-      {/* 行 1: KPI */}
-      <KpiStrip overall={data.overall} />
+      {/* ============ 左ペイン：進捗ダッシュボード ============ */}
+      <div
+        className="grid gap-2 min-h-0 overflow-hidden"
+        style={{ gridTemplateRows: '108px 1fr 96px 208px' }}
+      >
+        {/* 行 1: KPI */}
+        <KpiStrip overall={data.overall} />
 
-      {/* 行 2: グループ進捗 + アラート */}
-      <div className="grid gap-2 min-h-0" style={{ gridTemplateColumns: '1fr 360px' }}>
-        <Panel className="overflow-hidden flex flex-col">
+        {/* 行 2: グループ進捗（全幅） */}
+        <Panel className="overflow-hidden flex flex-col min-h-0">
           <PanelHeader
             title="📊 テーブルグループ別 進捗"
             meta={`${data.groups.length} グループ`}
@@ -174,80 +189,28 @@ export function DashboardClient() {
           </div>
         </Panel>
 
-        <Panel className="overflow-hidden flex flex-col">
-          <PanelHeader
-            title="🚨 未解決アラート"
-            meta={`${alerts.length} 件`}
-          />
-          <PanelBody className="flex-1 overflow-auto p-2 space-y-1.5">
-            {alerts.length === 0 ? (
-              <div className="text-xs text-ink-muted text-center py-4">
-                未解決アラートはありません
-              </div>
-            ) : (
-              alerts.slice(0, 20).map((a) => (
-                <AlertItem key={a.id} alert={a} onResolve={resolveAlert} />
-              ))
-            )}
-          </PanelBody>
+        {/* 行 3: 独立作業エリア */}
+        <Panel className="overflow-hidden">
+          <PanelHeader title="⚙ 独立作業エリア" meta="グループ外のフロー作業" />
+          <IndependentWorkArea />
         </Panel>
-      </div>
 
-      {/* 行 3: 独立作業エリア */}
-      <Panel className="overflow-hidden">
-        <PanelHeader title="⚙ 独立作業エリア" meta="グループ外のフロー作業" />
-        <IndependentWorkArea />
-      </Panel>
-
-      {/* 行 4: 1 時間別実績 + 30 分要員配置 */}
-      <div className="grid gap-2 min-h-0" style={{ gridTemplateColumns: '1fr 480px' }}>
-        <Panel className="overflow-hidden flex flex-col">
-          <HourlyChart points={data.hourlyChart} />
-        </Panel>
-        <Panel className="overflow-hidden flex flex-col">
-          <StaffAllocationGrid
-            rows={data.staffGrid.rows}
-            summary={data.staffGrid.summary}
-          />
-        </Panel>
-      </div>
-    </div>
-  );
-}
-
-function AlertItem({
-  alert,
-  onResolve,
-}: {
-  alert: Alert;
-  onResolve: (id: number) => void;
-}) {
-  const sevColor =
-    alert.severity === 'error'
-      ? 'border-l-status-error bg-red-950/40'
-      : alert.severity === 'warn'
-        ? 'border-l-status-warn bg-amber-950/40'
-        : 'border-l-status-info bg-blue-950/40';
-  return (
-    <div className={`border-l-2 ${sevColor} rounded px-2 py-1.5 text-3xs`}>
-      <div className="flex justify-between items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-bold text-ink-strong truncate">{alert.title}</div>
-          {alert.body && (
-            <div className="text-3xs text-ink-subtle truncate">{alert.body}</div>
-          )}
-          <div className="text-3xs text-ink-muted mt-0.5 font-mono">
-            {alert.refCode ? `${alert.refCode} · ` : ''}
-            {new Date(alert.createdAt).toLocaleTimeString('ja-JP')}
-          </div>
+        {/* 行 4: 1時間別実績 + 30分要員配置 */}
+        <div className="grid gap-2 min-h-0" style={{ gridTemplateColumns: '1fr 480px' }}>
+          <Panel className="overflow-hidden flex flex-col">
+            <HourlyChart points={data.hourlyChart} />
+          </Panel>
+          <Panel className="overflow-hidden flex flex-col">
+            <StaffAllocationGrid
+              rows={data.staffGrid.rows}
+              summary={data.staffGrid.summary}
+            />
+          </Panel>
         </div>
-        <button
-          onClick={() => onResolve(alert.id)}
-          className="text-3xs text-status-info hover:underline shrink-0"
-        >
-          解決
-        </button>
       </div>
+
+      {/* ============ 右ペイン：10 タブ ナビ ============ */}
+      <DashboardRightPane badges={badges} />
     </div>
   );
 }
