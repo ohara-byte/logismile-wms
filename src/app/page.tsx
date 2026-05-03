@@ -44,6 +44,13 @@ export default function Home() {
       </div>
 
       <p className="mt-6 text-3xs text-ink-muted">© LogiSmile / 大江ノ郷自然牧場</p>
+
+      <Link
+        href="/mocks"
+        className="mt-2 text-3xs text-ink-muted hover:text-accent-amber transition-colors"
+      >
+        🧪 モック ビューア（要件確認用）
+      </Link>
     </main>
   );
 }
