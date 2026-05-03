@@ -29,6 +29,10 @@ import { InsptimePane } from './insptime-pane';
 import { StaffPane } from './staff-pane';
 import { ForceReportPane } from './force-pane';
 import { CarrierReportPane } from './carrier-pane';
+import { ProductPane } from './product-pane';
+import { HourlyPane } from './hourly-pane';
+import { ErrorPane } from './error-pane';
+import { AuxPane } from './aux-pane';
 
 export function ReportPane() {
   return (
@@ -92,15 +96,13 @@ function renderPane(active: ReportSubTabId) {
       return <ForceReportPane />;
     case 'carrier':
       return <CarrierReportPane />;
-    default:
-      return (
-        <div className="text-center py-8 px-4 text-2xs text-ink-muted">
-          <div className="text-3xl mb-2 opacity-50">🚧</div>
-          <h3 className="text-sm font-bold text-ink-strong mb-1">
-            {REPORT_SUBTABS.find((t) => t.id === active)?.label}
-          </h3>
-          <p className="text-2xs">A-Rep4 で順次実装予定</p>
-        </div>
-      );
+    case 'product':
+      return <ProductPane />;
+    case 'hourly':
+      return <HourlyPane />;
+    case 'error':
+      return <ErrorPane />;
+    case 'aux':
+      return <AuxPane />;
   }
 }
