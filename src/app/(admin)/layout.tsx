@@ -15,6 +15,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { authOptions } from '@/lib/auth/auth-options';
 import { LogiSmileLogo } from '@/components/brand/logismile-logo';
+import { BadgeProvider } from '@/components/admin/badge-context';
 import { signOutAction } from './_actions';
 import { AdminClock } from './_components/admin-clock';
 import { AdminTopChips } from './_components/admin-top-chips';
@@ -30,8 +31,9 @@ export default async function AdminLayout({
   }
 
   return (
-    <div className="min-h-screen bg-surface-base text-ink">
-      <header className="bg-gradient-to-b from-surface-panel to-surface-base border-b border-surface-border sticky top-0 z-30">
+    <BadgeProvider>
+      <div className="min-h-screen bg-surface-base text-ink">
+        <header className="bg-gradient-to-b from-surface-panel to-surface-base border-b border-surface-border sticky top-0 z-30">
         <div className="max-w-[1920px] mx-auto px-3 h-14 flex items-center gap-2.5">
           {/* ブランド */}
           <Link href="/dashboard" className="flex items-center gap-2.5 shrink-0">
@@ -68,8 +70,9 @@ export default async function AdminLayout({
             </div>
           </div>
         </div>
-      </header>
-      {children}
-    </div>
+        </header>
+        {children}
+      </div>
+    </BadgeProvider>
   );
 }

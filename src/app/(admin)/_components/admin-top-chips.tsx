@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useBadges } from '@/components/admin/badge-context';
 
 const DEADLINE_HOUR = 18; // 18:00 締切
 
@@ -45,7 +46,8 @@ export function AdminTopChips() {
   const [now, setNow] = useState<Date | null>(null);
   const [total, setTotal] = useState<number | null>(null);
   const [done, setDone] = useState<number | null>(null);
-  const [connected, setConnected] = useState(true);
+  // 接続状態は SSE (BadgeProvider) を信頼する
+  const { connected } = useBadges();
 
   // 1秒時計
   useEffect(() => {
@@ -54,7 +56,7 @@ export function AdminTopChips() {
     return () => clearInterval(id);
   }, []);
 
-  // 30秒ポーリングで進捗
+  // 30秒ポーリングで進捗（出荷件数は BadgeCounts に含まれないため別取得）
   useEffect(() => {
     let aborted = false;
     async function load() {
@@ -67,9 +69,8 @@ export function AdminTopChips() {
           setTotal(j.data.overall.total ?? 0);
           setDone(j.data.overall.packed ?? 0);
         }
-        setConnected(true);
       } catch {
-        if (!aborted) setConnected(false);
+        /* 接続表示は BadgeContext 任せ */
       }
     }
     load();

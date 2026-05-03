@@ -25,7 +25,7 @@ import { IndependentWorkArea } from './independent-work-area';
 import { HourlyChart } from './hourly-chart';
 import { StaffAllocationGrid } from './staff-allocation-grid';
 import { DashboardRightPane } from './dashboard-right-pane';
-import type { TabId } from './tabs-config';
+import { useBadges } from '@/components/admin/badge-context';
 
 interface Overall {
   date: string;
@@ -88,17 +88,6 @@ interface StaffGrid {
   };
 }
 
-interface Alert {
-  id: number;
-  type: string;
-  severity: string;
-  title: string;
-  body: string | null;
-  refCode: string | null;
-  resolved: boolean;
-  createdAt: string;
-}
-
 interface DashboardData {
   overall: Overall;
   groups: Group[];
@@ -108,18 +97,15 @@ interface DashboardData {
 
 export function DashboardClient() {
   const [data, setData] = useState<DashboardData | null>(null);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // バッジ件数は SSE 経由で BadgeContext から購読（A-03）
+  const { counts: badges } = useBadges();
 
   async function reload() {
     try {
-      const [pr, ar] = await Promise.all([
-        fetch('/api/dashboard/progress').then((r) => r.json()),
-        fetch('/api/alerts?resolved=false').then((r) => r.json()),
-      ]);
+      const pr = await fetch('/api/dashboard/progress').then((r) => r.json());
       if (pr.data) setData(pr.data);
-      if (ar.data) setAlerts(ar.data.items);
       setLastUpdated(new Date());
       setError(null);
     } catch (e) {
@@ -141,15 +127,6 @@ export function DashboardClient() {
       </div>
     );
   }
-
-  // 右ペインのバッジ件数（A-02 はアラート件数のみ実値、他はモックダミー）
-  const badges: Partial<Record<TabId, number>> = {
-    alerts: alerts.length,
-    force: data.overall.forceOkPending,
-    ann: 0, // A-06 で実値接続
-    link: 0, // A-11 で実値接続
-    match: 0, // A-12 で実値接続
-  };
 
   return (
     <div
