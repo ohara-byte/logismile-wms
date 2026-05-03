@@ -20,6 +20,7 @@ import { AnnPane } from './panes/ann-pane';
 import { CarrPane } from './panes/carr-pane';
 import { SearchPane } from './panes/search-pane';
 import { MatchPane } from './panes/match-pane';
+import { MasterPane } from './panes/master/master-pane';
 
 interface Props {
   badges?: Partial<Record<TabId, number>>;
@@ -62,14 +63,7 @@ function PaneContent({ tab }: { tab: TabId }) {
         />
       );
     case 'master':
-      return (
-        <PlaceholderPane
-          title="⚙ マスタ管理（10 サブタブ）"
-          block="A-09 / A-10"
-          legacyHref="/shift"
-          legacyLabel="従来のシフト画面へ"
-        />
-      );
+      return <MasterPane />;
     case 'link':
       return (
         <PlaceholderPane title="🔌 基幹連携（7 サブタブ）" block="A-11" />

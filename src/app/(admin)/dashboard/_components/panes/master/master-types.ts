@@ -1,0 +1,73 @@
+/**
+ * マスタ管理 共通型定義（A-09）
+ *
+ * 各マスタは MasterConfig を実装するだけで CRUD 画面が組み立てられる。
+ */
+
+export type FormFieldType =
+  | 'text'
+  | 'number'
+  | 'boolean'
+  | 'select'
+  | 'textarea'
+  | 'date';
+
+export interface FormField {
+  name: string;
+  label: string;
+  type: FormFieldType;
+  required?: boolean;
+  /** select 用の選択肢 */
+  options?: { value: string | number; label: string }[];
+  helpText?: string;
+  placeholder?: string;
+  /** 編集時のみ readonly（主キー想定） */
+  readonlyOnEdit?: boolean;
+  /** number の場合の min/max */
+  min?: number;
+  max?: number;
+  step?: number;
+}
+
+export interface ColumnDef<T> {
+  key: string;
+  label: string;
+  align?: 'left' | 'right' | 'center';
+  mono?: boolean;
+  /** カスタムレンダラ（型情報ロスを許容して any） */
+  render?: (row: T) => React.ReactNode;
+  /** 一覧で hidden にしたい場合 */
+  hidden?: boolean;
+  /** 列幅（ピクセル） */
+  width?: number;
+  /** truncate するか */
+  truncate?: boolean;
+}
+
+export interface FilterOption {
+  value: string;
+  label: string;
+}
+
+export interface MasterConfig<T extends Record<string, unknown>> {
+  /** タブ ID（master-tabs-config と一致） */
+  name: string;
+  /** ヘッダ表示名 */
+  title: string;
+  icon: string;
+  /** REST エンドポイント基底（例: '/api/master/staff'） */
+  endpoint: string;
+  /** 主キーのフィールド名 */
+  primaryKey: keyof T & string;
+  columns: ColumnDef<T>[];
+  formFields: FormField[];
+  /** フィルタ select 用の field と選択肢 */
+  filterField?: string;
+  filterOptions?: FilterOption[];
+  filterPlaceholder?: string;
+  searchPlaceholder?: string;
+  /** 「新規追加」前の初期値（既定値設定用） */
+  initialValues?: Partial<T>;
+  /** カスタム説明（hint） */
+  hint?: string;
+}
