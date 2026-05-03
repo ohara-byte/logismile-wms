@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useBadges } from '@/components/admin/badge-context';
+import { useOrderDetailModal } from '@/components/admin/order-detail-context';
 import {
   FORCE_REASON_LABELS,
   reasonBadgeClass,
@@ -62,6 +63,7 @@ export function ForcePane() {
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ mode: DialogMode; item: ForceItem } | null>(null);
   const { refresh: refreshBadges } = useBadges();
+  const { open: openDetail } = useOrderDetailModal();
 
   const reload = useCallback(async () => {
     try {
@@ -163,6 +165,7 @@ export function ForcePane() {
             item={it}
             onApprove={() => setDialog({ mode: 'approve', item: it })}
             onReject={() => setDialog({ mode: 'reject', item: it })}
+            onDetail={() => openDetail(it.pkNo)}
           />
         ))
       )}
@@ -241,10 +244,12 @@ function ForceCard({
   item,
   onApprove,
   onReject,
+  onDetail,
 }: {
   item: ForceItem;
   onApprove: () => void;
   onReject: () => void;
+  onDetail: () => void;
 }) {
   return (
     <div className="bg-surface-base border border-status-error rounded mb-1.5 px-2.5 py-2">
@@ -294,9 +299,9 @@ function ForceCard({
           ✗ 却下
         </button>
         <button
+          onClick={onDetail}
           className="text-xs font-bold py-1 px-3 rounded border border-surface-border bg-surface-panel text-ink hover:border-accent-amber"
-          title="伝票詳細モーダル（A-13 で実装予定）"
-          disabled
+          title="伝票詳細モーダルを開く"
         >
           詳細
         </button>

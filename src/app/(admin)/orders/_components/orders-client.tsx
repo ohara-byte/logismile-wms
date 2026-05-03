@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { OrderDetailModal } from './order-detail-modal';
+import { useOrderDetailModal } from '@/components/admin/order-detail-context';
 import { Panel, PanelHeader, PanelBody } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
 import { TextInput, Select, FieldLabel } from '@/components/ui/form-controls';
@@ -40,7 +40,7 @@ export function OrdersClient() {
   const [q, setQ] = useState('');
   const [includeDeleted, setIncludeDeleted] = useState(false);
 
-  const [selected, setSelected] = useState<string | null>(null);
+  const { open: openDetail } = useOrderDetailModal();
 
   const [invoiceQuery, setInvoiceQuery] = useState('');
   const [invoiceMatch, setInvoiceMatch] = useState<OrderRow | null>(null);
@@ -109,7 +109,7 @@ export function OrdersClient() {
               {invoiceMatch && (
                 <button
                   className="text-status-info hover:underline text-2xs"
-                  onClick={() => setSelected(invoiceMatch.pkNo)}
+                  onClick={() => openDetail(invoiceMatch.pkNo)}
                 >
                   詳細を表示 →
                 </button>
@@ -185,7 +185,7 @@ export function OrdersClient() {
           <TBody>
             {items.length === 0 && <EmptyRow colSpan={8} message="該当する伝票がありません" />}
             {items.map((o) => (
-              <TR key={o.id} onClick={() => setSelected(o.pkNo)} muted={!!o.deletedAt}>
+              <TR key={o.id} onClick={() => openDetail(o.pkNo)} muted={!!o.deletedAt}>
                 <TD className="text-2xs whitespace-nowrap">
                   {new Date(o.shipDate).toLocaleDateString('ja-JP')}
                 </TD>
@@ -220,15 +220,6 @@ export function OrdersClient() {
         </Table>
       </Panel>
 
-      {selected && (
-        <OrderDetailModal
-          pkNo={selected}
-          onClose={() => {
-            setSelected(null);
-            reload();
-          }}
-        />
-      )}
     </div>
   );
 }

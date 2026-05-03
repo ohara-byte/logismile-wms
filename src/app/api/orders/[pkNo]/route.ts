@@ -42,6 +42,8 @@ export async function GET(
           startedAt: true,
           completedAt: true,
           boxCode: true,
+          staff: { select: { code: true, name: true } },
+          device: { select: { code: true, name: true, type: true, location: true } },
         },
       },
     },
