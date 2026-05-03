@@ -14,6 +14,7 @@ import { useSearchParams } from 'next/navigation';
 import { DEFAULT_TAB, isTabId, type TabId } from './tabs-config';
 import { DashboardTabBar } from './dashboard-tab-bar';
 import { PlaceholderPane } from './panes/placeholder-pane';
+import { AlertsPane } from './panes/alerts-pane';
 
 interface Props {
   badges?: Partial<Record<TabId, number>>;
@@ -37,9 +38,7 @@ export function DashboardRightPane({ badges }: Props) {
 function PaneContent({ tab }: { tab: TabId }) {
   switch (tab) {
     case 'alerts':
-      return (
-        <PlaceholderPane title="🔔 アラート" block="A-04" />
-      );
+      return <AlertsPane />;
     case 'force':
       return (
         <PlaceholderPane title="⚠ 強制OK 承認" block="A-05" />
