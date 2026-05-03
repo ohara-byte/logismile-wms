@@ -361,12 +361,20 @@ model ShippingOrderItem {
   scannedQty  Int     @default(0) @map("scanned_qty")
   forceOk     Boolean @default(false) @map("force_ok")
   forceReason String? @map("force_reason") @db.Text
-  sortOrder   Int     @default(0) @map("sort_order")
+  /// 強制OK 理由コード: R01 / R02 / R03 / R04 / R99（A-05）
+  forceReasonCode     String?   @map("force_reason_code") @db.VarChar(5)
+  /// 強制OK 承認状態: null=未発生 or 未承認 / 'approved' / 'rejected'
+  forceApprovalStatus String?   @map("force_approval_status") @db.VarChar(10)
+  forceApprovedBy     String?   @map("force_approved_by") @db.VarChar(10)
+  forceApprovedAt     DateTime? @map("force_approved_at") @db.Timestamptz
+  forceRejectReason   String?   @map("force_reject_reason") @db.Text
+  sortOrder           Int       @default(0) @map("sort_order")
 
   order   ShippingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product       @relation(fields: [productCode], references: [code])
 
   @@unique([orderId, productCode])
+  @@index([forceOk, forceApprovalStatus])
   @@map("shipping_order_items")
 }
 

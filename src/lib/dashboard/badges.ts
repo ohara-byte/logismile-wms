@@ -28,14 +28,19 @@ export async function getBadgeCounts(now: Date = new Date()): Promise<BadgeCount
     // alerts: 未解決アラート
     prisma.alert.count({ where: { resolved: false } }),
 
-    // force: 強制OK 付きアイテムを持つ未完了出荷の件数
-    // 「未承認」フラグはまだ schema に無いため、当面 packed 前 + force_ok=true でカウント。
-    // A-05 で承認テーブル追加時に絞り込みを正しい形に直す。
-    prisma.shippingOrder.count({
+    // force: 強制OK 未承認件数（A-05）
+    //   forceOk=true かつ forceApprovalStatus=null（承認・却下のいずれもされていない）
+    //   ただし R01「セット品時間制約」は日常運用のため承認対象から除外
+    //   削除済み伝票も対象外
+    prisma.shippingOrderItem.count({
       where: {
-        status: { not: 'packed' },
-        deletedAt: null,
-        items: { some: { forceOk: true } },
+        forceOk: true,
+        forceApprovalStatus: null,
+        OR: [
+          { forceReasonCode: null },
+          { forceReasonCode: { not: 'R01' } },
+        ],
+        order: { deletedAt: null },
       },
     }),
 

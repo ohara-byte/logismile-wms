@@ -15,6 +15,7 @@ import { DEFAULT_TAB, isTabId, type TabId } from './tabs-config';
 import { DashboardTabBar } from './dashboard-tab-bar';
 import { PlaceholderPane } from './panes/placeholder-pane';
 import { AlertsPane } from './panes/alerts-pane';
+import { ForcePane } from './panes/force-pane';
 
 interface Props {
   badges?: Partial<Record<TabId, number>>;
@@ -40,9 +41,7 @@ function PaneContent({ tab }: { tab: TabId }) {
     case 'alerts':
       return <AlertsPane />;
     case 'force':
-      return (
-        <PlaceholderPane title="⚠ 強制OK 承認" block="A-05" />
-      );
+      return <ForcePane />;
     case 'ann':
       return (
         <PlaceholderPane

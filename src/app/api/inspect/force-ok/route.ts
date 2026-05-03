@@ -14,6 +14,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole, ownsSession } from '@/lib/auth/permissions';
+import { parseReasonCode } from '@/lib/force-ok';
 
 const Body = z.object({
   sessionId: z.string().min(1),
@@ -65,10 +66,17 @@ export async function POST(req: Request) {
     );
   }
 
+  const reasonCode = parseReasonCode(parsed.data.reason);
+
   await prisma.$transaction([
     prisma.shippingOrderItem.update({
       where: { id: item.id },
-      data: { forceOk: true, forceReason: parsed.data.reason, scannedQty: item.qty },
+      data: {
+        forceOk: true,
+        forceReason: parsed.data.reason,
+        forceReasonCode: reasonCode,
+        scannedQty: item.qty,
+      },
     }),
     prisma.inspLog.create({
       data: {
