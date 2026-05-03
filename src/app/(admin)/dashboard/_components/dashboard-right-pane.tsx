@@ -17,6 +17,7 @@ import { PlaceholderPane } from './panes/placeholder-pane';
 import { AlertsPane } from './panes/alerts-pane';
 import { ForcePane } from './panes/force-pane';
 import { AnnPane } from './panes/ann-pane';
+import { CarrPane } from './panes/carr-pane';
 
 interface Props {
   badges?: Partial<Record<TabId, number>>;
@@ -46,9 +47,7 @@ function PaneContent({ tab }: { tab: TabId }) {
     case 'ann':
       return <AnnPane />;
     case 'carr':
-      return (
-        <PlaceholderPane title="🚚 運送会社" block="A-07" />
-      );
+      return <CarrPane />;
     case 'search':
       return (
         <PlaceholderPane
