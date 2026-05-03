@@ -51,14 +51,11 @@ async function listMocks() {
 }
 
 export default async function MocksIndexPage() {
-  // B-1 / C-1: 本番環境では存在しないものとして扱う
-  if (
-    process.env.NODE_ENV === 'production' &&
-    process.env.MOCK_VIEWER_ENABLED !== 'true'
-  ) {
+  // B-1 / C-1: 明示的に無効化された環境では 404
+  if (process.env.MOCK_VIEWER_DISABLED === 'true') {
     notFound();
   }
-  // admin / manager のみ閲覧可能
+  // admin / manager のみ閲覧可能（社内設計の漏洩防止）
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
   const role = session.user.role;

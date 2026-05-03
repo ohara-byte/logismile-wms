@@ -20,13 +20,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { file: string } }
 ) {
-  if (
-    process.env.NODE_ENV === 'production' &&
-    process.env.MOCK_VIEWER_ENABLED !== 'true'
-  ) {
+  if (process.env.MOCK_VIEWER_DISABLED === 'true') {
     return new Response('Not found', { status: 404 });
   }
-
   const guard = await requireRole('admin', 'manager');
   if (!guard.ok) return guard.response;
 

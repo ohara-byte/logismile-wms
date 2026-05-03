@@ -20,14 +20,11 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { file: string } }
 ) {
-  // 本番環境では存在しないものとして扱う（MOCK_VIEWER_ENABLED=true で例外解除）
-  if (
-    process.env.NODE_ENV === 'production' &&
-    process.env.MOCK_VIEWER_ENABLED !== 'true'
-  ) {
+  // 明示的に無効化された環境では 404
+  if (process.env.MOCK_VIEWER_DISABLED === 'true') {
     return new Response('Not found', { status: 404 });
   }
-
+  // admin / manager のみアクセス許可
   const guard = await requireRole('admin', 'manager');
   if (!guard.ok) return guard.response;
 
