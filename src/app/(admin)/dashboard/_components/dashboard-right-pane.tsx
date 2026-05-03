@@ -18,6 +18,7 @@ import { AlertsPane } from './panes/alerts-pane';
 import { ForcePane } from './panes/force-pane';
 import { AnnPane } from './panes/ann-pane';
 import { CarrPane } from './panes/carr-pane';
+import { SearchPane } from './panes/search-pane';
 
 interface Props {
   badges?: Partial<Record<TabId, number>>;
@@ -49,14 +50,7 @@ function PaneContent({ tab }: { tab: TabId }) {
     case 'carr':
       return <CarrPane />;
     case 'search':
-      return (
-        <PlaceholderPane
-          title="🔍 検索"
-          block="A-08"
-          legacyHref="/orders"
-          legacyLabel="従来の出荷指示一覧へ"
-        />
-      );
+      return <SearchPane />;
     case 'csv':
       return (
         <PlaceholderPane
