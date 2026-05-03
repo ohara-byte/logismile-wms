@@ -351,6 +351,10 @@ model ShippingOrder {
   deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
   deletedBy    String?   @map("deleted_by") @db.VarChar(10)
   deleteReason String?   @map("delete_reason") @db.Text
+  /// 未検品照合タブ用（A-12）: 'none' | 'barcode' | 'visual'
+  matchStatus  String    @default("none") @map("match_status") @db.VarChar(10)
+  matchedAt    DateTime? @map("matched_at") @db.Timestamptz
+  matchedBy    String?   @map("matched_by") @db.VarChar(10)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -363,6 +367,7 @@ model ShippingOrder {
 
   @@index([shipDate, status])
   @@index([deletedAt])
+  @@index([shipDate, matchStatus])
   @@map("shipping_orders")
 }
 

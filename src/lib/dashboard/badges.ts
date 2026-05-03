@@ -18,7 +18,12 @@ import { type BadgeCounts } from './badges-types';
 export { type BadgeCounts, ZERO_BADGES, badgesEqual } from './badges-types';
 
 export async function getBadgeCounts(): Promise<BadgeCounts> {
-  const [alerts, forcePending, annUnread] = await Promise.all([
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const [alerts, forcePending, annUnread, matchPending] = await Promise.all([
     // alerts: 未解決アラート
     prisma.alert.count({ where: { resolved: false } }),
 
@@ -48,6 +53,19 @@ export async function getBadgeCounts(): Promise<BadgeCounts> {
         readAt: null,
       },
     }),
+
+    // match: 未検品照合の未照合件数（A-12）
+    //   当日 shipDate かつ status が packed/shipped でなく
+    //   matchStatus='none' のもの。
+    //   削除済みは除外
+    prisma.shippingOrder.count({
+      where: {
+        shipDate: { gte: today, lt: tomorrow },
+        deletedAt: null,
+        status: { notIn: ['packed', 'shipped'] },
+        matchStatus: 'none',
+      },
+    }),
   ]);
 
   return {
@@ -55,7 +73,7 @@ export async function getBadgeCounts(): Promise<BadgeCounts> {
     force: forcePending,
     ann: annUnread,
     link: 0, // TODO A-11
-    match: 0, // TODO A-12
+    match: matchPending,
   };
 }
 

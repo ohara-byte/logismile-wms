@@ -19,6 +19,7 @@ import { ForcePane } from './panes/force-pane';
 import { AnnPane } from './panes/ann-pane';
 import { CarrPane } from './panes/carr-pane';
 import { SearchPane } from './panes/search-pane';
+import { MatchPane } from './panes/match-pane';
 
 interface Props {
   badges?: Partial<Record<TabId, number>>;
@@ -83,8 +84,6 @@ function PaneContent({ tab }: { tab: TabId }) {
         />
       );
     case 'match':
-      return (
-        <PlaceholderPane title="📋 未検品照合" block="A-12" />
-      );
+      return <MatchPane />;
   }
 }
