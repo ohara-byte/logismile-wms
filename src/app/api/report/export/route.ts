@@ -12,6 +12,7 @@ import {
   groupMhReport,
   productAbcReport,
 } from '@/lib/reports';
+import { parsePeriod } from '@/lib/report-period';
 
 function toCsv(rows: Array<Record<string, unknown>>): string {
   if (rows.length === 0) return '';
@@ -32,12 +33,10 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const type = searchParams.get('type');
-  const from = searchParams.get('from');
-  const to = searchParams.get('to');
   const format = searchParams.get('format') ?? 'csv';
-  if (!type || !from || !to) {
+  if (!type) {
     return NextResponse.json(
-      { error: 'VALIDATION', message: 'type / from / to は必須' },
+      { error: 'VALIDATION', message: 'type は必須' },
       { status: 422 },
     );
   }
@@ -48,16 +47,20 @@ export async function GET(req: Request) {
     );
   }
 
+  const range = parsePeriod(searchParams.get('from'), searchParams.get('to'));
+  if ('error' in range) return range.error;
+  const { from, to } = range;
+
   let rows: Array<Record<string, unknown>> = [];
-  const filename = `report-${type}-${from}-${to}.csv`;
+  const filename = `report-${type}-${searchParams.get('from')}-${searchParams.get('to')}.csv`;
 
   if (type === 'summary') {
-    const r = await summaryReport(new Date(from), new Date(to));
+    const r = await summaryReport(from, to);
     rows = [r as unknown as Record<string, unknown>];
   } else if (type === 'staff-mh') {
-    rows = (await staffMhReport(new Date(from), new Date(to))) as unknown as Record<string, unknown>[];
+    rows = (await staffMhReport(from, to)) as unknown as Record<string, unknown>[];
   } else if (type === 'group-mh') {
-    const items = await groupMhReport(new Date(from), new Date(to));
+    const items = await groupMhReport(from, to);
     rows = items.flatMap((g) =>
       g.hourly.map((h) => ({
         groupId: g.groupId,
@@ -68,7 +71,7 @@ export async function GET(req: Request) {
       })),
     );
   } else if (type === 'product-abc') {
-    rows = (await productAbcReport(new Date(from), new Date(to), 1000)) as unknown as Record<
+    rows = (await productAbcReport(from, to, 1000)) as unknown as Record<
       string,
       unknown
     >[];

@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { maskError } from '@/lib/api-errors';
 
 const Body = z.object({
   id: z.string().min(1).max(30),
@@ -63,9 +64,12 @@ export async function POST(req: Request) {
     const created = await prisma.setComp.create({ data: parsed.data });
     return NextResponse.json({ data: created, message: 'OK' });
   } catch (e) {
-    return NextResponse.json(
-      { error: 'CONFLICT', message: `登録に失敗: ${e}` },
-      { status: 409 },
+    return maskError(
+      '[POST /api/master/set-comps]',
+      e,
+      'CONFLICT',
+      409,
+      '登録に失敗しました（ID 重複の可能性）',
     );
   }
 }

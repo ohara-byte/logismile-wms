@@ -9,24 +9,15 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { parsePeriodFromUrl } from '@/lib/report-period';
 
 export async function GET(req: Request) {
   const guard = await requireRole('admin', 'manager');
   if (!guard.ok) return guard.response;
 
-  const { searchParams } = new URL(req.url);
-  const fromStr = searchParams.get('from');
-  const toStr = searchParams.get('to');
-  if (!fromStr || !toStr) {
-    return NextResponse.json(
-      { error: 'VALIDATION', message: 'from / to は必須' },
-      { status: 422 },
-    );
-  }
-  const from = new Date(fromStr);
-  from.setHours(0, 0, 0, 0);
-  const to = new Date(toStr);
-  to.setHours(23, 59, 59, 999);
+  const range = parsePeriodFromUrl(req);
+  if ('error' in range) return range.error;
+  const { from, to } = range;
 
   // type='scan' の result 区分 (note に格納されている)
   const grouped = await prisma.inspLog.groupBy({

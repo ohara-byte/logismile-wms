@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { maskError } from '@/lib/api-errors';
 
 const Body = z.object({
   empCode: z.string().min(1).max(20),
@@ -42,6 +43,24 @@ export async function PUT(
     );
   }
   const code = decodeURIComponent(params.code);
+
+  // 権限昇格防止（B-2 / C-2）: manager は admin ロールへ昇格できない
+  if (parsed.data.role === 'admin' && guard.auth.role !== 'admin') {
+    const existing = await prisma.staff.findUnique({
+      where: { code },
+      select: { role: true },
+    });
+    if (!existing || existing.role !== 'admin') {
+      return NextResponse.json(
+        {
+          error: 'FORBIDDEN',
+          message: 'admin ロールへの変更は admin 権限のみ可能です',
+        },
+        { status: 403 },
+      );
+    }
+  }
+
   try {
     const data = {
       ...parsed.data,
@@ -68,12 +87,12 @@ export async function DELETE(
     await prisma.staff.delete({ where: { code } });
     return NextResponse.json({ data: { code }, message: 'OK' });
   } catch (e) {
-    return NextResponse.json(
-      {
-        error: 'CONFLICT',
-        message: `削除できません（出荷・検品履歴で参照中の可能性）。退職者は active=false を推奨: ${e}`,
-      },
-      { status: 409 },
+    return maskError(
+      '[DELETE /api/master/staff]',
+      e,
+      'CONFLICT',
+      409,
+      '削除できません（出荷・検品履歴で参照中の可能性）。退職者は active=false での論理削除を推奨します',
     );
   }
 }

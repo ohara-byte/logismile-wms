@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { assertOrderAccessByStaff } from '@/lib/auth/order-access';
 
 export async function GET(
   _req: Request,
@@ -24,7 +25,13 @@ export async function GET(
 
   const order = await prisma.shippingOrder.findFirst({
     where: { pkNo, deletedAt: null },
-    select: { id: true, items: { select: { productCode: true, qty: true } }, noshiName: true },
+    select: {
+      id: true,
+      status: true,
+      items: { select: { productCode: true, qty: true } },
+      noshiName: true,
+      inspSession: { select: { staffCode: true } },
+    },
   });
   if (!order) {
     return NextResponse.json(
@@ -32,6 +39,13 @@ export async function GET(
       { status: 404 },
     );
   }
+
+  // staff IDOR 抑止（B-2 / H-2）
+  const access = assertOrderAccessByStaff(guard.auth, {
+    status: order.status,
+    inspSession: order.inspSession,
+  });
+  if (!access.ok) return access.response;
 
   const itemCodes = order.items.map((i) => i.productCode);
   if (itemCodes.length === 0) {

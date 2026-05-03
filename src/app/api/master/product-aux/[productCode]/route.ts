@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { maskError } from '@/lib/api-errors';
 
 const Body = z.object({
   dispName: z.string().max(100).nullable().optional(),
@@ -55,9 +56,12 @@ export async function DELETE(
     await prisma.productAuxAttr.delete({ where: { productCode } });
     return NextResponse.json({ data: { productCode }, message: 'OK' });
   } catch (e) {
-    return NextResponse.json(
-      { error: 'CONFLICT', message: `削除できません: ${e}` },
-      { status: 409 },
+    return maskError(
+      '[DELETE /api/master/product-aux]',
+      e,
+      'CONFLICT',
+      409,
+      '削除できません',
     );
   }
 }

@@ -1,19 +1,13 @@
 import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth/permissions';
 import { staffMhReport } from '@/lib/reports';
+import { parsePeriodFromUrl } from '@/lib/report-period';
 
 export async function GET(req: Request) {
   const guard = await requireRole('admin', 'manager');
   if (!guard.ok) return guard.response;
-
-  const { searchParams } = new URL(req.url);
-  const from = searchParams.get('from');
-  const to = searchParams.get('to');
-  if (!from || !to)
-    return NextResponse.json(
-      { error: 'VALIDATION', message: 'from / to は必須' },
-      { status: 422 },
-    );
-  const data = await staffMhReport(new Date(from), new Date(to));
+  const range = parsePeriodFromUrl(req);
+  if ('error' in range) return range.error;
+  const data = await staffMhReport(range.from, range.to);
   return NextResponse.json({ data: { items: data }, message: 'OK' });
 }

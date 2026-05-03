@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { maskError } from '@/lib/api-errors';
 
 const Body = z.object({
   name: z.string().min(1).max(20),
@@ -60,9 +61,12 @@ export async function DELETE(
     await prisma.inspectionGroup.delete({ where: { id } });
     return NextResponse.json({ data: { id }, message: 'OK' });
   } catch (e) {
-    return NextResponse.json(
-      { error: 'CONFLICT', message: `削除できません: ${e}` },
-      { status: 409 },
+    return maskError(
+      '[DELETE /api/master/groups]',
+      e,
+      'CONFLICT',
+      409,
+      '削除できません（参照中の可能性があります）',
     );
   }
 }

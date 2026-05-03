@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { maskError } from '@/lib/api-errors';
 
 const Body = z.object({
   code: z.string().min(1).max(10),
@@ -52,6 +53,16 @@ export async function POST(req: Request) {
       { status: 422 },
     );
   }
+  // 権限昇格防止（B-2 / C-2）: manager は admin ロールを作成できない
+  if (parsed.data.role === 'admin' && guard.auth.role !== 'admin') {
+    return NextResponse.json(
+      {
+        error: 'FORBIDDEN',
+        message: 'admin ロールの作成・付与は admin 権限のみ可能です',
+      },
+      { status: 403 },
+    );
+  }
   try {
     const data = {
       ...parsed.data,
@@ -60,9 +71,12 @@ export async function POST(req: Request) {
     const created = await prisma.staff.create({ data });
     return NextResponse.json({ data: created, message: 'OK' });
   } catch (e) {
-    return NextResponse.json(
-      { error: 'CONFLICT', message: `登録に失敗: ${e}` },
-      { status: 409 },
+    return maskError(
+      '[POST /api/master/staff]',
+      e,
+      'CONFLICT',
+      409,
+      '登録に失敗しました（コード重複の可能性）',
     );
   }
 }
