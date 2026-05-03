@@ -1,6 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Panel, PanelHeader } from '@/components/ui/panel';
+import { Button } from '@/components/ui/button';
+import { TextInput } from '@/components/ui/form-controls';
+import { cn } from '@/lib/cn';
 
 interface Group {
   id: string;
@@ -242,143 +246,159 @@ export function AssignmentClient() {
   const groupColor = (groupId: string) => {
     const idx = Math.max(0, groups.findIndex((g) => g.id === groupId));
     const palette = [
-      'bg-blue-200',
-      'bg-green-200',
-      'bg-yellow-200',
-      'bg-pink-200',
-      'bg-purple-200',
-      'bg-orange-200',
-      'bg-teal-200',
+      'bg-blue-700 text-blue-100',
+      'bg-emerald-700 text-emerald-100',
+      'bg-amber-700 text-amber-100',
+      'bg-pink-700 text-pink-100',
+      'bg-purple-700 text-purple-100',
+      'bg-orange-700 text-orange-100',
+      'bg-cyan-700 text-cyan-100',
+      'bg-rose-700 text-rose-100',
+      'bg-indigo-700 text-indigo-100',
+      'bg-teal-700 text-teal-100',
     ];
     return palette[idx % palette.length];
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* 操作バー */}
-      <div className="bg-white border rounded-lg p-3 flex flex-wrap items-end gap-2 print:hidden">
-        <div>
-          <label className="text-xs text-gray-500 block">対象日</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="border rounded px-2 py-1 text-sm"
-          />
-        </div>
-        <div className="flex-1">
-          <label className="text-xs text-gray-500 block">塗りつぶしグループ（クリック先）</label>
-          <div className="flex gap-1 flex-wrap">
-            {groups.map((g) => (
-              <button
-                key={g.id}
-                onClick={() => setActiveGroupId(g.id)}
-                className={`px-3 py-1 rounded text-xs font-medium ${
-                  activeGroupId === g.id ? 'ring-2 ring-blue-500' : ''
-                } ${groupColor(g.id)}`}
-              >
-                {g.name}
-              </button>
-            ))}
+      <Panel className="print:hidden">
+        <div className="p-3 flex flex-wrap items-end gap-2">
+          <div>
+            <label className="text-3xs text-ink-subtle uppercase tracking-wider block mb-1">
+              対象日
+            </label>
+            <TextInput
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="!w-auto"
+            />
           </div>
+          <div className="flex-1 min-w-0">
+            <label className="text-3xs text-ink-subtle uppercase tracking-wider block mb-1">
+              塗りつぶしグループ
+            </label>
+            <div className="flex gap-1 flex-wrap">
+              {groups.map((g) => (
+                <button
+                  key={g.id}
+                  onClick={() => setActiveGroupId(g.id)}
+                  className={cn(
+                    'px-2.5 py-1 rounded text-2xs font-bold transition-all',
+                    activeGroupId === g.id
+                      ? 'ring-2 ring-accent-amber scale-105'
+                      : 'opacity-70 hover:opacity-100',
+                    groupColor(g.id),
+                  )}
+                >
+                  {g.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Button onClick={onLoadYesterday} disabled={busy} variant="ghost" size="sm">
+            📋 昨日の割当
+          </Button>
+          <Button onClick={onApplyShifts} disabled={busy} variant="ghost" size="sm">
+            📅 当日シフト
+          </Button>
+          <Button onClick={onClear} disabled={busy} variant="danger" size="sm">
+            🧹 全クリア
+          </Button>
+          <Button onClick={() => window.print()} variant="ghost" size="sm">
+            🖨 印刷
+          </Button>
+          <Button onClick={onSave} disabled={busy} size="sm">
+            {busy ? '…' : '💾 保存'}
+          </Button>
         </div>
-        <button
-          onClick={onLoadYesterday}
-          disabled={busy}
-          className="px-3 py-1.5 border rounded text-sm bg-white hover:bg-gray-50"
-        >
-          📋 昨日の割当を読込
-        </button>
-        <button
-          onClick={onApplyShifts}
-          disabled={busy}
-          className="px-3 py-1.5 border rounded text-sm bg-white hover:bg-gray-50"
-        >
-          📅 当日シフトを反映
-        </button>
-        <button
-          onClick={onClear}
-          disabled={busy}
-          className="px-3 py-1.5 border rounded text-sm bg-white hover:bg-red-50 text-red-600 border-red-300"
-        >
-          🧹 全クリア
-        </button>
-        <button
-          onClick={() => window.print()}
-          className="px-3 py-1.5 border rounded text-sm bg-white hover:bg-gray-50"
-        >
-          🖨 朝礼用印刷
-        </button>
-        <button
-          onClick={onSave}
-          disabled={busy}
-          className="px-4 py-1.5 bg-blue-600 text-white rounded text-sm font-medium disabled:bg-gray-300"
-        >
-          {busy ? '…' : '💾 保存'}
-        </button>
-      </div>
-      {statusMsg && <div className="text-sm">{statusMsg}</div>}
+      </Panel>
+      {statusMsg && (
+        <div className="text-xs text-ink bg-status-info-bg border border-status-info/40 rounded p-2">
+          {statusMsg}
+        </div>
+      )}
 
       {/* Gantt 表 */}
-      <div className="bg-white border rounded-lg overflow-x-auto">
-        <table className="text-xs border-collapse">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="border px-2 py-1 sticky left-0 bg-gray-50 z-10 whitespace-nowrap">
-                担当者
-              </th>
-              {Array.from({ length: SLOTS }).map((_, i) => (
-                <th
-                  key={i}
-                  className={`border w-8 text-center font-normal ${
-                    i % 2 === 0 ? 'bg-gray-100' : ''
-                  }`}
-                >
-                  {i % 2 === 0 ? slotToTime(i) : ''}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {todayShifts.length === 0 && (
+      <Panel>
+        <PanelHeader
+          title="メンバー割当 Gantt"
+          meta={`${todayShifts.length} 名 / ${assignments.length} 割当`}
+        />
+        <div className="overflow-x-auto">
+          <table className="text-xs border-collapse">
+            <thead className="bg-surface-base">
               <tr>
-                <td colSpan={SLOTS + 1} className="text-center text-gray-400 py-6">
-                  当日シフトがありません（先に /shift で取込んでください）
-                </td>
+                <th className="border border-surface-border px-2 py-1.5 sticky left-0 bg-surface-base z-10 whitespace-nowrap text-ink-subtle text-2xs uppercase">
+                  担当者
+                </th>
+                {Array.from({ length: SLOTS }).map((_, i) => (
+                  <th
+                    key={i}
+                    className={cn(
+                      'border border-surface-border w-8 text-center font-normal text-3xs',
+                      i % 2 === 0 ? 'bg-surface-raised text-ink-subtle' : 'text-ink-muted',
+                    )}
+                  >
+                    {i % 2 === 0 ? slotToTime(i) : ''}
+                  </th>
+                ))}
               </tr>
-            )}
-            {todayShifts.map((s) => (
-              <tr key={s.staffCode}>
-                <td className="border px-2 py-1 sticky left-0 bg-white z-10 whitespace-nowrap">
-                  <div className="font-medium">{s.staffName}</div>
-                  <div className="text-[10px] text-gray-500">
-                    {s.patternCode} {s.startTime}-{s.endTime}
-                  </div>
-                </td>
-                {Array.from({ length: SLOTS }).map((_, i) => {
-                  const gId = cellAssigned(s.staffCode, i);
-                  const inShift =
-                    s.startTime && s.endTime && slotToTime(i) >= s.startTime && slotToTime(i) < s.endTime;
-                  return (
-                    <td
-                      key={i}
-                      onClick={() => toggleCell(s.staffCode, i)}
-                      className={`border w-8 h-8 cursor-pointer ${
-                        gId ? groupColor(gId) : inShift ? 'bg-blue-50' : 'bg-gray-50'
-                      } hover:opacity-70`}
-                      title={`${s.staffName} / ${slotToTime(i)} ${gId ?? ''}`}
-                    />
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {todayShifts.length === 0 && (
+                <tr>
+                  <td colSpan={SLOTS + 1} className="text-center text-ink-muted py-8 text-sm">
+                    当日シフトがありません（先に /shift で取込んでください）
+                  </td>
+                </tr>
+              )}
+              {todayShifts.map((s) => (
+                <tr key={s.staffCode}>
+                  <td className="border border-surface-border px-2 py-1 sticky left-0 bg-surface-panel z-10 whitespace-nowrap">
+                    <div className="font-bold text-ink-strong">{s.staffName}</div>
+                    <div className="text-3xs text-ink-muted font-mono">
+                      {s.patternCode} {s.startTime}-{s.endTime}
+                    </div>
+                  </td>
+                  {Array.from({ length: SLOTS }).map((_, i) => {
+                    const gId = cellAssigned(s.staffCode, i);
+                    const inShift =
+                      s.startTime &&
+                      s.endTime &&
+                      slotToTime(i) >= s.startTime &&
+                      slotToTime(i) < s.endTime;
+                    return (
+                      <td
+                        key={i}
+                        onClick={() => toggleCell(s.staffCode, i)}
+                        className={cn(
+                          'border border-surface-border w-8 h-7 cursor-pointer text-center text-3xs font-bold transition-opacity hover:opacity-70',
+                          gId
+                            ? groupColor(gId)
+                            : inShift
+                              ? 'bg-blue-950/50'
+                              : 'bg-surface-base',
+                        )}
+                        title={`${s.staffName} / ${slotToTime(i)} ${gId ?? ''}`}
+                      >
+                        {gId &&
+                          (groups.find((g) => g.id === gId)?.name?.[0] ?? '')}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
 
-      <p className="text-xs text-gray-500 print:hidden">
+      <p className="text-2xs text-ink-muted print:hidden">
         セルをクリックすると現在選択中のグループ色で塗ります。同じグループのセルを再クリックで解除。
-        ドラッグ&ドロップは Phase 6 で導入予定です。
+        ドラッグ&ドロップは Phase 7-5 残作業で対応予定です。
       </p>
     </div>
   );

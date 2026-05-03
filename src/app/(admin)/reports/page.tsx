@@ -10,8 +10,8 @@ import { ReportsClient } from './_components/reports-client';
 
 export default function ReportsPage() {
   return (
-    <main className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">レポート</h1>
+    <main className="p-4 max-w-7xl mx-auto">
+      <h1 className="text-xl font-bold text-ink-strong mb-4">📈 レポート</h1>
       <ReportsClient />
     </main>
   );

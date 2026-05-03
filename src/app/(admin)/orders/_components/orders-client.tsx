@@ -2,6 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { OrderDetailModal } from './order-detail-modal';
+import { Panel, PanelHeader, PanelBody } from '@/components/ui/panel';
+import { Button } from '@/components/ui/button';
+import { TextInput, Select, FieldLabel } from '@/components/ui/form-controls';
+import { Table, THead, TBody, TR, TH, TD, EmptyRow } from '@/components/ui/data-table';
+import { Badge } from '@/components/ui/badge';
 
 interface OrderRow {
   id: string;
@@ -30,16 +35,13 @@ export function OrdersClient() {
   const [total, setTotal] = useState(0);
   const [busy, setBusy] = useState(false);
 
-  // フィルタ
   const [shipDate, setShipDate] = useState('');
   const [status, setStatus] = useState('');
   const [q, setQ] = useState('');
   const [includeDeleted, setIncludeDeleted] = useState(false);
 
-  // 詳細モーダル
   const [selected, setSelected] = useState<string | null>(null);
 
-  // 納品書照合
   const [invoiceQuery, setInvoiceQuery] = useState('');
   const [invoiceMatch, setInvoiceMatch] = useState<OrderRow | null>(null);
   const [invoiceMsg, setInvoiceMsg] = useState<string | null>(null);
@@ -87,149 +89,137 @@ export function OrdersClient() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* 納品書バーコード照合 */}
-      <div className="bg-white border rounded-lg p-4">
-        <h2 className="font-semibold mb-2 text-sm">📋 納品書バーコード照合</h2>
-        <form onSubmit={onInvoiceSearch} className="flex gap-2">
-          <input
-            value={invoiceQuery}
-            onChange={(e) => setInvoiceQuery(e.target.value)}
-            placeholder="納品書№（バーコード or 手入力）"
-            className="flex-1 border-2 rounded px-3 py-2 font-mono text-sm"
-          />
-          <button className="px-4 bg-blue-600 text-white rounded font-medium" type="submit">
-            照合
-          </button>
-        </form>
-        {invoiceMsg && (
-          <div className="mt-2 text-sm">
-            {invoiceMsg}
-            {invoiceMatch && (
-              <button
-                className="ml-2 text-blue-600 hover:underline"
-                onClick={() => setSelected(invoiceMatch.pkNo)}
-              >
-                詳細を表示
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      <Panel>
+        <PanelHeader title="📋 納品書バーコード照合" />
+        <PanelBody>
+          <form onSubmit={onInvoiceSearch} className="flex gap-2">
+            <TextInput
+              value={invoiceQuery}
+              onChange={(e) => setInvoiceQuery(e.target.value)}
+              placeholder="納品書№（バーコード or 手入力）"
+              className="font-mono"
+            />
+            <Button type="submit">照合</Button>
+          </form>
+          {invoiceMsg && (
+            <div className="mt-2 text-xs flex items-center gap-2">
+              <span className="text-ink">{invoiceMsg}</span>
+              {invoiceMatch && (
+                <button
+                  className="text-status-info hover:underline text-2xs"
+                  onClick={() => setSelected(invoiceMatch.pkNo)}
+                >
+                  詳細を表示 →
+                </button>
+              )}
+            </div>
+          )}
+        </PanelBody>
+      </Panel>
 
       {/* フィルタ */}
-      <div className="bg-white border rounded-lg p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div>
-            <label className="text-xs text-gray-500">出荷日</label>
-            <input
-              type="date"
-              value={shipDate}
-              onChange={(e) => setShipDate(e.target.value)}
-              className="w-full border rounded px-2 py-1.5 text-sm"
-            />
+      <Panel>
+        <PanelHeader title="🔍 検索フィルタ" />
+        <PanelBody>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div>
+              <FieldLabel>出荷日</FieldLabel>
+              <TextInput
+                type="date"
+                value={shipDate}
+                onChange={(e) => setShipDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <FieldLabel>ステータス</FieldLabel>
+              <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+                {STATUS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="md:col-span-2">
+              <FieldLabel>検索（PkNo / 納品書 / 配送先）</FieldLabel>
+              <TextInput
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="例: SA01 / 鳥取 / 山田"
+              />
+            </div>
           </div>
-          <div>
-            <label className="text-xs text-gray-500">ステータス</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="w-full border rounded px-2 py-1.5 text-sm"
-            >
-              {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+          <div className="flex justify-between items-center mt-3">
+            <label className="text-xs flex items-center gap-2 text-ink-subtle">
+              <input
+                type="checkbox"
+                checked={includeDeleted}
+                onChange={(e) => setIncludeDeleted(e.target.checked)}
+                className="accent-accent-amber"
+              />
+              🗑 削除済みも含める
+            </label>
+            <Button onClick={reload} disabled={busy} size="sm">
+              {busy ? '…' : '検索'}
+            </Button>
           </div>
-          <div className="md:col-span-2">
-            <label className="text-xs text-gray-500">検索（PkNo / 納品書 / 配送先）</label>
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="例: SA01 / 鳥取 / 山田"
-              className="w-full border rounded px-2 py-1.5 text-sm"
-            />
-          </div>
-        </div>
-        <div className="flex justify-between items-center mt-3">
-          <label className="text-sm flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={includeDeleted}
-              onChange={(e) => setIncludeDeleted(e.target.checked)}
-            />
-            🗑 削除済みも含める
-          </label>
-          <button
-            onClick={reload}
-            disabled={busy}
-            className="px-4 py-1.5 bg-blue-600 text-white rounded text-sm disabled:bg-gray-300"
-          >
-            {busy ? '…' : '検索'}
-          </button>
-        </div>
-      </div>
+        </PanelBody>
+      </Panel>
 
       {/* 一覧 */}
-      <div className="bg-white border rounded-lg overflow-hidden">
-        <div className="px-4 py-2 bg-gray-50 text-xs text-gray-600 border-b">
-          {total} 件
-        </div>
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-xs uppercase text-gray-600">
-            <tr>
-              <th className="px-3 py-2 text-left">出荷日</th>
-              <th className="px-3 py-2 text-left">PkNo</th>
-              <th className="px-3 py-2 text-left">運送</th>
-              <th className="px-3 py-2 text-left">配送先</th>
-              <th className="px-3 py-2 text-left">納品書</th>
-              <th className="px-3 py-2 text-left">QR</th>
-              <th className="px-3 py-2 text-left">状態</th>
-              <th className="px-3 py-2 text-right">進捗</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.length === 0 && (
-              <tr>
-                <td colSpan={8} className="px-3 py-6 text-center text-gray-400">
-                  該当する伝票がありません
-                </td>
-              </tr>
-            )}
+      <Panel>
+        <PanelHeader title="伝票一覧" meta={`${total} 件`} />
+        <Table>
+          <THead>
+            <TH>出荷日</TH>
+            <TH>PkNo</TH>
+            <TH>運送</TH>
+            <TH>配送先</TH>
+            <TH>納品書</TH>
+            <TH align="center">QR</TH>
+            <TH>状態</TH>
+            <TH align="right">進捗</TH>
+          </THead>
+          <TBody>
+            {items.length === 0 && <EmptyRow colSpan={8} message="該当する伝票がありません" />}
             {items.map((o) => (
-              <tr
-                key={o.id}
-                className={`border-t hover:bg-blue-50 cursor-pointer ${
-                  o.deletedAt ? 'bg-gray-50 text-gray-400' : ''
-                }`}
-                onClick={() => setSelected(o.pkNo)}
-              >
-                <td className="px-3 py-2">
+              <TR key={o.id} onClick={() => setSelected(o.pkNo)} muted={!!o.deletedAt}>
+                <TD className="text-2xs whitespace-nowrap">
                   {new Date(o.shipDate).toLocaleDateString('ja-JP')}
-                </td>
-                <td className="px-3 py-2 font-mono">{o.pkNo}</td>
-                <td className="px-3 py-2 text-xs">
+                </TD>
+                <TD mono className="text-accent-amber">
+                  {o.pkNo}
+                </TD>
+                <TD className="text-2xs">
                   {o.carrier?.short ?? o.carrier?.name ?? '—'}
-                  {o.carrier?.cool && ' ❄'}
-                </td>
-                <td className="px-3 py-2 truncate max-w-xs">{o.destName ?? '—'}</td>
-                <td className="px-3 py-2 font-mono text-xs">{o.invoiceNo ?? '—'}</td>
-                <td className="px-3 py-2">{o.qrPrintFlag ? '🖨' : '—'}</td>
-                <td className="px-3 py-2">
+                  {o.carrier?.cool && (
+                    <Badge variant="frozen" className="ml-1">
+                      ❄
+                    </Badge>
+                  )}
+                </TD>
+                <TD className="truncate max-w-xs">{o.destName ?? '—'}</TD>
+                <TD mono className="text-2xs">
+                  {o.invoiceNo ?? '—'}
+                </TD>
+                <TD align="center">{o.qrPrintFlag ? '🖨' : <span className="text-ink-muted">—</span>}</TD>
+                <TD>
                   <StatusBadge status={o.status} deleted={!!o.deletedAt} />
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {o.scannedRatio}% ({o.itemCount})
-                </td>
-              </tr>
+                </TD>
+                <TD align="right" mono>
+                  <span className={o.scannedRatio === 100 ? 'text-status-ok font-bold' : 'text-ink'}>
+                    {o.scannedRatio}%
+                  </span>
+                  <span className="text-ink-muted text-2xs"> ({o.itemCount})</span>
+                </TD>
+              </TR>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TBody>
+        </Table>
+      </Panel>
 
-      {/* 詳細モーダル */}
       {selected && (
         <OrderDetailModal
           pkNo={selected}
@@ -244,18 +234,14 @@ export function OrdersClient() {
 }
 
 function StatusBadge({ status, deleted }: { status: string; deleted: boolean }) {
-  if (deleted) {
-    return <span className="text-xs bg-gray-300 text-gray-700 px-2 py-0.5 rounded">削除済</span>;
-  }
-  const map: Record<string, { label: string; cls: string }> = {
-    pending: { label: '未着手', cls: 'bg-gray-100 text-gray-700' },
-    inspecting: { label: '検品中', cls: 'bg-blue-100 text-blue-700' },
-    packed: { label: '梱包完了', cls: 'bg-green-100 text-green-800' },
-    shipped: { label: '出荷済', cls: 'bg-green-200 text-green-900' },
-    held: { label: '保留', cls: 'bg-orange-100 text-orange-800' },
+  if (deleted) return <Badge variant="neutral">削除済</Badge>;
+  const map: Record<string, { variant: Parameters<typeof Badge>[0]['variant']; label: string }> = {
+    pending: { variant: 'wait', label: '未着手' },
+    inspecting: { variant: 'working', label: '検品中' },
+    packed: { variant: 'done', label: '梱包完了' },
+    shipped: { variant: 'done', label: '出荷済' },
+    held: { variant: 'warn', label: '保留' },
   };
-  const m = map[status] ?? { label: status, cls: 'bg-gray-100' };
-  return (
-    <span className={`text-xs px-2 py-0.5 rounded font-medium ${m.cls}`}>{m.label}</span>
-  );
+  const m = map[status] ?? { variant: 'neutral' as const, label: status };
+  return <Badge variant={m.variant}>{m.label}</Badge>;
 }

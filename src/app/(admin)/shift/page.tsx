@@ -9,8 +9,8 @@ import { ShiftClient } from './_components/shift-client';
 
 export default function ShiftPage() {
   return (
-    <main className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">シフト管理</h1>
+    <main className="p-4 max-w-7xl mx-auto">
+      <h1 className="text-xl font-bold text-ink-strong mb-4">📅 シフト管理</h1>
       <ShiftClient />
     </main>
   );

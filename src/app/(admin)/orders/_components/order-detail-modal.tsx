@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 interface OrderDetail {
   id: string;
@@ -91,12 +93,8 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
       body: JSON.stringify({ reason }),
     });
     setBusy(false);
-    if (res.ok) {
-      load();
-    } else {
-      const j = await res.json();
-      alert(j.message ?? `エラー: HTTP ${res.status}`);
-    }
+    if (res.ok) load();
+    else alert((await res.json()).message ?? `エラー: HTTP ${res.status}`);
   }
 
   async function onRestore() {
@@ -104,55 +102,84 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
     const reason = prompt('復活理由を入力してください（必須）');
     if (!reason) return;
     setBusy(true);
-    const res = await fetch(
-      `/api/orders/${encodeURIComponent(order.pkNo)}/restore`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason }),
-      },
-    );
+    const res = await fetch(`/api/orders/${encodeURIComponent(order.pkNo)}/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
     setBusy(false);
-    if (res.ok) {
-      load();
-    } else {
-      const j = await res.json();
-      alert(j.message ?? `エラー: HTTP ${res.status}`);
-    }
+    if (res.ok) load();
+    else alert((await res.json()).message ?? `エラー: HTTP ${res.status}`);
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-auto">
-        <div className="sticky top-0 bg-white border-b px-6 py-3 flex justify-between items-center">
-          <h2 className="text-lg font-bold font-mono">{pkNo}</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-xl">
+    <div className="fixed inset-0 bg-black/65 flex items-center justify-center z-40 p-4 backdrop-blur-sm">
+      <div className="bg-surface-panel border border-surface-border rounded-2xl shadow-modal max-w-3xl w-full max-h-[90vh] overflow-auto">
+        <div className="sticky top-0 bg-surface-panel border-b border-surface-border px-5 py-3 flex justify-between items-center">
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xs text-ink-subtle uppercase">PkNo</span>
+            <h2 className="text-base font-bold font-mono text-accent-amber tabular-nums">
+              {pkNo}
+            </h2>
+          </div>
+          <button onClick={onClose} className="text-ink-subtle hover:text-ink-strong text-xl">
             ✕
           </button>
         </div>
 
-        <div className="p-6 space-y-4">
-          {error && <div className="bg-red-50 text-red-700 p-3 rounded">{error}</div>}
+        <div className="p-5 space-y-3">
+          {error && (
+            <div className="bg-status-error-bg border border-status-error/40 text-status-error rounded p-3 text-sm">
+              {error}
+            </div>
+          )}
           {!order ? (
-            <div className="text-gray-500">読み込み中…</div>
+            <div className="text-ink-muted text-sm">読み込み中…</div>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-2 gap-2 text-sm">
                 <Field label="出荷日" value={new Date(order.shipDate).toLocaleDateString('ja-JP')} />
-                <Field label="状態" value={order.status} />
+                <Field
+                  label="状態"
+                  value={
+                    <Badge
+                      variant={
+                        order.status === 'packed'
+                          ? 'done'
+                          : order.status === 'inspecting'
+                            ? 'working'
+                            : order.status === 'held'
+                              ? 'warn'
+                              : 'wait'
+                      }
+                      size="md"
+                    >
+                      {order.status}
+                    </Badge>
+                  }
+                />
                 <Field
                   label="運送会社"
                   value={`${order.carrier?.name ?? '—'}${order.carrier?.cool ? ' ❄' : ''}`}
                 />
-                <Field label="納品書№" value={order.invoiceNo ?? '—'} />
+                <Field
+                  label="納品書№"
+                  value={
+                    <span className="font-mono tabular-nums">{order.invoiceNo ?? '—'}</span>
+                  }
+                />
                 <Field label="のし" value={order.noshiName ?? '—'} />
                 <div>
-                  <div className="text-xs text-gray-500">QR印刷フラグ</div>
+                  <div className="text-3xs text-ink-subtle uppercase tracking-wider mb-1">
+                    QR印刷フラグ
+                  </div>
                   <button
                     onClick={onTogglePrintFlag}
                     disabled={busy || !!order.deletedAt}
-                    className={`px-3 py-1 rounded text-sm font-medium ${
-                      order.qrPrintFlag ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                    className={`px-3 py-1 rounded text-xs font-bold border ${
+                      order.qrPrintFlag
+                        ? 'bg-pink-700 border-pink-500 text-white'
+                        : 'bg-surface-base border-surface-border text-ink-subtle'
                     } disabled:opacity-50`}
                   >
                     {order.qrPrintFlag ? '🖨 ON' : '○ OFF'}
@@ -166,94 +193,106 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
               />
 
               {order.deletedAt && (
-                <div className="bg-red-50 border border-red-200 rounded p-3 text-sm">
-                  <div className="font-medium text-red-800">🗑 削除済み</div>
-                  <div className="text-xs text-red-700 mt-1">
+                <div className="bg-status-error-bg border border-status-error/40 rounded p-3 text-sm">
+                  <div className="font-bold text-status-error">🗑 削除済み</div>
+                  <div className="text-2xs text-red-300 mt-1">
                     {new Date(order.deletedAt).toLocaleString('ja-JP')} / {order.deletedBy}
                   </div>
-                  <div className="text-xs text-red-700">{order.deleteReason}</div>
+                  <div className="text-2xs text-red-300">{order.deleteReason}</div>
                 </div>
               )}
 
               {order.holdReason && (
-                <div className="bg-orange-50 border border-orange-200 rounded p-3 text-sm">
-                  <div className="font-medium text-orange-800">⏸ 保留</div>
-                  <div className="text-xs text-orange-700">{order.holdReason}</div>
+                <div className="bg-status-warn-bg border border-status-warn/40 rounded p-3 text-sm">
+                  <div className="font-bold text-status-warn">⏸ 保留</div>
+                  <div className="text-2xs text-amber-300">{order.holdReason}</div>
                 </div>
               )}
 
               <div>
-                <h3 className="font-semibold text-sm mb-2">商品 ({order.items.length})</h3>
-                <table className="w-full text-sm border">
-                  <thead className="bg-gray-50 text-xs">
-                    <tr>
-                      <th className="px-2 py-1 text-left">商品名</th>
-                      <th className="px-2 py-1 text-left">JAN</th>
-                      <th className="px-2 py-1 text-right">指示</th>
-                      <th className="px-2 py-1 text-right">スキャン</th>
-                      <th className="px-2 py-1">強制</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {order.items.map((it) => (
-                      <tr key={it.id} className="border-t">
-                        <td className="px-2 py-1">
-                          <div>{it.productName}</div>
-                          <div className="text-xs text-gray-500 font-mono">{it.productCode}</div>
-                        </td>
-                        <td className="px-2 py-1 font-mono text-xs">{it.product.jan ?? '—'}</td>
-                        <td className="px-2 py-1 text-right">{it.qty}</td>
-                        <td className="px-2 py-1 text-right">
-                          <span
-                            className={
-                              it.forceOk || it.scannedQty >= it.qty
-                                ? 'text-green-700 font-medium'
-                                : ''
-                            }
-                          >
-                            {it.scannedQty}
-                          </span>
-                        </td>
-                        <td className="px-2 py-1 text-center">
-                          {it.forceOk ? (
-                            <span className="text-xs text-yellow-700" title={it.forceReason ?? ''}>
-                              ⚠
-                            </span>
-                          ) : (
-                            ''
-                          )}
-                        </td>
+                <h3 className="text-2xs font-bold text-accent-amber uppercase tracking-wider mb-2">
+                  商品 ({order.items.length})
+                </h3>
+                <div className="border border-surface-border rounded overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-surface-base border-b border-surface-border">
+                      <tr>
+                        <th className="px-2 py-1.5 text-left text-3xs uppercase text-ink-subtle">
+                          商品名
+                        </th>
+                        <th className="px-2 py-1.5 text-left text-3xs uppercase text-ink-subtle">
+                          JAN
+                        </th>
+                        <th className="px-2 py-1.5 text-right text-3xs uppercase text-ink-subtle">
+                          指示
+                        </th>
+                        <th className="px-2 py-1.5 text-right text-3xs uppercase text-ink-subtle">
+                          スキャン
+                        </th>
+                        <th className="px-2 py-1.5 text-center text-3xs uppercase text-ink-subtle">
+                          強制
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {order.items.map((it) => (
+                        <tr key={it.id} className="border-t border-surface-border">
+                          <td className="px-2 py-1.5">
+                            <div className="text-ink-strong">{it.productName}</div>
+                            <div className="text-3xs text-ink-muted font-mono">
+                              {it.productCode}
+                            </div>
+                          </td>
+                          <td className="px-2 py-1.5 font-mono text-2xs text-ink-subtle">
+                            {it.product.jan ?? '—'}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{it.qty}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">
+                            <span
+                              className={
+                                it.forceOk || it.scannedQty >= it.qty
+                                  ? 'text-status-ok font-bold'
+                                  : 'text-ink'
+                              }
+                            >
+                              {it.scannedQty}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5 text-center">
+                            {it.forceOk && (
+                              <span className="text-status-warn" title={it.forceReason ?? ''}>
+                                ⚠
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               {/* 操作ボタン */}
-              <div className="border-t pt-4 flex flex-wrap gap-2 justify-between items-center">
+              <div className="border-t border-surface-border pt-3 flex flex-wrap gap-2 justify-between items-center">
                 <button
                   onClick={() => {
                     if (!showAuditLogs) loadAuditLogs();
                     setShowAuditLogs((s) => !s);
                   }}
-                  className="text-sm text-blue-600 hover:underline"
+                  className="text-xs text-status-info hover:underline"
                 >
                   📜 監査ログ {showAuditLogs ? '隠す' : '表示'}
                 </button>
                 <div className="flex gap-2">
                   {order.deletedAt ? (
-                    <button
-                      onClick={onRestore}
-                      disabled={busy}
-                      className="px-4 py-2 bg-green-600 text-white rounded text-sm font-medium disabled:bg-gray-300"
-                    >
+                    <Button onClick={onRestore} disabled={busy} variant="success">
                       ♻ 復活
-                    </button>
+                    </Button>
                   ) : (
-                    <button
+                    <Button
                       onClick={onDelete}
                       disabled={busy || order.status === 'inspecting'}
-                      className="px-4 py-2 bg-red-600 text-white rounded text-sm font-medium disabled:bg-gray-300"
+                      variant="danger"
                       title={
                         order.status === 'inspecting'
                           ? '検品中の伝票は削除できません（先に保留へ）'
@@ -261,38 +300,45 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
                       }
                     >
                       🗑 削除
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
 
               {showAuditLogs && (
-                <div className="border rounded-lg p-3 bg-gray-50">
-                  <h3 className="font-semibold text-sm mb-2">監査ログ ({auditLogs.length})</h3>
+                <div className="border border-surface-border rounded-lg p-3 bg-surface-base">
+                  <h3 className="text-2xs font-bold text-accent-amber uppercase tracking-wider mb-2">
+                    監査ログ ({auditLogs.length})
+                  </h3>
                   {auditLogs.length === 0 ? (
-                    <p className="text-xs text-gray-400">操作履歴はありません</p>
+                    <p className="text-xs text-ink-muted">操作履歴はありません</p>
                   ) : (
                     <ul className="space-y-2 text-xs">
                       {auditLogs.map((log) => (
-                        <li key={log.id} className="border-l-2 border-gray-300 pl-2">
+                        <li
+                          key={log.id}
+                          className="border-l-2 border-status-info pl-2"
+                        >
                           <div>
-                            <span className="font-mono font-medium">{log.action}</span>{' '}
-                            <span className="text-gray-500">
+                            <span className="font-mono font-bold text-status-info">
+                              {log.action}
+                            </span>{' '}
+                            <span className="text-ink-subtle">
                               by {log.staff.name} ({log.staff.code})
                             </span>
                           </div>
-                          <div className="text-gray-500">
+                          <div className="text-ink-muted text-2xs">
                             {new Date(log.actedAt).toLocaleString('ja-JP')}
                           </div>
                           {log.reason && (
-                            <div className="text-gray-700">理由: {log.reason}</div>
+                            <div className="text-ink">理由: {log.reason}</div>
                           )}
                           {log.diff !== null && log.diff !== undefined && (
                             <details>
-                              <summary className="cursor-pointer text-gray-500">
+                              <summary className="cursor-pointer text-ink-subtle text-2xs">
                                 差分
                               </summary>
-                              <pre className="bg-white p-1 mt-1 rounded text-[10px] overflow-x-auto">
+                              <pre className="bg-surface-panel border border-surface-border p-1.5 mt-1 rounded text-3xs overflow-x-auto text-ink">
                                 {JSON.stringify(log.diff, null, 2)}
                               </pre>
                             </details>
@@ -311,11 +357,11 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <div className="text-xs text-gray-500">{label}</div>
-      <div>{value}</div>
+      <div className="text-3xs text-ink-subtle uppercase tracking-wider">{label}</div>
+      <div className="text-ink-strong text-sm">{value}</div>
     </div>
   );
 }

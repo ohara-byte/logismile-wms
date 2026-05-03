@@ -1,6 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Panel, PanelHeader } from '@/components/ui/panel';
+import { TextInput } from '@/components/ui/form-controls';
+import { StatCard } from '@/components/ui/stat-card';
+import { Table, THead, TBody, TR, TH, TD, EmptyRow } from '@/components/ui/data-table';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/cn';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 function addDays(iso: string, d: number) {
@@ -25,45 +31,55 @@ export function ReportsClient() {
   const [tab, setTab] = useState<TabId>('summary');
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white border rounded-lg p-4 flex flex-wrap gap-3 items-end">
-        <div>
-          <label className="text-xs text-gray-500 block">期間 From</label>
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="border rounded px-2 py-1 text-sm"
-          />
+    <div className="space-y-3">
+      <Panel>
+        <div className="p-3 flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="text-3xs text-ink-subtle uppercase tracking-wider block mb-1">
+              期間 From
+            </label>
+            <TextInput
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="!w-auto"
+            />
+          </div>
+          <div>
+            <label className="text-3xs text-ink-subtle uppercase tracking-wider block mb-1">
+              To
+            </label>
+            <TextInput
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="!w-auto"
+            />
+          </div>
+          <div className="flex-1" />
+          {tab !== 'heatmap' && (
+            <a
+              href={`/api/report/export?type=${tab}&from=${from}&to=${to}`}
+              className="px-3 py-1.5 border border-surface-border-strong rounded text-xs bg-surface-base text-ink hover:bg-surface-raised"
+            >
+              📥 CSV出力
+            </a>
+          )}
         </div>
-        <div>
-          <label className="text-xs text-gray-500 block">To</label>
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="border rounded px-2 py-1 text-sm"
-          />
-        </div>
-        <div className="flex-1" />
-        {tab !== 'heatmap' && (
-          <a
-            href={`/api/report/export?type=${tab}&from=${from}&to=${to}`}
-            className="px-3 py-1.5 border rounded text-sm bg-white hover:bg-gray-50"
-          >
-            📥 CSV出力
-          </a>
-        )}
-      </div>
+      </Panel>
 
-      <div className="border-b flex gap-1">
+      {/* タブ */}
+      <div className="border-b border-surface-border flex gap-1">
         {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`px-3 py-2 text-sm font-medium border-b-2 ${
-              tab === t.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-600'
-            }`}
+            className={cn(
+              'px-3 py-2 text-sm font-bold border-b-2 transition-colors',
+              tab === t.id
+                ? 'border-accent-amber text-accent-amber'
+                : 'border-transparent text-ink-subtle hover:text-ink',
+            )}
           >
             {t.label}
           </button>
@@ -107,19 +123,15 @@ interface SummaryData {
 
 function SummaryTab({ from, to }: { from: string; to: string }) {
   const { data, busy } = useReport<SummaryData>(`/api/report/summary?from=${from}&to=${to}`);
-  if (busy || !data) return <div className="text-gray-500">読み込み中…</div>;
+  if (busy || !data) return <Loading />;
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-      <Stat label="出荷件数" value={data.totalShipped} />
-      <Stat label="梱包完了" value={data.totalPacked} color="green" />
-      <Stat label="完了セッション" value={data.completedCount} />
-      <Stat label="強制OK" value={data.forceOkCount} color="orange" />
-      <Stat
-        label="平均梱包秒"
-        value={data.avgPackingSec ?? '—'}
-        color="gray"
-      />
-      <Stat label="総MH(h)" value={data.totalMhHours} />
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+      <StatCard label="出荷件数" value={data.totalShipped} />
+      <StatCard label="梱包完了" value={data.totalPacked} tone="ok" />
+      <StatCard label="完了セッション" value={data.completedCount} />
+      <StatCard label="強制OK" value={data.forceOkCount} tone="warn" />
+      <StatCard label="平均梱包秒" value={data.avgPackingSec ?? '—'} />
+      <StatCard label="総MH(h)" value={data.totalMhHours} tone="amber" />
     </div>
   );
 }
@@ -136,37 +148,37 @@ function StaffMhTab({ from, to }: { from: string; to: string }) {
   const { data, busy } = useReport<{ items: StaffRow[] }>(
     `/api/report/staff-mh?from=${from}&to=${to}`,
   );
-  if (busy || !data) return <div className="text-gray-500">読み込み中…</div>;
+  if (busy || !data) return <Loading />;
   return (
-    <table className="w-full text-sm border bg-white">
-      <thead className="bg-gray-50">
-        <tr>
-          <th className="px-2 py-1 text-left">担当者</th>
-          <th className="px-2 py-1 text-right">件数</th>
-          <th className="px-2 py-1 text-right">作業時間(秒)</th>
-          <th className="px-2 py-1 text-right">MH(h)</th>
-          <th className="px-2 py-1 text-right">平均秒/件</th>
-        </tr>
-      </thead>
-      <tbody>
-        {data.items.length === 0 && (
-          <tr>
-            <td colSpan={5} className="text-center py-4 text-gray-400">
-              データがありません
-            </td>
-          </tr>
-        )}
+    <Table>
+      <THead>
+        <TH>担当者</TH>
+        <TH align="right">件数</TH>
+        <TH align="right">作業時間(秒)</TH>
+        <TH align="right">MH(h)</TH>
+        <TH align="right">平均秒/件</TH>
+      </THead>
+      <TBody>
+        {data.items.length === 0 && <EmptyRow colSpan={5} />}
         {data.items.map((r) => (
-          <tr key={r.staffCode} className="border-t">
-            <td className="px-2 py-1">{r.staffName}</td>
-            <td className="px-2 py-1 text-right">{r.count}</td>
-            <td className="px-2 py-1 text-right">{r.durationSec.toLocaleString()}</td>
-            <td className="px-2 py-1 text-right font-medium">{r.mhHours}</td>
-            <td className="px-2 py-1 text-right">{r.avgSec}</td>
-          </tr>
+          <TR key={r.staffCode}>
+            <TD className="text-ink-strong font-bold">{r.staffName}</TD>
+            <TD align="right" mono>
+              {r.count}
+            </TD>
+            <TD align="right" mono className="text-ink-subtle">
+              {r.durationSec.toLocaleString()}
+            </TD>
+            <TD align="right" mono className="text-accent-amber font-bold">
+              {r.mhHours}
+            </TD>
+            <TD align="right" mono>
+              {r.avgSec}
+            </TD>
+          </TR>
         ))}
-      </tbody>
-    </table>
+      </TBody>
+    </Table>
   );
 }
 
@@ -181,51 +193,73 @@ function GroupMhTab({ from, to }: { from: string; to: string }) {
   const { data, busy } = useReport<{ items: GroupRow[] }>(
     `/api/report/group-mh?from=${from}&to=${to}`,
   );
-  if (busy || !data) return <div className="text-gray-500">読み込み中…</div>;
+  if (busy || !data) return <Loading />;
 
-  const allHours = Array.from({ length: 14 }, (_, i) => i + 8); // 8-21
+  const allHours = Array.from({ length: 14 }, (_, i) => i + 8);
 
   return (
-    <div className="overflow-x-auto bg-white border rounded-lg">
-      <table className="text-xs">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-2 py-1 text-left">グループ</th>
-            {allHours.map((h) => (
-              <th key={h} className="px-2 py-1 text-center min-w-[40px]">
-                {h}:00
-              </th>
-            ))}
-            <th className="px-2 py-1 text-right">合計件数</th>
-            <th className="px-2 py-1 text-right">MH</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.items.length === 0 && (
+    <Panel>
+      <div className="overflow-x-auto">
+        <table className="text-xs w-full">
+          <thead className="bg-surface-base border-b border-surface-border">
             <tr>
-              <td colSpan={allHours.length + 3} className="text-center py-4 text-gray-400">
-                データがありません
-              </td>
+              <th className="px-2 py-1.5 text-left text-3xs uppercase text-ink-subtle">
+                グループ
+              </th>
+              {allHours.map((h) => (
+                <th
+                  key={h}
+                  className="px-1 py-1.5 text-center text-3xs uppercase text-ink-subtle min-w-[40px] tabular-nums"
+                >
+                  {h}:00
+                </th>
+              ))}
+              <th className="px-2 py-1.5 text-right text-3xs uppercase text-ink-subtle">
+                合計
+              </th>
+              <th className="px-2 py-1.5 text-right text-3xs uppercase text-ink-subtle">
+                MH
+              </th>
             </tr>
-          )}
-          {data.items.map((g) => {
-            const byHour = new Map(g.hourly.map((h) => [h.hour, h]));
-            return (
-              <tr key={g.groupId} className="border-t">
-                <td className="px-2 py-1">{g.groupName}</td>
-                {allHours.map((h) => (
-                  <td key={h} className="px-2 py-1 text-center">
-                    {byHour.get(h)?.count ?? ''}
-                  </td>
-                ))}
-                <td className="px-2 py-1 text-right font-medium">{g.totalCount}</td>
-                <td className="px-2 py-1 text-right">{g.totalMhHours}</td>
+          </thead>
+          <tbody>
+            {data.items.length === 0 && (
+              <tr>
+                <td colSpan={allHours.length + 3} className="text-center py-6 text-ink-muted">
+                  データがありません
+                </td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+            )}
+            {data.items.map((g) => {
+              const byHour = new Map(g.hourly.map((h) => [h.hour, h]));
+              return (
+                <tr key={g.groupId} className="border-t border-surface-border">
+                  <td className="px-2 py-1 font-bold text-ink-strong">{g.groupName}</td>
+                  {allHours.map((h) => {
+                    const c = byHour.get(h)?.count ?? 0;
+                    return (
+                      <td
+                        key={h}
+                        className={cn(
+                          'px-1 py-1 text-center font-mono tabular-nums',
+                          c > 0 ? 'text-ink' : 'text-ink-muted',
+                        )}
+                      >
+                        {c || ''}
+                      </td>
+                    );
+                  })}
+                  <td className="px-2 py-1 text-right tabular-nums font-bold text-accent-amber">
+                    {g.totalCount}
+                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums text-ink">{g.totalMhHours}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
   );
 }
 
@@ -242,53 +276,45 @@ function ProductAbcTab({ from, to }: { from: string; to: string }) {
   const { data, busy } = useReport<{ items: AbcRow[] }>(
     `/api/report/product-abc?from=${from}&to=${to}`,
   );
-  if (busy || !data) return <div className="text-gray-500">読み込み中…</div>;
+  if (busy || !data) return <Loading />;
   return (
-    <table className="w-full text-sm border bg-white">
-      <thead className="bg-gray-50">
-        <tr>
-          <th className="px-2 py-1 text-center">ABC</th>
-          <th className="px-2 py-1 text-left">商品コード</th>
-          <th className="px-2 py-1 text-left">商品名</th>
-          <th className="px-2 py-1 text-left">カテゴリ</th>
-          <th className="px-2 py-1 text-right">伝票数</th>
-          <th className="px-2 py-1 text-right">合計数量</th>
-          <th className="px-2 py-1 text-right">累積比率%</th>
-        </tr>
-      </thead>
-      <tbody>
-        {data.items.length === 0 && (
-          <tr>
-            <td colSpan={7} className="text-center py-4 text-gray-400">
-              データがありません
-            </td>
-          </tr>
-        )}
+    <Table>
+      <THead>
+        <TH align="center">ABC</TH>
+        <TH>商品コード</TH>
+        <TH>商品名</TH>
+        <TH>カテゴリ</TH>
+        <TH align="right">伝票数</TH>
+        <TH align="right">合計数量</TH>
+        <TH align="right">累積比率%</TH>
+      </THead>
+      <TBody>
+        {data.items.length === 0 && <EmptyRow colSpan={7} />}
         {data.items.map((r) => (
-          <tr key={r.productCode} className="border-t">
-            <td className="px-2 py-1 text-center">
-              <span
-                className={`text-xs font-bold px-2 py-0.5 rounded ${
-                  r.abc === 'A'
-                    ? 'bg-green-200 text-green-900'
-                    : r.abc === 'B'
-                      ? 'bg-yellow-200 text-yellow-900'
-                      : 'bg-gray-200 text-gray-700'
-                }`}
-              >
+          <TR key={r.productCode}>
+            <TD align="center">
+              <Badge variant={r.abc === 'A' ? 'done' : r.abc === 'B' ? 'warn' : 'neutral'} size="md">
                 {r.abc}
-              </span>
-            </td>
-            <td className="px-2 py-1 font-mono text-xs">{r.productCode}</td>
-            <td className="px-2 py-1">{r.productName}</td>
-            <td className="px-2 py-1 text-xs">{r.category}</td>
-            <td className="px-2 py-1 text-right">{r.orderCount}</td>
-            <td className="px-2 py-1 text-right font-medium">{r.totalQty}</td>
-            <td className="px-2 py-1 text-right text-xs text-gray-600">{r.cumRatio}%</td>
-          </tr>
+              </Badge>
+            </TD>
+            <TD mono className="text-2xs">
+              {r.productCode}
+            </TD>
+            <TD className="text-ink-strong">{r.productName}</TD>
+            <TD className="text-2xs">{r.category}</TD>
+            <TD align="right" mono>
+              {r.orderCount}
+            </TD>
+            <TD align="right" mono className="font-bold text-accent-amber">
+              {r.totalQty}
+            </TD>
+            <TD align="right" mono className="text-2xs text-ink-subtle">
+              {r.cumRatio}%
+            </TD>
+          </TR>
         ))}
-      </tbody>
-    </table>
+      </TBody>
+    </Table>
   );
 }
 
@@ -298,95 +324,113 @@ interface HeatmapData {
 }
 function HeatmapTab({ from, to }: { from: string; to: string }) {
   const { data, busy } = useReport<HeatmapData>(`/api/report/heatmap?from=${from}&to=${to}`);
-  if (busy || !data) return <div className="text-gray-500">読み込み中…</div>;
+  if (busy || !data) return <Loading />;
 
   const days = ['日', '月', '火', '水', '木', '金', '土'];
-  const hours = Array.from({ length: 11 }, (_, i) => i + 9); // 9-19
+  const hours = Array.from({ length: 11 }, (_, i) => i + 9);
   const cellMap = new Map<string, { count: number; level: 'low' | 'mid' | 'high' }>();
-  for (const r of data.rows) cellMap.set(`${r.weekday}|${r.hour}`, { count: r.count, level: r.level });
+  for (const r of data.rows)
+    cellMap.set(`${r.weekday}|${r.hour}`, { count: r.count, level: r.level });
+  // 5 段階に拡張: max を計算して 5 分割
+  const maxCount = Math.max(0, ...data.rows.map((r) => r.count));
+
+  function densityClass(count: number): string {
+    if (maxCount === 0 || count === 0) return 'bg-surface-base text-ink-muted';
+    const ratio = count / maxCount;
+    if (ratio >= 0.8) return 'bg-red-700 text-white';
+    if (ratio >= 0.6) return 'bg-orange-600 text-white';
+    if (ratio >= 0.4) return 'bg-amber-600 text-white';
+    if (ratio >= 0.2) return 'bg-emerald-700 text-emerald-100';
+    return 'bg-blue-900 text-blue-200';
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white border rounded-lg p-3 overflow-x-auto">
-        <table className="text-xs">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-2 py-1">曜日 \ 時刻</th>
-              {hours.map((h) => (
-                <th key={h} className="px-2 py-1 text-center min-w-[44px]">
-                  {h}
-                </th>
+    <div className="space-y-3">
+      <Panel>
+        <PanelHeader title="🌡 ヒートマップ" meta="5 段階カラースケール" />
+        <div className="overflow-x-auto p-2">
+          <table className="text-xs w-full">
+            <thead>
+              <tr>
+                <th className="px-2 py-1 text-3xs text-ink-subtle uppercase">曜日 \ 時刻</th>
+                {hours.map((h) => (
+                  <th
+                    key={h}
+                    className="px-1 py-1 text-center text-3xs text-ink-subtle min-w-[44px] tabular-nums"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {days.map((d) => (
+                <tr key={d}>
+                  <td className="px-2 py-1 font-bold text-ink-strong">{d}</td>
+                  {hours.map((h) => {
+                    const c = cellMap.get(`${d}|${h}`);
+                    const cls = densityClass(c?.count ?? 0);
+                    return (
+                      <td
+                        key={h}
+                        className={cn(
+                          'px-2 py-1 text-center font-mono tabular-nums font-bold border border-surface-border',
+                          cls,
+                        )}
+                      >
+                        {c?.count ?? 0}
+                      </td>
+                    );
+                  })}
+                </tr>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {days.map((d) => (
-              <tr key={d}>
-                <td className="px-2 py-1 font-medium">{d}</td>
-                {hours.map((h) => {
-                  const c = cellMap.get(`${d}|${h}`);
-                  const bg =
-                    c?.level === 'high'
-                      ? 'bg-red-300'
-                      : c?.level === 'mid'
-                        ? 'bg-yellow-200'
-                        : (c?.count ?? 0) > 0
-                          ? 'bg-green-100'
-                          : 'bg-gray-50';
-                  return (
-                    <td key={h} className={`px-2 py-1 text-center ${bg}`}>
-                      {c?.count ?? 0}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="bg-white border rounded-lg p-3">
-        <h3 className="font-semibold mb-2 text-sm">運送会社 締切駆け込み（直前60分の梱包件数）</h3>
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-xs">
-            <tr>
-              <th className="px-2 py-1 text-left">運送会社</th>
-              <th className="px-2 py-1 text-left">締切</th>
-              <th className="px-2 py-1 text-right">駆け込み件数</th>
-            </tr>
-          </thead>
-          <tbody>
+            </tbody>
+          </table>
+
+          {/* レジェンド */}
+          <div className="flex items-center gap-2 mt-3 text-3xs text-ink-subtle">
+            <span>低</span>
+            <span className="w-4 h-3 bg-blue-900" />
+            <span className="w-4 h-3 bg-emerald-700" />
+            <span className="w-4 h-3 bg-amber-600" />
+            <span className="w-4 h-3 bg-orange-600" />
+            <span className="w-4 h-3 bg-red-700" />
+            <span>高</span>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel>
+        <PanelHeader title="🚚 運送会社 締切駆け込み" meta="直前 60 分の梱包件数" />
+        <Table>
+          <THead>
+            <TH>運送会社</TH>
+            <TH>締切</TH>
+            <TH align="right">駆け込み件数</TH>
+          </THead>
+          <TBody>
+            {data.carrierCutoffs.length === 0 && <EmptyRow colSpan={3} />}
             {data.carrierCutoffs.map((c) => (
-              <tr key={c.carrier} className="border-t">
-                <td className="px-2 py-1">{c.carrier}</td>
-                <td className="px-2 py-1">{c.cutoff}</td>
-                <td className="px-2 py-1 text-right font-medium">{c.rushCount}</td>
-              </tr>
+              <TR key={c.carrier}>
+                <TD className="text-ink-strong">{c.carrier}</TD>
+                <TD mono>{c.cutoff}</TD>
+                <TD align="right" mono className="font-bold text-accent-amber">
+                  {c.rushCount}
+                </TD>
+              </TR>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TBody>
+        </Table>
+      </Panel>
     </div>
   );
 }
 
-function Stat({
-  label,
-  value,
-  color = 'gray',
-}: {
-  label: string;
-  value: number | string;
-  color?: 'gray' | 'green' | 'orange';
-}) {
-  const colorMap: Record<string, string> = {
-    gray: 'text-gray-700',
-    green: 'text-green-700',
-    orange: 'text-orange-700',
-  };
+function Loading() {
   return (
-    <div className="border rounded-lg bg-white p-3 text-center">
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className={`text-2xl font-bold ${colorMap[color]}`}>{value}</div>
+    <div className="text-ink-muted text-sm flex items-center gap-2 py-6 justify-center">
+      <span className="w-2 h-2 bg-accent-amber rounded-full animate-pulse" />
+      読み込み中…
     </div>
   );
 }

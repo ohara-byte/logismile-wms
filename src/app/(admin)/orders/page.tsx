@@ -11,8 +11,8 @@ import { OrdersClient } from './_components/orders-client';
 
 export default function OrdersPage() {
   return (
-    <main className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">出荷指示</h1>
+    <main className="p-4 max-w-7xl mx-auto">
+      <h1 className="text-xl font-bold text-ink-strong mb-4">📦 出荷指示</h1>
       <OrdersClient />
     </main>
   );

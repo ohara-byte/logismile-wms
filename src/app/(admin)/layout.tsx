@@ -11,16 +11,8 @@ import { authOptions } from '@/lib/auth/auth-options';
 import { LogiSmileLogo } from '@/components/brand/logismile-logo';
 import { signOutAction } from './_actions';
 import { AdminClock } from './_components/admin-clock';
-
-const NAV_ITEMS: { href: string; label: string; icon: string }[] = [
-  { href: '/dashboard', label: 'ダッシュボード', icon: '📊' },
-  { href: '/orders', label: '出荷指示', icon: '📦' },
-  { href: '/imports', label: 'CSV取込', icon: '📥' },
-  { href: '/notices', label: '連絡事項', icon: '📢' },
-  { href: '/shift', label: 'シフト', icon: '📅' },
-  { href: '/assignment', label: '割当', icon: '👥' },
-  { href: '/reports', label: 'レポート', icon: '📈' },
-];
+import { AdminNav } from './_components/admin-nav';
+import { NAV_GROUPS } from './_components/admin-nav-config';
 
 export default async function AdminLayout({
   children,
@@ -35,7 +27,7 @@ export default async function AdminLayout({
   return (
     <div className="min-h-screen bg-surface-base text-ink">
       <header className="bg-gradient-to-b from-surface-panel to-surface-base border-b border-surface-border sticky top-0 z-30">
-        <div className="max-w-[1600px] mx-auto px-4 h-14 flex items-center gap-6">
+        <div className="max-w-[1600px] mx-auto px-4 h-14 flex items-center gap-4">
           {/* ブランド */}
           <a href="/dashboard" className="flex items-center gap-2.5 shrink-0">
             <LogiSmileLogo height={26} />
@@ -47,19 +39,8 @@ export default async function AdminLayout({
             </div>
           </a>
 
-          {/* ナビ */}
-          <nav className="flex-1 flex items-center gap-1 overflow-x-auto">
-            {NAV_ITEMS.map((item) => (
-              <a
-                key={item.href}
-                href={item.href}
-                className="px-3 py-1.5 rounded text-sm text-ink-subtle hover:text-accent-amber hover:bg-surface-panel transition-colors flex items-center gap-1.5 whitespace-nowrap"
-              >
-                <span className="text-base">{item.icon}</span>
-                <span className="hidden md:inline">{item.label}</span>
-              </a>
-            ))}
-          </nav>
+          {/* ナビ（タブグループ） */}
+          <AdminNav groups={NAV_GROUPS} />
 
           {/* 右側: 時計 + ユーザー */}
           <div className="flex items-center gap-3 shrink-0">

@@ -1,6 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Panel, PanelHeader, PanelBody } from '@/components/ui/panel';
+import { Button } from '@/components/ui/button';
+import { TextInput, NumberInput, Select, Textarea, FieldLabel } from '@/components/ui/form-controls';
+import { Table, THead, TBody, TR, TH, TD, EmptyRow } from '@/components/ui/data-table';
+import { Badge } from '@/components/ui/badge';
 
 interface Notice {
   id: number;
@@ -61,8 +66,7 @@ export function NoticesClient() {
       setPriority(50);
       reload();
     } else {
-      const j = await res.json();
-      alert(j.message ?? `エラー: HTTP ${res.status}`);
+      alert((await res.json()).message ?? `エラー: HTTP ${res.status}`);
     }
   }
 
@@ -73,130 +77,115 @@ export function NoticesClient() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* 新規作成 */}
-      <div className="bg-white border rounded-lg p-4">
-        <h2 className="font-semibold mb-3">新規連絡事項</h2>
-        <form onSubmit={onCreate} className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-          <div>
-            <label className="text-xs text-gray-500">対象日</label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full border rounded px-2 py-1.5"
-              required
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500">優先度（0-100、高いほど上）</label>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={priority}
-              onChange={(e) => setPriority(parseInt(e.target.value, 10) || 50)}
-              className="w-full border rounded px-2 py-1.5"
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label className="text-xs text-gray-500">タイトル</label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full border rounded px-2 py-1.5"
-              required
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label className="text-xs text-gray-500">本文（任意）</label>
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              className="w-full border rounded px-2 py-1.5"
-              rows={3}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500">対象範囲</label>
-            <select
-              value={targetType}
-              onChange={(e) => setTargetType(e.target.value as 'all' | 'group' | 'table')}
-              className="w-full border rounded px-2 py-1.5"
-            >
-              <option value="all">全員</option>
-              <option value="group">グループ</option>
-              <option value="table">テーブル</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-gray-500">対象ID（group/table 時）</label>
-            <input
-              value={targetId}
-              onChange={(e) => setTargetId(e.target.value)}
-              className="w-full border rounded px-2 py-1.5"
-              placeholder="ABL"
-              disabled={targetType === 'all'}
-            />
-          </div>
-          <div className="md:col-span-2 text-right">
-            <button
-              type="submit"
-              disabled={busy || !title}
-              className="px-4 py-2 bg-blue-600 text-white rounded font-medium disabled:bg-gray-300"
-            >
-              {busy ? '…' : '登録'}
-            </button>
-          </div>
-        </form>
-      </div>
+      <Panel>
+        <PanelHeader title="新規連絡事項" />
+        <PanelBody>
+          <form onSubmit={onCreate} className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div>
+              <FieldLabel required>対象日</FieldLabel>
+              <TextInput
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <FieldLabel>優先度（0-100、高いほど上）</FieldLabel>
+              <NumberInput
+                min={0}
+                max={100}
+                value={priority}
+                onChange={(e) => setPriority(parseInt(e.target.value, 10) || 50)}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <FieldLabel required>タイトル</FieldLabel>
+              <TextInput
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+              />
+            </div>
+            <div className="md:col-span-2">
+              <FieldLabel>本文（任意）</FieldLabel>
+              <Textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={3}
+              />
+            </div>
+            <div>
+              <FieldLabel>対象範囲</FieldLabel>
+              <Select
+                value={targetType}
+                onChange={(e) => setTargetType(e.target.value as 'all' | 'group' | 'table')}
+              >
+                <option value="all">全員</option>
+                <option value="group">グループ</option>
+                <option value="table">テーブル</option>
+              </Select>
+            </div>
+            <div>
+              <FieldLabel>対象ID（group/table 時）</FieldLabel>
+              <TextInput
+                value={targetId}
+                onChange={(e) => setTargetId(e.target.value)}
+                placeholder="ABL"
+                disabled={targetType === 'all'}
+              />
+            </div>
+            <div className="md:col-span-2 text-right">
+              <Button type="submit" disabled={busy || !title}>
+                {busy ? '…' : '登録'}
+              </Button>
+            </div>
+          </form>
+        </PanelBody>
+      </Panel>
 
       {/* 一覧 */}
-      <div className="bg-white border rounded-lg overflow-hidden">
-        <div className="px-4 py-2 bg-gray-50 text-xs text-gray-600 border-b">
-          {date} の連絡事項 ({items.length})
-        </div>
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-xs uppercase text-gray-600">
-            <tr>
-              <th className="px-3 py-2 text-left">優先</th>
-              <th className="px-3 py-2 text-left">対象</th>
-              <th className="px-3 py-2 text-left">タイトル</th>
-              <th className="px-3 py-2 text-left">本文</th>
-              <th className="px-3 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
+      <Panel>
+        <PanelHeader title={`${date} の連絡事項`} meta={`${items.length} 件`} />
+        <Table>
+          <THead>
+            <TH align="center">優先</TH>
+            <TH>対象</TH>
+            <TH>タイトル</TH>
+            <TH>本文</TH>
+            <TH>{''}</TH>
+          </THead>
+          <TBody>
             {items.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-gray-400">
-                  この日付の連絡事項はありません
-                </td>
-              </tr>
+              <EmptyRow colSpan={5} message="この日付の連絡事項はありません" />
             )}
             {items.map((n) => (
-              <tr key={n.id} className="border-t">
-                <td className="px-3 py-2 font-mono text-xs">{n.priority}</td>
-                <td className="px-3 py-2 text-xs">
+              <TR key={n.id}>
+                <TD align="center" mono>
+                  <Badge variant={n.priority >= 80 ? 'error' : n.priority >= 50 ? 'warn' : 'neutral'}>
+                    {n.priority}
+                  </Badge>
+                </TD>
+                <TD className="text-2xs">
                   {n.targetType === 'all' ? '全員' : `${n.targetType}: ${n.targetId ?? '—'}`}
-                </td>
-                <td className="px-3 py-2 font-medium">{n.title}</td>
-                <td className="px-3 py-2 text-xs text-gray-600 max-w-md truncate">
-                  {n.body ?? '—'}
-                </td>
-                <td className="px-3 py-2 text-right">
+                </TD>
+                <TD className="font-bold text-ink-strong">{n.title}</TD>
+                <TD className="text-2xs text-ink-subtle max-w-md truncate">{n.body ?? '—'}</TD>
+                <TD align="right">
                   <button
                     onClick={() => onDeactivate(n.id)}
-                    className="text-xs text-red-600 hover:underline"
+                    className="text-2xs text-status-error hover:underline"
                   >
                     無効化
                   </button>
-                </td>
-              </tr>
+                </TD>
+              </TR>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TBody>
+        </Table>
+      </Panel>
     </div>
   );
 }

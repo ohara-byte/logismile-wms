@@ -10,8 +10,8 @@ import { NoticesClient } from './_components/notices-client';
 
 export default function NoticesPage() {
   return (
-    <main className="p-6 max-w-5xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">連絡事項</h1>
+    <main className="p-4 max-w-6xl mx-auto">
+      <h1 className="text-xl font-bold text-ink-strong mb-4">📢 連絡事項</h1>
       <NoticesClient />
     </main>
   );
