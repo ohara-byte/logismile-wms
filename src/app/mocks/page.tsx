@@ -12,7 +12,10 @@
 
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth/auth-options';
 import { LogiSmileLogo } from '@/components/brand/logismile-logo';
 
 export const dynamic = 'force-dynamic';
@@ -48,6 +51,21 @@ async function listMocks() {
 }
 
 export default async function MocksIndexPage() {
+  // B-1 / C-1: 本番環境では存在しないものとして扱う
+  if (
+    process.env.NODE_ENV === 'production' &&
+    process.env.MOCK_VIEWER_ENABLED !== 'true'
+  ) {
+    notFound();
+  }
+  // admin / manager のみ閲覧可能
+  const session = await getServerSession(authOptions);
+  if (!session) redirect('/login');
+  const role = session.user.role;
+  if (role !== 'admin' && role !== 'manager') {
+    notFound();
+  }
+
   const { current, archive } = await listMocks();
 
   return (

@@ -18,6 +18,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { assertOrderAccessByStaff } from '@/lib/auth/order-access';
 
 export async function GET(
   _req: Request,
@@ -32,10 +33,12 @@ export async function GET(
     where: { pkNo },
     select: {
       id: true,
+      status: true,
       importId: true,
       inspSession: {
         select: {
           id: true,
+          staffCode: true,
           startedAt: true,
           completedAt: true,
           staff: { select: { code: true, name: true } },
@@ -57,8 +60,14 @@ export async function GET(
     );
   }
 
-  // staff は IDOR 対策で自身のセッション or pending のみ閲覧可（base endpoint と同等）
-  // タイムラインの権限は base endpoint 側で保証されている前提でここでは簡略化
+  // staff IDOR 抑止（B-1 / H-1）: pending or 自セッション以外は 403
+  const access = assertOrderAccessByStaff(guard.auth, {
+    status: order.status,
+    inspSession: order.inspSession
+      ? { staffCode: order.inspSession.staffCode }
+      : null,
+  });
+  if (!access.ok) return access.response;
 
   const [audit, prints, importRow] = await Promise.all([
     prisma.orderAuditLog.findMany({

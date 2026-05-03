@@ -1,8 +1,10 @@
 /**
  * PUT /api/notices/[id]/read
- * 着信（inbox）連絡を既読化する。
+ * 連絡事項の既読化。
  *
- * 認証: admin / manager のみ（PC 操作）
+ * 認証:
+ *   admin / manager … inbox（着信）の既読化（管理 PC 操作）
+ *   staff           … announce（発信）の既読化（モバイル ack_required フロー用）
  * 副作用: BadgeCounts.ann が即時減算される（次回 SSE で配信）
  */
 
@@ -14,7 +16,8 @@ export async function PUT(
   _req: Request,
   { params }: { params: { id: string } },
 ) {
-  const guard = await requireRole('admin', 'manager');
+  // B-1 / H-4: モバイル端末からの announce 既読化を許可
+  const guard = await requireRole('admin', 'manager', 'staff');
   if (!guard.ok) return guard.response;
 
   const id = parseInt(params.id, 10);
@@ -32,9 +35,25 @@ export async function PUT(
   if (!notice) {
     return NextResponse.json({ error: 'NOT_FOUND', message: 'notice が見つかりません' }, { status: 404 });
   }
-  if (notice.kind !== 'inbox') {
+
+  // ロール × kind の整合性チェック
+  // - inbox の既読化は admin/manager のみ（管理 PC で受信した連絡を消化）
+  // - announce の既読化は staff のみ（モバイル端末で「了解」タップ）
+  if (guard.auth.source === 'mobile' && notice.kind !== 'announce') {
     return NextResponse.json(
-      { error: 'CONFLICT', message: 'inbox 種別のみ既読化できます' },
+      {
+        error: 'FORBIDDEN',
+        message: 'モバイルからは発信(announce)のみ既読化できます',
+      },
+      { status: 403 },
+    );
+  }
+  if (guard.auth.source === 'pc' && notice.kind !== 'inbox') {
+    return NextResponse.json(
+      {
+        error: 'CONFLICT',
+        message: '管理 PC からは着信(inbox)のみ既読化できます',
+      },
       { status: 409 },
     );
   }
