@@ -303,14 +303,29 @@ model DevicePrinterMap {
 model Notice {
   id         Int      @id @default(autoincrement())
   date       DateTime @db.Date
+  /// 'announce' = PC→現場 発信、'inbox' = 現場→PC 着信（A-06）
+  kind       String   @default("announce") @db.VarChar(10)
   title      String   @db.VarChar(100)
   body       String?  @db.Text
+  /// 'all' | 'tablet' | 'handy' | 'group' | 'staff' | 'table'
   targetType String   @default("all") @map("target_type") @db.VarChar(10)
+  /// targetType が group / staff / table のときの対象 ID
   targetId   String?  @map("target_id") @db.VarChar(20)
+  /// inbox 分類: 'noshi' | 'product' | 'input' | 'web' | 'other'
+  category   String?  @db.VarChar(10)
+  /// announce で「了解」タップを必須にするか
+  ackRequired Boolean @default(false) @map("ack_required")
+  /// announce: 発信者 / inbox: 着信元の staff_code
+  senderCode String?  @map("sender_code") @db.VarChar(10)
   priority   Int      @default(50)
   active     Boolean  @default(true)
+  /// inbox の既読タイムスタンプ（簡易版・全体 read 1 回）
+  readAt     DateTime? @map("read_at") @db.Timestamptz
+  readBy     String?  @map("read_by") @db.VarChar(10)
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
 
+  @@index([kind, active, date])
+  @@index([kind, readAt])
   @@map("notices")
 }
 

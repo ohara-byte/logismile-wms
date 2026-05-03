@@ -1,15 +1,18 @@
 /**
- * GET /api/notices?date=YYYY-MM-DD
- * 当日の連絡事項一覧
+ * GET  /api/notices  — 一覧取得
+ * POST /api/notices  — 新規作成
  *
  * クエリ:
- *  - date: 対象日（既定 = 今日）
- *  - target: 'all' | 'group' | 'table'（任意。指定なしで全件）
- *  - target_id: target が group/table のときに必須
+ *   kind=announce|inbox  種別フィルタ（既定なし＝全件）
+ *   date=YYYY-MM-DD      対象日（announce 既定=今日。inbox では使わない）
+ *   category=...         inbox 用分類フィルタ
+ *   unread=true          inbox の未読のみ
+ *   target=...           announce 用宛先タイプ
+ *   target_id=...
  *
  * 用途:
- *  - ハンディ起動時のモーダル表示
- *  - 管理PCの連絡事項一覧
+ *  - ハンディ起動時の連絡事項モーダル（kind=announce, date=today）
+ *  - 管理PC「📢 連絡」タブ（announce 履歴 / inbox 一覧）
  */
 
 import { NextResponse } from 'next/server';
@@ -22,9 +25,10 @@ export async function GET(req: Request) {
   if (!guard.ok) return guard.response;
 
   const { searchParams } = new URL(req.url);
-  const dateStr = searchParams.get('date') ?? new Date().toISOString().slice(0, 10);
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) {
+  const kind = searchParams.get('kind') as 'announce' | 'inbox' | null;
+  const dateStr = searchParams.get('date');
+  const date = dateStr ? new Date(dateStr) : null;
+  if (date && isNaN(date.getTime())) {
     return NextResponse.json(
       { error: 'VALIDATION', message: `不正な日付: ${dateStr}` },
       { status: 422 },
@@ -33,32 +37,50 @@ export async function GET(req: Request) {
 
   const targetType = searchParams.get('target');
   const targetId = searchParams.get('target_id');
+  const category = searchParams.get('category');
+  const unread = searchParams.get('unread') === 'true';
+
+  // モバイルからのアクセスは announce + 今日 + 自分宛のみに限定
+  const isMobile = guard.auth.source === 'mobile';
+  const effectiveKind = isMobile ? 'announce' : kind;
+  const effectiveDate = isMobile ? new Date() : date;
+  if (effectiveDate) effectiveDate.setHours(0, 0, 0, 0);
 
   const items = await prisma.notice.findMany({
     where: {
-      date,
       active: true,
+      ...(effectiveKind ? { kind: effectiveKind } : {}),
+      ...(effectiveDate ? { date: effectiveDate } : {}),
       ...(targetType
         ? { targetType, ...(targetId ? { targetId } : {}) }
         : {}),
+      ...(category ? { category } : {}),
+      ...(unread ? { readAt: null } : {}),
     },
-    orderBy: [{ priority: 'desc' }, { id: 'asc' }],
+    orderBy: [{ priority: 'desc' }, { id: 'desc' }],
+    take: 200,
   });
 
   return NextResponse.json({ data: { items }, message: 'OK' });
 }
 
 const PostBody = z.object({
+  kind: z.enum(['announce', 'inbox']).default('announce'),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   title: z.string().min(1),
   body: z.string().nullable().optional(),
-  targetType: z.enum(['all', 'group', 'table']).default('all'),
+  targetType: z.enum(['all', 'tablet', 'handy', 'group', 'staff', 'table']).default('all'),
   targetId: z.string().nullable().optional(),
+  category: z.enum(['noshi', 'product', 'input', 'web', 'other']).nullable().optional(),
+  ackRequired: z.boolean().default(false),
+  senderCode: z.string().nullable().optional(),
   priority: z.number().int().min(0).max(100).default(50),
 });
 
 export async function POST(req: Request) {
-  const guard = await requireRole('admin', 'manager');
+  // announce の作成は admin/manager 限定
+  // inbox の作成は staff（モバイル）からも許可
+  const guard = await requireRole('admin', 'manager', 'staff');
   if (!guard.ok) return guard.response;
 
   const json = await req.json();
@@ -70,13 +92,28 @@ export async function POST(req: Request) {
     );
   }
 
+  // モバイルから announce を作ろうとした場合は拒否（管理機能はPC限定）
+  if (guard.auth.source === 'mobile' && parsed.data.kind === 'announce') {
+    return NextResponse.json(
+      { error: 'FORBIDDEN', message: '発信は管理 PC からのみ実行可能です' },
+      { status: 403 },
+    );
+  }
+
   const created = await prisma.notice.create({
     data: {
+      kind: parsed.data.kind,
       date: new Date(parsed.data.date),
       title: parsed.data.title,
       body: parsed.data.body ?? null,
       targetType: parsed.data.targetType,
       targetId: parsed.data.targetId ?? null,
+      category: parsed.data.category ?? null,
+      ackRequired: parsed.data.ackRequired,
+      // 発信者は admin/manager の staff_code、着信は引数優先
+      senderCode:
+        parsed.data.senderCode ??
+        (parsed.data.kind === 'inbox' ? guard.auth.staffCode ?? null : guard.auth.staffCode ?? null),
       priority: parsed.data.priority,
       active: true,
     },

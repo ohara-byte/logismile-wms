@@ -16,6 +16,7 @@ import { DashboardTabBar } from './dashboard-tab-bar';
 import { PlaceholderPane } from './panes/placeholder-pane';
 import { AlertsPane } from './panes/alerts-pane';
 import { ForcePane } from './panes/force-pane';
+import { AnnPane } from './panes/ann-pane';
 
 interface Props {
   badges?: Partial<Record<TabId, number>>;
@@ -43,14 +44,7 @@ function PaneContent({ tab }: { tab: TabId }) {
     case 'force':
       return <ForcePane />;
     case 'ann':
-      return (
-        <PlaceholderPane
-          title="📢 連絡（発信 / 着信）"
-          block="A-06"
-          legacyHref="/notices"
-          legacyLabel="従来の連絡事項画面へ"
-        />
-      );
+      return <AnnPane />;
     case 'carr':
       return (
         <PlaceholderPane title="🚚 運送会社" block="A-07" />
