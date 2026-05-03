@@ -7,16 +7,15 @@
 
 import type { MasterConfig } from '../master-types';
 import type { MasterSubTabId } from '../master-tabs-config';
+import { staffConfig } from './staff-config';
+import { carrierConfig } from './carrier-config';
+import { boxConfig } from './box-config';
 
-const REGISTRY: Partial<Record<MasterSubTabId, MasterConfig<Record<string, unknown>>>> =
-  {};
-
-export function registerMasterConfig<T extends Record<string, unknown>>(
-  id: MasterSubTabId,
-  config: MasterConfig<T>,
-) {
-  REGISTRY[id] = config as unknown as MasterConfig<Record<string, unknown>>;
-}
+const REGISTRY: Partial<Record<MasterSubTabId, MasterConfig<Record<string, unknown>>>> = {
+  staff: staffConfig as unknown as MasterConfig<Record<string, unknown>>,
+  carrier: carrierConfig as unknown as MasterConfig<Record<string, unknown>>,
+  box: boxConfig as unknown as MasterConfig<Record<string, unknown>>,
+};
 
 export function getMasterConfig(
   id: MasterSubTabId,
