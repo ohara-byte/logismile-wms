@@ -21,6 +21,7 @@ import { CarrPane } from './panes/carr-pane';
 import { SearchPane } from './panes/search-pane';
 import { MatchPane } from './panes/match-pane';
 import { MasterPane } from './panes/master/master-pane';
+import { LinkPane } from './panes/link/link-pane';
 
 interface Props {
   badges?: Partial<Record<TabId, number>>;
@@ -65,9 +66,7 @@ function PaneContent({ tab }: { tab: TabId }) {
     case 'master':
       return <MasterPane />;
     case 'link':
-      return (
-        <PlaceholderPane title="🔌 基幹連携（7 サブタブ）" block="A-11" />
-      );
+      return <LinkPane />;
     case 'report':
       return (
         <PlaceholderPane
