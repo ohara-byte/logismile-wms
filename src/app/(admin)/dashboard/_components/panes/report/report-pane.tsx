@@ -23,6 +23,9 @@ import {
 } from './report-period-context';
 import { ReportPeriodToolbar } from './report-period-toolbar';
 import { SummaryPane } from './summary-pane';
+import { GroupPane } from './group-pane';
+import { TablePane } from './table-pane';
+import { InsptimePane } from './insptime-pane';
 
 export function ReportPane() {
   return (
@@ -74,6 +77,12 @@ function renderPane(active: ReportSubTabId) {
   switch (active) {
     case 'summary':
       return <SummaryPane />;
+    case 'group':
+      return <GroupPane />;
+    case 'table':
+      return <TablePane />;
+    case 'insptime':
+      return <InsptimePane />;
     default:
       return (
         <div className="text-center py-8 px-4 text-2xs text-ink-muted">
@@ -81,7 +90,7 @@ function renderPane(active: ReportSubTabId) {
           <h3 className="text-sm font-bold text-ink-strong mb-1">
             {REPORT_SUBTABS.find((t) => t.id === active)?.label}
           </h3>
-          <p className="text-2xs">A-Rep2/3/4 で順次実装予定</p>
+          <p className="text-2xs">A-Rep3/4 で順次実装予定</p>
         </div>
       );
   }
