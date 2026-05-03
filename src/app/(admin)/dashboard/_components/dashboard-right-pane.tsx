@@ -22,6 +22,7 @@ import { SearchPane } from './panes/search-pane';
 import { MatchPane } from './panes/match-pane';
 import { MasterPane } from './panes/master/master-pane';
 import { LinkPane } from './panes/link/link-pane';
+import { ReportPane } from './panes/report/report-pane';
 
 interface Props {
   badges?: Partial<Record<TabId, number>>;
@@ -68,14 +69,7 @@ function PaneContent({ tab }: { tab: TabId }) {
     case 'link':
       return <LinkPane />;
     case 'report':
-      return (
-        <PlaceholderPane
-          title="📊 レポート（11 サブタブ）"
-          block="A-（独立ブロック）"
-          legacyHref="/reports"
-          legacyLabel="従来のレポート画面へ"
-        />
-      );
+      return <ReportPane />;
     case 'match':
       return <MatchPane />;
   }
