@@ -17,6 +17,8 @@ import { NoticesModal } from '@/components/inspection/notices-modal';
 import { NoshiConfirmationModal } from '@/components/inspection/noshi-confirmation-modal';
 import { AccompaniesModal } from '@/components/inspection/accompanies-modal';
 import { BoxSuggestion } from '@/components/inspection/box-suggestion';
+import { ForceOkModal } from '@/components/inspection/force-ok-modal';
+import { useStickyForceOk } from '@/lib/use-sticky-force-ok';
 
 export interface InspectionItem {
   id: number;
@@ -90,6 +92,10 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
   const [showNoshi, setShowNoshi] = useState(false);
   const [showAccompanies, setShowAccompanies] = useState(false);
   const [accompaniesConfirmed, setAccompaniesConfirmed] = useState(false);
+  const [forceTarget, setForceTarget] = useState<InspectionItem | null>(null);
+
+  // Sticky 強制検品モード（A-15）
+  const sticky = useStickyForceOk();
 
   const scanInputRef = useRef<HTMLInputElement>(null);
 
@@ -213,10 +219,39 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
     }
   }
 
+  // 強制OK ボタン押下: Sticky 有効時はモーダルを出さず即実行、無効時は理由選択
   async function onForceOk(item: InspectionItem) {
-    const reason = prompt(`「${item.productName}」を強制OKにする理由を入力してください`);
-    if (!reason || !sessionId) return;
+    if (!sessionId) return;
+    if (sticky.active && sticky.reason) {
+      await applyForceOk(item, sticky.reason);
+      return;
+    }
+    setForceTarget(item);
+  }
+
+  // モーダル確定時: API 呼出 + Sticky 化（任意）
+  async function applyForceOkFromModal(args: {
+    code: string;
+    reason: string;
+    sticky: boolean;
+  }) {
+    if (!forceTarget || !sessionId) {
+      setForceTarget(null);
+      return;
+    }
+    const target = forceTarget;
+    setForceTarget(null);
+    if (args.sticky) {
+      sticky.activate(args.code as never, args.reason);
+    } else {
+      sticky.deactivate();
+    }
+    await applyForceOk(target, args.reason);
+  }
+
+  async function applyForceOk(item: InspectionItem, reason: string) {
     setBusy(true);
+    setErrorMsg(null);
     try {
       const res = await fetch('/api/inspect/force-ok', {
         method: 'POST',
@@ -227,6 +262,7 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
       else setErrorMsg((await res.json()).message ?? '強制OK失敗');
     } finally {
       setBusy(false);
+      scanInputRef.current?.focus();
     }
   }
 
@@ -369,6 +405,30 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
           }}
           onCancel={() => setShowAccompanies(false)}
         />
+      )}
+      <ForceOkModal
+        open={forceTarget !== null}
+        productName={forceTarget?.productName}
+        onConfirm={applyForceOkFromModal}
+        onCancel={() => setForceTarget(null)}
+      />
+
+      {/* Sticky 強制検品中バナー（A-15） */}
+      {sticky.active && (
+        <div className="bg-status-warn text-black px-3 py-1.5 flex items-center justify-between gap-3 z-40 border-b border-amber-700">
+          <span className="text-xs font-bold">
+            ⚠ 強制検品中 ／ 理由コード: <span className="font-mono">{sticky.code}</span>
+            <span className="font-normal ml-2 opacity-80">
+              次以降の強制OK ボタンも自動でこの理由で実行されます
+            </span>
+          </span>
+          <button
+            onClick={sticky.deactivate}
+            className="px-2.5 py-0.5 rounded bg-black/30 hover:bg-black/50 text-xs font-bold border border-black/40"
+          >
+            解除
+          </button>
+        </div>
       )}
 
       {/* 不可視スキャン入力（外付スキャナ前提） */}
