@@ -20,6 +20,10 @@ import {
 } from './link-tabs-config';
 import { LinkStatusBanner } from './link-status-banner';
 import { LogPane } from './log-pane';
+import { UnmapPane } from './unmap-pane';
+import { ReimportPane } from './reimport-pane';
+import { AuxProdPane } from './aux-prod-pane';
+import { AuxSetPane } from './aux-set-pane';
 
 export function LinkPane() {
   const router = useRouter();
@@ -72,30 +76,27 @@ function renderPane(active: LinkSubTabId) {
     case 'log':
       return <LogPane />;
     case 'unmap':
-      return (
-        <PlaceholderPane
-          title="⚠ 未マップ"
-          desc="商品マスタ・顧客マスタに未登録の項目を一覧表示し、補助マスタへの追加を支援します"
-          block="A-11b"
-        />
-      );
+      return <UnmapPane />;
     case 'reimport':
+      return <ReimportPane />;
+    case 'aux-prod':
+      return <AuxProdPane />;
+    case 'aux-set':
+      return <AuxSetPane />;
+    case 'aux-cust':
       return (
         <PlaceholderPane
-          title="🔄 手動再取込"
-          desc="出荷指示 CSV / 商品マスタ CSV / 個別ピッキング№ の再取込"
-          block="A-11b"
+          title="👤 顧客属性補助"
+          desc="個人 / 企業 / 置き配 等の顧客属性。CustomerAuxAttr テーブルが要件確定後に追加予定"
+          block="将来"
         />
       );
-    case 'aux-prod':
-    case 'aux-cust':
     case 'aux-carr':
-    case 'aux-set':
       return (
         <PlaceholderPane
-          title={LINK_SUBTABS.find((t) => t.id === active)?.main ?? ''}
-          desc="補助マスタ。基幹側で持たない属性（外寸／温度帯／配送便コード等）を補完"
-          block="A-11b"
+          title="🚚 配送便マッピング"
+          desc="基幹の便文字列（例: 'ヤマト'）→ WMS の便種コード（YAMATO_NORMAL）への変換テーブル"
+          block="将来"
         />
       );
   }
