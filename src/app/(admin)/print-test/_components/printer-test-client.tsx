@@ -40,8 +40,9 @@ interface PrintLog {
   createdAt: string;
 }
 
-const DEFAULT_INVOICE = 'TEST-00000-001';
-const DEFAULT_PKNO = 'SX99999999999';
+// QRに入る納品書№。QRバージョン1固定でも収まるよう数字10桁（V1+ECC=H 数字17桁内）
+const DEFAULT_INVOICE = '9999999999';
+const DEFAULT_PKNO = '9999999999';
 
 export function PrinterTestClient() {
   const [printers, setPrinters] = useState<Printer[] | null>(null);
