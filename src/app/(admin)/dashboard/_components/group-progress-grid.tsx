@@ -34,9 +34,11 @@ interface Group {
 
 interface Props {
   groups: Group[];
+  /** Sprint G-5: 集約=サマリのみ、全展開=テーブル単位の内訳行も表示 */
+  expandMode?: 'none' | 'all';
 }
 
-export function GroupProgressGrid({ groups }: Props) {
+export function GroupProgressGrid({ groups, expandMode = 'none' }: Props) {
   if (groups.length === 0) {
     return (
       <div className="p-6 text-center text-ink-muted text-xs">
@@ -44,35 +46,96 @@ export function GroupProgressGrid({ groups }: Props) {
       </div>
     );
   }
+  // Sprint Y-13: 1024×768 等の小型モニタでも全カードが視認できるよう
+  //  カラム数を段階的に増やす（小さい解像度では 1 行に 4-5 列、大型で 5-6 列）
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1.5 p-2.5">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-1.5 p-2.5">
       {groups.map((g) => (
-        <GroupCard key={g.groupId} group={g} />
+        <GroupCard key={g.groupId} group={g} expanded={expandMode === 'all'} />
       ))}
     </div>
   );
 }
 
-function GroupCard({ group }: { group: Group }) {
+// Sprint Y-13: グループ固有色（既知 ID は固定。未知の場合は ID ハッシュで色付け）
+const GROUP_COLORS = [
+  '#fb923c', // orange
+  '#facc15', // yellow
+  '#22c55e', // green
+  '#3b82f6', // blue
+  '#ef4444', // red
+  '#a78bfa', // violet
+  '#0e7490', // cyan-deep
+  '#b45309', // amber-deep
+  '#6d28d9', // purple-deep
+  '#ec4899', // pink
+  '#10b981', // emerald
+  '#06b6d4', // cyan
+];
+const KNOWN_GROUP_COLORS: Record<string, string> = {
+  ABL: '#fb923c',
+  AB: '#fb923c',
+  CD: '#facc15',
+  CML: '#22c55e',
+  K: '#3b82f6',
+  I: '#ef4444',
+  O: '#a78bfa',
+  RQ: '#0e7490',
+  S: '#b45309',
+  SAS: '#6d28d9',
+  H: '#ec4899',
+  LINE: '#10b981',
+  SORT: '#06b6d4',
+};
+
+function groupColorFromId(groupId: string): string {
+  const upper = groupId.toUpperCase();
+  if (KNOWN_GROUP_COLORS[upper]) return KNOWN_GROUP_COLORS[upper];
+  // 未知 ID は単純ハッシュで色配列から選ぶ
+  let h = 0;
+  for (let i = 0; i < upper.length; i++) {
+    h = (h * 31 + upper.charCodeAt(i)) & 0xffffffff;
+  }
+  return GROUP_COLORS[Math.abs(h) % GROUP_COLORS.length];
+}
+
+function GroupCard({ group, expanded }: { group: Group; expanded?: boolean }) {
   const isAlert = group.status === 'alert';
   const isDone = group.status === 'done';
+  const isWorking = group.status === 'working';
+
+  // Sprint Y-13: 縦バーはステータス優先（遅延/完了/稼働中）+ 待機時はグループ固有色
+  //   稼働状態 → 異常を最優先で目立たせ、待機時はグループ識別色で並びを把握しやすくする
+  const sideBarColor = isAlert
+    ? '#ef4444' // 遅延=赤
+    : isDone
+      ? '#10b981' // 完了=緑
+      : isWorking
+        ? '#3b82f6' // 稼働中=青
+        : groupColorFromId(group.groupId); // 待機=グループ固有色
+
   return (
     <div
       className={cn(
-        'border rounded p-2 cursor-pointer transition-all hover:-translate-y-0.5',
+        'border rounded p-2 pl-3 cursor-pointer transition-all hover:-translate-y-0.5',
         isAlert
           ? 'border-status-error bg-red-950/40'
           : isDone
             ? 'border-status-ok bg-emerald-950/40'
             : 'border-surface-border bg-surface-base hover:border-accent-amber',
       )}
+      style={{
+        borderLeftWidth: 5,
+        borderLeftColor: sideBarColor,
+        borderLeftStyle: 'solid',
+      }}
     >
-      {/* row1: タイトル + バッジ */}
+      {/* row1: タイトル + バッジ — グループ名は 14px（識別性優先） */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-baseline gap-1 min-w-0">
-          <span className="text-xs font-bold text-ink-strong">{group.groupName}</span>
+          <span className="text-sm font-bold text-ink-strong">{group.groupName}</span>
           {group.tables.length > 0 && (
-            <span className="text-3xs text-ink-muted truncate">
+            <span className="text-3xs text-ink-muted tracking-wide truncate">
               ({group.tables.join('・')})
             </span>
           )}
@@ -123,6 +186,25 @@ function GroupCard({ group }: { group: Group }) {
           {group.assignedStaff > 3 && `+${group.assignedStaff - 3}`}
         </div>
       </div>
+
+      {/* Sprint G-5: 全展開時にテーブル単位の内訳ストリップを表示 */}
+      {expanded && group.tables.length > 0 && (
+        <div className="mt-1.5 pt-1.5 border-t border-surface-border space-y-0.5">
+          {group.tables.map((tbl) => (
+            <div
+              key={tbl}
+              className="flex items-center justify-between text-3xs bg-surface-panel/60 rounded px-1.5 py-0.5"
+            >
+              <span className="font-mono text-ink-subtle">📋 {tbl}</span>
+              <span className="text-ink-muted">
+                {/* 件数はグループ集計のみ提供されているため均等按分の参考値 */}
+                ≒{Math.floor(group.done / group.tables.length)}/
+                {Math.floor(group.plan / group.tables.length)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

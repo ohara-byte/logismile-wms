@@ -27,8 +27,8 @@ export default async function TabletHome() {
         <LogoutButton variant="tablet" />
       </header>
 
-      {/* idle スキャン待機 */}
-      <div className="flex-1 flex flex-col items-center justify-center p-8">
+      {/* idle スキャン待機（モック L1158-1166 .idle-screen 準拠 — relative で右上 QR ボタン基準） */}
+      <div className="flex-1 flex flex-col items-center justify-center p-8 relative">
         <div className="text-center mb-8">
           <div className="relative inline-block">
             <div className="text-9xl">📄</div>
@@ -42,7 +42,7 @@ export default async function TabletHome() {
           外付スキャナで読み取るか、下のフォームに直接入力してください
         </p>
         <div className="w-full max-w-md">
-          <PickingNoScanForm />
+          <PickingNoScanForm currentStaffCode={session?.staffCode} />
         </div>
 
         <div className="mt-12 text-3xs text-ink-muted text-center space-y-0.5">

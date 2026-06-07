@@ -23,10 +23,37 @@ import type {
   ImportContext,
   ImportResult,
   ImportRowError,
+  ImportRowWarning,
   ImportSource,
 } from './types';
 
 const DEFAULT_CARRIER_CODE = 'YMT-N';
+
+/**
+ * CSV 取込のサイズ/行数上限（2026-06-01 バグレビュー C-2）。
+ *   manager 限定の内部機能だが、巨大ファイルでのメモリ枯渇を防ぐガード。
+ *   env で上書き可：THOMAS_CSV_MAX_BYTES / THOMAS_CSV_MAX_ROWS。
+ */
+const MAX_CSV_BYTES = parseInt(process.env.THOMAS_CSV_MAX_BYTES ?? '', 10) || 5 * 1024 * 1024; // 5MB
+const MAX_CSV_ROWS = parseInt(process.env.THOMAS_CSV_MAX_ROWS ?? '', 10) || 20000; // 2万行
+
+/** buffer のバイト数が上限を超えていないか検査（パース前）。 */
+function assertCsvSize(buffer: Buffer): void {
+  if (buffer.byteLength > MAX_CSV_BYTES) {
+    throw new Error(
+      `CSV ファイルが大きすぎます（${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB / 上限 ${(MAX_CSV_BYTES / 1024 / 1024).toFixed(0)}MB）。分割してアップロードしてください。`,
+    );
+  }
+}
+
+/** パース後の行数が上限を超えていないか検査。 */
+function assertCsvRows(rowCount: number): void {
+  if (rowCount > MAX_CSV_ROWS) {
+    throw new Error(
+      `CSV の行数が多すぎます（${rowCount} 行 / 上限 ${MAX_CSV_ROWS} 行）。分割してアップロードしてください。`,
+    );
+  }
+}
 
 export class CsvAdapter implements IntegrationAdapter {
   /** Thomas商品マスタ取込 → products を upsert。 */
@@ -35,7 +62,9 @@ export class CsvAdapter implements IntegrationAdapter {
       throw new Error('CsvAdapter は kind=csv の ImportSource のみ受け付けます');
     }
 
+    assertCsvSize(source.buffer);
     const { rows, headers } = parseCsv<Record<string, string>>(source.buffer);
+    assertCsvRows(rows.length);
     const fileType = detectFileType(headers);
     if (fileType !== 'products') {
       throw new Error(
@@ -44,7 +73,9 @@ export class CsvAdapter implements IntegrationAdapter {
     }
 
     const errors: ImportRowError[] = [];
+    const warnings: ImportRowWarning[] = [];
     let janErrorCount = 0;
+    let janWarnCount = 0;
     let successCount = 0;
 
     // 取込履歴を先に作成（途中失敗でも履歴を残す）
@@ -82,10 +113,22 @@ export class CsvAdapter implements IntegrationAdapter {
       }
 
       // JAN 検証（空欄は許容＝null として保存。形式不正はエラー扱い）
+      // 2026-05-30: 12 桁は警告扱い（取込許可・検品可・後日修正対象）
       let normalizedJan: string | null = null;
       if (janRaw !== '') {
         const result = validateJan(janRaw);
-        if (!result.isValid) {
+        if (result.severity === 'warn') {
+          // 12 桁 JAN など。JAN は格納し、警告として記録
+          normalizedJan = result.normalized!;
+          janWarnCount++;
+          warnings.push({
+            rowIndex: i + 1,
+            productCode: code,
+            reason: 'jan_12_digit',
+            message: result.message ?? 'JAN 警告（後日修正対象）',
+          });
+        } else if (!result.isValid) {
+          // エラー扱い：JAN は null で保存
           janErrorCount++;
           errors.push({
             rowIndex: i + 1,
@@ -113,6 +156,7 @@ export class CsvAdapter implements IntegrationAdapter {
             name,
             jan: normalizedJan,
             updatedAt: new Date(),
+            // Sprint Y-13: 既存商品の productType は変更しない（手動編集を尊重）
           },
           create: {
             code,
@@ -120,6 +164,9 @@ export class CsvAdapter implements IntegrationAdapter {
             jan: normalizedJan,
             cat: inferCategory(code),
             active: true,
+            // Sprint Y-13: 大江ノ郷の基本運用は通過型のため明示的に指定
+            //   （DB 既定値が変わっていない環境でも確実に pass_through で作る）
+            productType: 'pass_through',
           },
         });
         successCount++;
@@ -149,6 +196,19 @@ export class CsvAdapter implements IntegrationAdapter {
       }
     }
 
+    // 2026-05-30: JAN 警告（12 桁等）もアラートとして登録（後日修正対象）
+    for (const w of warnings) {
+      await prisma.alert.create({
+        data: {
+          type: 'jan_error',
+          severity: 'warn',
+          title: `JAN 警告（要修正）: ${w.productCode ?? '(unknown)'}`,
+          body: w.message,
+          refCode: w.productCode,
+        },
+      });
+    }
+
     const updated = await prisma.thomasImport.update({
       where: { id: importLog.id },
       data: {
@@ -167,10 +227,12 @@ export class CsvAdapter implements IntegrationAdapter {
       successCount,
       errorCount: errors.length,
       janErrorCount,
+      janWarnCount,
       duplicatePkNoCount: 0,
       unmapCount: 0,
       unmappedCodes: [],
       errors,
+      warnings,
     };
   }
 
@@ -180,7 +242,9 @@ export class CsvAdapter implements IntegrationAdapter {
       throw new Error('CsvAdapter は kind=csv の ImportSource のみ受け付けます');
     }
 
+    assertCsvSize(source.buffer);
     const { rows, headers } = parseCsv<Record<string, string>>(source.buffer);
+    assertCsvRows(rows.length);
     const fileType = detectFileType(headers);
     if (fileType !== 'orders') {
       throw new Error(
@@ -198,6 +262,34 @@ export class CsvAdapter implements IntegrationAdapter {
       },
     });
 
+    // 2026-06-02: 便種名 → carrier_code の対応を DB マスタ（carrier_aliases）から取得。
+    //   DB に無い便種は従来のハードコード表（CARRIER_NAME_TO_CODE）→ DEFAULT の順でフォールバック。
+    const aliasRows = await prisma.carrierAlias.findMany({
+      where: { active: true },
+      select: { aliasName: true, carrierCode: true },
+    });
+    const carrierAliasMap = new Map<string, string>(
+      aliasRows.map((a) => [a.aliasName, a.carrierCode]),
+    );
+    const resolveCarrierCode = (carrierName: string): string =>
+      carrierAliasMap.get(carrierName) ??
+      CARRIER_NAME_TO_CODE[carrierName] ??
+      DEFAULT_CARRIER_CODE;
+
+    // 2026-06-02: QR印刷 強制マスタ（完全一致）。QRフラグ OFF でも noshiName/noshiPerson が
+    //   登録テキストと完全一致したら QR ON で取り込む（例『特殊包装』）。
+    const qrForceRows = await prisma.qrForceKeyword.findMany({
+      where: { active: true },
+      select: { matchText: true },
+    });
+    const qrForceSet = new Set(qrForceRows.map((r) => r.matchText));
+    // 2026-06-03 現場要望: 照合対象は熨斗名称のみ（熨斗氏名は対象外）。
+    const shouldForceQr = (noshiName?: string): boolean => {
+      if (qrForceSet.size === 0) return false;
+      const n = (noshiName ?? '').trim();
+      return !!n && qrForceSet.has(n);
+    };
+
     const errors: ImportRowError[] = [];
     const unmappedCodesSet = new Set<string>();
     let duplicatePkNoCount = 0;
@@ -209,6 +301,7 @@ export class CsvAdapter implements IntegrationAdapter {
       carrierCode: string;
       qrPrintFlag: boolean;
       noshiName?: string;
+      noshiPerson?: string;
       destZip?: string;
       destAddr?: string;
       destName?: string;
@@ -250,7 +343,7 @@ export class CsvAdapter implements IntegrationAdapter {
       let group = groups.get(pkNo);
       if (!group) {
         const carrierName = (row[O.CARRIER] ?? '').trim();
-        const carrierCode = CARRIER_NAME_TO_CODE[carrierName] ?? DEFAULT_CARRIER_CODE;
+        const carrierCode = resolveCarrierCode(carrierName);
         const shipDateRaw = (row[O.SHIP_DATE] ?? '').trim();
         const shipDate = parseShipDate(shipDateRaw);
         if (!shipDate) {
@@ -262,14 +355,19 @@ export class CsvAdapter implements IntegrationAdapter {
           });
           continue;
         }
-        const qrPrintFlag = parseQrPrintFlag(row[O.QR_PRINT_FLAG]);
+        const noshiName = row[O.NOSHI_NAME]?.trim() || undefined;
+        const noshiPerson = row[O.NOSHI_PERSON]?.trim() || undefined;
+        // 基幹「熨斗フラグ」を基準に、QR強制マスタ一致時は ON へ昇格。
+        const qrPrintFlag =
+          parseQrPrintFlag(row[O.QR_PRINT_FLAG]) || shouldForceQr(noshiName);
         group = {
           header: {
             pkNo,
             shipDate,
             carrierCode,
             qrPrintFlag,
-            noshiName: row[O.NOSHI_NAME]?.trim() || undefined,
+            noshiName,
+            noshiPerson,
             destZip: row[O.DEST_ZIP]?.trim() || undefined,
             destAddr: row[O.DEST_ADDR]?.trim() || undefined,
             destName: row[O.DEST_NAME]?.trim() || undefined,
@@ -359,6 +457,7 @@ export class CsvAdapter implements IntegrationAdapter {
             status: 'pending',
             qrPrintFlag: group.header.qrPrintFlag,
             noshiName: group.header.noshiName,
+            noshiPerson: group.header.noshiPerson,
             destZip: group.header.destZip,
             destAddr: group.header.destAddr,
             destName: group.header.destName,

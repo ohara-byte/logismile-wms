@@ -71,15 +71,15 @@ export function CompletedWarningModal({
         if (e.target === e.currentTarget && !busy) onCancel();
       }}
     >
-      <div className="bg-surface-panel border border-status-ok rounded-2xl shadow-modal max-w-lg w-full p-5">
-        <h2 className="text-lg font-bold text-status-ok mb-1">✓ 検品済みの伝票です</h2>
+      <div className="bg-surface-panel border-2 border-status-info rounded-2xl shadow-modal max-w-lg w-full p-5">
+        <h2 className="text-lg font-bold text-status-info mb-1">✓ 検品済みです</h2>
         <p className="text-2xs text-ink-subtle mb-3 leading-snug">
           この伝票は既に検品・梱包が完了しています。再度処理する場合は
           <b className="text-status-warn">「検品戻し」</b>
           を押してください（操作はログに記録されます）。
         </p>
 
-        <div className="bg-surface-base border-l-4 border-status-ok rounded p-3 mb-4">
+        <div className="bg-status-info-bg border-l-4 border-status-info rounded p-3 mb-4">
           <Field
             k="ピッキングNo"
             v={<span className="font-mono text-accent-amber">{order.pkNo}</span>}
@@ -93,7 +93,7 @@ export function CompletedWarningModal({
             k="完了時刻"
             v={
               order.completedAt ? (
-                <span className="text-status-ok">
+                <span className="text-status-info">
                   {new Date(order.completedAt).toLocaleString('ja-JP')}
                 </span>
               ) : (
@@ -116,7 +116,7 @@ export function CompletedWarningModal({
           <button
             onClick={onConfirm}
             disabled={busy}
-            className="px-3 py-2 rounded bg-status-ok text-white text-xs font-bold flex items-center gap-1 hover:bg-emerald-600 disabled:opacity-50"
+            className="px-3 py-2 rounded bg-status-info text-white text-xs font-bold flex items-center gap-1 hover:brightness-110 disabled:opacity-50"
           >
             <span>✓</span> 確認
           </button>

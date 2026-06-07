@@ -22,6 +22,7 @@ import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { parseTableLetter } from '@/lib/pk-no';
 
 const SEARCH_FIELDS = [
   'pk_no',
@@ -322,7 +323,8 @@ function mapFlag(
   }
 }
 
+// テーブル記号（先頭 `S` 固定プレフィックスをスキップした 2 文字目 A〜Z）
+// 旧仕様（先頭 2-4 文字を前方一致）から `S` + アルファベット 1 文字 + 数字 形式へ修正
 function parsePkPrefix(pkNo: string): string | null {
-  const m = pkNo.match(/^([A-Z]{2,4})/);
-  return m ? m[1] : null;
+  return parseTableLetter(pkNo);
 }

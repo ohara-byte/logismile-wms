@@ -36,7 +36,7 @@ export default async function HandyHome() {
           BT-A500 でバーコードをスキャン
         </p>
         <div className="w-full max-w-xs">
-          <PickingNoScanForm />
+          <PickingNoScanForm currentStaffCode={session?.staffCode} />
         </div>
 
         <div className="mt-8 text-3xs text-ink-muted text-center">

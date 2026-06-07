@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { HeldResumeModal } from '@/components/inspection/held-resume-modal';
 import { CompletedWarningModal } from '@/components/inspection/completed-warning-modal';
+import { CancelWarningModal } from '@/components/inspection/cancel-warning-modal';
+import { TakeoverConfirmModal } from '@/components/inspection/takeover-confirm-modal';
 import { ReprintModal } from '@/components/inspection/reprint-modal';
 
 interface ScannedOrder {
@@ -12,20 +14,32 @@ interface ScannedOrder {
   invoiceNo: string | null;
   destName: string | null;
   holdReason: string | null;
+  deleted?: boolean;
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+  deleteReason?: string | null;
   items: Array<{ qty: number; scannedQty: number; forceOk: boolean }>;
   inspSession: {
     completedAt: string | null;
-    staff: { name: string } | null;
+    staffCode?: string | null;
+    staff: { code?: string; name: string } | null;
   } | null;
 }
 
-export function PickingNoScanForm() {
+interface Props {
+  currentStaffCode?: string;
+}
+
+export function PickingNoScanForm({ currentStaffCode }: Props = {}) {
   const router = useRouter();
   const [pkNo, setPkNo] = useState('');
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [heldOrder, setHeldOrder] = useState<ScannedOrder | null>(null);
   const [completedOrder, setCompletedOrder] = useState<ScannedOrder | null>(null);
+  const [cancelOrder, setCancelOrder] = useState<ScannedOrder | null>(null);
+  /** 2026-05-31: 別担当者が検品中の伝票を引き継ぐ確認モーダル */
+  const [takeoverOrder, setTakeoverOrder] = useState<ScannedOrder | null>(null);
   const [reprintOpen, setReprintOpen] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
@@ -48,6 +62,11 @@ export function PickingNoScanForm() {
       const order: ScannedOrder = j.data;
 
       // 状態によって挙動を切替（モック準拠 タブレット v0.18 L2694, L2779）
+      // 2026-05-22: キャンセル伝票（論理削除済）は赤背景モーダルで前面表示
+      if (order.deleted) {
+        setCancelOrder(order);
+        return;
+      }
       if (order.status === 'held') {
         setHeldOrder(order);
         return;
@@ -56,9 +75,49 @@ export function PickingNoScanForm() {
         setCompletedOrder(order);
         return;
       }
+      // 2026-05-31 現場要望: 別担当者が検品中の伝票は「引き継ぎ確認」モーダルを表示
+      const sessionStaffCode = order.inspSession?.staffCode ?? order.inspSession?.staff?.code;
+      if (
+        order.status === 'inspecting' &&
+        sessionStaffCode &&
+        currentStaffCode &&
+        sessionStaffCode !== currentStaffCode
+      ) {
+        setTakeoverOrder(order);
+        return;
+      }
       router.push(`/tablet/inspect/${encodeURIComponent(order.pkNo)}`);
     } catch (e) {
       setErrorMsg(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * 2026-05-31 現場要望: 別担当者の検品セッションを引き継ぐ
+   * /api/inspect/start に takeover:true を送ってサーバ側でセッション所有者を更新。
+   * 成功したら通常の検品画面へ遷移（mode=resume で復元）。
+   */
+  async function executeTakeover() {
+    if (!takeoverOrder) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/inspect/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pkNo: takeoverOrder.pkNo, takeover: true }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        alert(j?.message ?? `引き継ぎに失敗しました: HTTP ${res.status}`);
+        return;
+      }
+      const target = takeoverOrder.pkNo;
+      setTakeoverOrder(null);
+      router.push(`/tablet/inspect/${encodeURIComponent(target)}?mode=resume`);
+    } catch (e) {
+      alert(`引き継ぎエラー: ${String(e)}`);
     } finally {
       setBusy(false);
     }
@@ -97,6 +156,34 @@ export function PickingNoScanForm() {
 
   return (
     <>
+      {/* V-2 修正: QR再発行ボタンを idle 領域の絶対右上に配置（親が position:relative） */}
+      <button
+        type="button"
+        onClick={() => setReprintOpen(true)}
+        disabled={busy}
+        title="QR ラベル再発行"
+        style={{
+          position: 'absolute',
+          top: 16,
+          right: 16,
+          background: '#db2777',
+          color: '#fff',
+          padding: '10px 16px',
+          borderRadius: 8,
+          fontSize: 13,
+          fontWeight: 'bold',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          zIndex: 5,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+        }}
+        className="hover:brightness-110 disabled:opacity-50"
+      >
+        <span style={{ fontSize: 18 }}>🖨</span>
+        QRラベル再発行
+      </button>
+
       <form onSubmit={onSubmit} className="space-y-3">
         <input
           type="text"
@@ -111,24 +198,14 @@ export function PickingNoScanForm() {
             {errorMsg}
           </div>
         )}
-        <div className="grid grid-cols-[1fr_auto] gap-2">
-          <button
-            type="submit"
-            disabled={busy || !pkNo.trim()}
-            className="bg-blue-700 hover:bg-blue-600 text-white rounded-lg py-3 text-base font-bold border border-blue-500 disabled:bg-surface-raised disabled:text-ink-muted disabled:border-surface-border"
-          >
-            {busy ? '読み込み中…' : '検品開始'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setReprintOpen(true)}
-            disabled={busy}
-            className="bg-pink-800 hover:bg-pink-700 text-white rounded-lg px-4 py-3 text-xs font-bold border border-pink-500 disabled:opacity-50 whitespace-nowrap"
-            title="QR ラベル再発行"
-          >
-            🖨 再発行
-          </button>
-        </div>
+        {/* スキャン即進行が本番想定。テスト用のフォールバックボタンも残す */}
+        <button
+          type="submit"
+          disabled={busy || !pkNo.trim()}
+          className="w-full bg-blue-700 hover:bg-blue-600 text-white rounded-lg py-3 text-base font-bold border border-blue-500 disabled:bg-surface-raised disabled:text-ink-muted disabled:border-surface-border"
+        >
+          {busy ? '読み込み中…' : '検品開始（バーコードスキャンで自動）'}
+        </button>
       </form>
 
       {/* 保留中伝票 復帰モーダル */}
@@ -179,6 +256,51 @@ export function PickingNoScanForm() {
         onConfirm={() => setCompletedOrder(null)}
         onReopen={reopenCompleted}
         onCancel={() => setCompletedOrder(null)}
+      />
+
+      {/* キャンセル伝票 警告モーダル（赤背景） */}
+      <CancelWarningModal
+        open={cancelOrder !== null}
+        order={
+          cancelOrder
+            ? {
+                pkNo: cancelOrder.pkNo,
+                invoiceNo: cancelOrder.invoiceNo,
+                destName: cancelOrder.destName,
+                deletedAt: cancelOrder.deletedAt ?? null,
+                deletedBy: cancelOrder.deletedBy ?? null,
+                deleteReason: cancelOrder.deleteReason ?? null,
+              }
+            : null
+        }
+        onClose={() => {
+          setCancelOrder(null);
+          setPkNo('');
+        }}
+      />
+
+      {/* 引き継ぎ確認モーダル（別担当者が検品中の場合） */}
+      <TakeoverConfirmModal
+        open={takeoverOrder !== null}
+        order={
+          takeoverOrder
+            ? {
+                pkNo: takeoverOrder.pkNo,
+                invoiceNo: takeoverOrder.invoiceNo,
+                destName: takeoverOrder.destName,
+                currentOwnerName:
+                  takeoverOrder.inspSession?.staff?.name ?? null,
+                currentOwnerCode:
+                  takeoverOrder.inspSession?.staffCode ??
+                  takeoverOrder.inspSession?.staff?.code ??
+                  null,
+                ...computeRatio(takeoverOrder),
+                scannedRatio: computeRatio(takeoverOrder).ratio,
+              }
+            : null
+        }
+        onTakeover={executeTakeover}
+        onCancel={() => setTakeoverOrder(null)}
       />
 
       {/* QR 再発行モーダル */}

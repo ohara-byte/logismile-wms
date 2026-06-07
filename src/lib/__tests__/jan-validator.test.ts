@@ -26,10 +26,27 @@ test('validateJan: 数字以外は non_digit', () => {
   assert.equal(validateJan('490ABC4567890').code, 'non_digit');
 });
 
-test('validateJan: 桁数不正は invalid_length', () => {
+test('validateJan: 桁数不正は invalid_length（ただし 12 桁は warn 扱い）', () => {
   assert.equal(validateJan('123').code, 'invalid_length');
+  assert.equal(validateJan('1234567').code, 'invalid_length');
   assert.equal(validateJan('12345678901').code, 'invalid_length');
   assert.equal(validateJan('12345678901234').code, 'invalid_length');
+});
+
+test('validateJan: 12 桁（UPC-A 互換）は warn 扱いで取込許可', () => {
+  // 12 桁・CD OK の例: 036000291452（実在する UPC-A 例）
+  const r1 = validateJan('036000291452');
+  assert.equal(r1.code, 'warn_12_digit');
+  assert.equal(r1.severity, 'warn');
+  assert.equal(r1.isValid, true); // 取込許可
+  assert.equal(r1.normalized, '036000291452'); // JAN は格納される
+
+  // 12 桁・CD NG でも warn（取込許可）
+  const r2 = validateJan('036000291459');
+  assert.equal(r2.code, 'warn_12_digit');
+  assert.equal(r2.severity, 'warn');
+  assert.equal(r2.isValid, true);
+  assert.equal(r2.normalized, '036000291459');
 });
 
 test('validateJan: チェックデジット不正は invalid_check_digit', () => {

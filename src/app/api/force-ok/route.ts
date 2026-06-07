@@ -20,7 +20,7 @@ import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
-import { parseReasonCode } from '@/lib/force-ok';
+import { parseReasonCode, EXCLUDED_REASON_PREFIXES } from '@/lib/force-ok';
 
 export async function GET(req: Request) {
   const guard = await requireRole('admin', 'manager');
@@ -58,6 +58,12 @@ export async function GET(req: Request) {
     product: { select: { jan: true, name: true } },
   });
 
+  // Sprint Y-4: F4 一括検品 等の現場運用上の一括処理は承認キューから除外
+  const excludeReasonAnd: Prisma.ShippingOrderItemWhereInput[] =
+    EXCLUDED_REASON_PREFIXES.map((p) => ({
+      forceReason: { not: { startsWith: p } },
+    }));
+
   const pending =
     status === 'pending' || status === 'all'
       ? await prisma.shippingOrderItem.findMany({
@@ -65,10 +71,11 @@ export async function GET(req: Request) {
             forceOk: true,
             forceApprovalStatus: null,
             OR: [{ forceReasonCode: null }, { forceReasonCode: { not: 'R01' } }],
+            AND: excludeReasonAnd,
             order: { deletedAt: null },
           },
           orderBy: { id: 'desc' },
-          take: 200,
+          take: 100000, // 2026-06-04: 上限実質撤廃（強制OK承認待ちの取りこぼし防止）
           include,
         })
       : [];
@@ -82,7 +89,7 @@ export async function GET(req: Request) {
             order: { deletedAt: null },
           },
           orderBy: { forceApprovedAt: 'desc' },
-          take: 200,
+          take: 100000, // 2026-06-04: 上限実質撤廃
           include,
         })
       : [];

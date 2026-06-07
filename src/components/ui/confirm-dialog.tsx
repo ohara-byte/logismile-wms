@@ -91,7 +91,7 @@ export function ConfirmDialog({
         if (e.target === e.currentTarget && !busy) onCancel();
       }}
     >
-      <div className="bg-surface-panel border border-surface-border rounded-xl shadow-modal max-w-md w-full p-5">
+      <div className="bg-surface-panel border-2 border-accent-amber rounded-[10px] shadow-modal max-w-md w-full p-5">
         <h2 className="text-base font-bold text-ink-strong mb-2">{title}</h2>
         {body && <div className="text-2xs text-ink mb-3">{body}</div>}
         {promptLabel && (

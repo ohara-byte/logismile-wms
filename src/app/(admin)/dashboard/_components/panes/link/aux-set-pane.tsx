@@ -1,13 +1,26 @@
 'use client';
 
 /**
- * 🎁 構成品/同梱物 サブタブ（A-11b）
+ * 🎁 親商品（構成＋同梱品） サブタブ（A-11b / Sprint Y-2 で名称変更）
  *
- * SetComp（親）を CRUD。子（SetCompChild）は将来オプション。
+ * SetComp（親）+ SetCompChild（子）を CRUD。
+ * 親商品＝受注単位（JANなし）の集合。子商品＝WMS連携単位（JAN付き構成商品）。
+ *
+ * 表示カラム:
+ *   - 親コード／親商品名／種別／推奨箱
+ *   - 子商品コード（カンマ区切り）／子商品名／子点数／標準時間（合計秒）
  */
 
 import { MasterTable } from '../master/master-table';
 import type { MasterConfig } from '../master/master-types';
+
+interface SetCompChildSummary {
+  id: number;
+  childCode: string;
+  childName: string | null;
+  qty: number;
+  stdSec: number | null;
+}
 
 interface SetComp extends Record<string, unknown> {
   id: string;
@@ -18,18 +31,21 @@ interface SetComp extends Record<string, unknown> {
   fixedBoxName: string | null;
   packingNote: string | null;
   childCount: number;
+  children: SetCompChildSummary[];
+  childrenSummary: string;
+  totalStdSec: number;
   note: string | null;
   updatedAt: string;
 }
 
 const config: MasterConfig<SetComp> = {
   name: 'aux-set',
-  title: '🎁 構成品 / 同梱物',
+  title: '🎁 親商品（構成＋同梱品）',
   icon: '🎁',
   endpoint: '/api/master/set-comps',
   primaryKey: 'id',
-  searchPlaceholder: '🔍 ID／親商品コード／親商品名で検索',
-  hint: 'セット商品の構成品定義。固定箱を指定すると検品時に自動推奨される',
+  searchPlaceholder: '🔍 ID／親商品コード／親商品名／子商品コードで検索',
+  hint: '親商品＝受注単位の集合。子商品（構成商品）の組合せから親商品を逆算するため、子商品の情報を併せて表示します',
   filterField: 'type',
   filterPlaceholder: '─ 種別 ─',
   filterOptions: [
@@ -39,13 +55,12 @@ const config: MasterConfig<SetComp> = {
     { value: 'other', label: 'その他' },
   ],
   columns: [
-    { key: 'id', label: 'ID', mono: true, width: 130 },
     { key: 'parentCode', label: '親コード', mono: true, width: 110 },
-    { key: 'parentName', label: '親商品名', truncate: true },
+    { key: 'parentName', label: '親商品名', truncate: true, width: 200 },
     {
       key: 'type',
       label: '種別',
-      width: 90,
+      width: 80,
       render: (r) =>
         r.type === 'set'
           ? 'セット'
@@ -58,15 +73,56 @@ const config: MasterConfig<SetComp> = {
     {
       key: 'fixedBoxCode',
       label: '推奨箱',
-      width: 130,
+      width: 110,
       truncate: true,
       render: (r) =>
         r.fixedBoxCode
           ? `${r.fixedBoxCode}${r.fixedBoxName ? ` (${r.fixedBoxName})` : ''}`
           : '—',
     },
-    { key: 'childCount', label: '子点数', align: 'right', mono: true, width: 70 },
-    { key: 'updatedAt', label: '更新', mono: true, width: 100 },
+    // 子商品（構成商品）情報
+    {
+      key: 'childCodes',
+      label: '子商品コード',
+      mono: true,
+      truncate: true,
+      width: 160,
+      render: (r) =>
+        Array.isArray(r.children) && r.children.length > 0
+          ? r.children
+              .map((c) => `${c.childCode}${c.qty > 1 ? `×${c.qty}` : ''}`)
+              .join(', ')
+          : '—',
+    },
+    {
+      key: 'childNames',
+      label: '子商品名',
+      truncate: true,
+      width: 180,
+      render: (r) =>
+        Array.isArray(r.children) && r.children.length > 0
+          ? r.children.map((c) => c.childName ?? '—').join(' / ')
+          : '—',
+    },
+    {
+      key: 'childCount',
+      label: '点数',
+      align: 'right',
+      mono: true,
+      width: 60,
+    },
+    {
+      key: 'totalStdSec',
+      label: '標準時間',
+      align: 'right',
+      mono: true,
+      width: 90,
+      render: (r) =>
+        typeof r.totalStdSec === 'number' && r.totalStdSec > 0
+          ? `${r.totalStdSec}s`
+          : '—',
+    },
+    { key: 'updatedAt', label: '更新', mono: true, width: 90 },
   ],
   formFields: [
     { name: 'id', label: 'ID', type: 'text', required: true, readonlyOnEdit: true, helpText: 'ユニーク (例: SET-OE-2024)' },

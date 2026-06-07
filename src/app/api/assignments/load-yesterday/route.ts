@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { parseDateAsUTC, addDaysUTC, formatDateYmd } from '@/lib/date-utils';
 
 const Body = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -28,9 +29,15 @@ export async function POST(req: Request) {
       { status: 422 },
     );
   }
-  const target = new Date(parsed.data.date);
-  const yesterday = new Date(target);
-  yesterday.setDate(yesterday.getDate() - 1);
+  // 2026-05-20: JST 環境での 1 日ずれを避けるため UTC 真夜中で扱う
+  const target = parseDateAsUTC(parsed.data.date);
+  if (!target) {
+    return NextResponse.json(
+      { error: 'VALIDATION', message: `不正な日付: ${parsed.data.date}` },
+      { status: 422 },
+    );
+  }
+  const yesterday = addDaysUTC(target, -1);
 
   const previous = await prisma.memberAssignment.findMany({
     where: { date: yesterday },
@@ -53,7 +60,7 @@ export async function POST(req: Request) {
   ]);
 
   return NextResponse.json({
-    data: { copied: previous.length, from: yesterday.toISOString().slice(0, 10) },
+    data: { copied: previous.length, from: formatDateYmd(yesterday) },
     message: 'OK',
   });
 }

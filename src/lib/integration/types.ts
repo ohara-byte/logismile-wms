@@ -24,10 +24,14 @@ export interface ImportResult {
   successCount: number;
   errorCount: number;
   janErrorCount: number;
+  /** 2026-05-30: 警告として取込まれた件数（取込成功・要修正） */
+  janWarnCount?: number;
   duplicatePkNoCount: number;
   unmapCount: number;
   unmappedCodes: string[];
   errors: ImportRowError[];
+  /** 2026-05-30: 警告（取込成功・後日修正対象）。例: 12 桁 JAN */
+  warnings?: ImportRowWarning[];
 }
 
 /** 行単位の取込エラー。 */
@@ -45,6 +49,18 @@ export interface ImportRowError {
     | 'carrier_not_found'
     | 'parse_error'
     | 'validation_error';
+  message: string;
+}
+
+/**
+ * 行単位の取込「警告」（2026-05-30 追加）。
+ * エラーと違い、データは登録され検品も可能だが後日修正対象。
+ */
+export interface ImportRowWarning {
+  rowIndex: number;
+  pkNo?: string;
+  productCode?: string;
+  reason: 'jan_12_digit';
   message: string;
 }
 

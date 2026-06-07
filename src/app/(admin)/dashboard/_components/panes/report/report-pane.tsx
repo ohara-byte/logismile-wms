@@ -33,6 +33,7 @@ import { ProductPane } from './product-pane';
 import { HourlyPane } from './hourly-pane';
 import { ErrorPane } from './error-pane';
 import { AuxPane } from './aux-pane';
+import { ReportErrorBoundary } from './report-error-boundary';
 
 export function ReportPane() {
   return (
@@ -75,7 +76,9 @@ function ReportPaneInner() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-auto">{renderPane(active)}</div>
+      <div className="flex-1 overflow-auto">
+        <ReportErrorBoundary resetKey={active}>{renderPane(active)}</ReportErrorBoundary>
+      </div>
     </div>
   );
 }

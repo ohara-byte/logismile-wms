@@ -26,7 +26,17 @@ import { isLocked, recordFailure, clearFailures } from '@/lib/auth/rate-limit';
 const Body = z.object({
   emp_code: z.string().min(1, 'emp_code は必須です'),
   device_code: z.string().min(1, 'device_code は必須です'),
+  // Sprint Y-9: 端末が他社員に占有中のとき、stale なら強制ログイン許可
+  force: z.boolean().optional(),
 });
+
+/** Sprint Y-9: タイムアウト超過判定。lastSeen から SESSION_TIMEOUT_MIN 経過で stale */
+const SESSION_TIMEOUT_MIN = 30;
+function isStale(lastSeen: Date | null): boolean {
+  if (!lastSeen) return true;
+  const idle = Date.now() - lastSeen.getTime();
+  return idle > SESSION_TIMEOUT_MIN * 60 * 1000;
+}
 
 export async function POST(req: NextRequest) {
   // 1. 社内 IP 制限
@@ -81,7 +91,15 @@ export async function POST(req: NextRequest) {
 
     const device = await prisma.device.findUnique({
       where: { code: device_code },
-      select: { code: true, type: true, name: true, active: true },
+      select: {
+        code: true,
+        type: true,
+        name: true,
+        active: true,
+        activeStaffCode: true,
+        activeSince: true,
+        lastSeen: true,
+      },
     });
     if (!device || !device.active) {
       recordFailure(empKey);
@@ -93,10 +111,58 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Sprint Y-9: 重複ログイン防止
+    //   - 同一社員が同じ端末で再ログイン → 許可（更新のみ）
+    //   - 別社員が占有中 → 拒否。ただし stale（タイムアウト超過）かつ force=true なら奪取
+    if (
+      device.activeStaffCode &&
+      device.activeStaffCode !== staff.code &&
+      !isStale(device.lastSeen)
+    ) {
+      // この場合はレート制限カウントしない（正規認証は成功している）
+      return NextResponse.json(
+        {
+          error: 'DEVICE_IN_USE',
+          message: `この端末は他の社員が使用中です。本人にログアウトしてもらってください。`,
+          inUseBy: device.activeStaffCode,
+          activeSince: device.activeSince?.toISOString() ?? null,
+        },
+        { status: 409 },
+      );
+    }
+    if (
+      device.activeStaffCode &&
+      device.activeStaffCode !== staff.code &&
+      isStale(device.lastSeen) &&
+      !parsed.data.force
+    ) {
+      return NextResponse.json(
+        {
+          error: 'DEVICE_STALE',
+          message: `${SESSION_TIMEOUT_MIN} 分以上未操作の他社員セッションがあります。強制ログインしてよろしいですか？`,
+          inUseBy: device.activeStaffCode,
+          activeSince: device.activeSince?.toISOString() ?? null,
+          canForce: true,
+        },
+        { status: 409 },
+      );
+    }
+
     // 既定プリンター（紐付けがあれば返す。なくてもログインは成功）
     const printerMap = await prisma.devicePrinterMap.findUnique({
       where: { deviceCode: device.code },
       include: { printer: { select: { code: true, ipAddress: true, port: true, model: true } } },
+    });
+
+    // 端末をロック（占有開始 / 既存ロック上書き）
+    const now = new Date();
+    await prisma.device.update({
+      where: { code: device.code },
+      data: {
+        activeStaffCode: staff.code,
+        activeSince: now,
+        lastSeen: now,
+      },
     });
 
     await setEmployeeSession({

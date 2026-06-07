@@ -6,7 +6,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireRole } from '@/lib/auth/permissions';
+import { requireRole, requirePermission } from '@/lib/auth/permissions';
 import { maskError } from '@/lib/api-errors';
 
 const Body = z.object({
@@ -22,14 +22,22 @@ const Body = z.object({
   special: z.boolean().default(false),
   noshi: z.boolean().default(false),
   active: z.boolean().default(true),
+  // Sprint Z-1: 在庫引当用
+  // Sprint Y-13: 既定を pass_through に変更（大江ノ郷の基本運用）
+  productType: z
+    .enum(['warehouse', 'pass_through', 'made_to_order'])
+    .default('pass_through'),
+  safetyStock: z.number().int().min(0).default(0),
+  reorderPoint: z.number().int().min(0).nullable().optional(),
 });
 
 export async function GET() {
-  const guard = await requireRole('admin', 'manager');
+  // Sprint Y-15: lead もマスタ閲覧可
+  const guard = await requirePermission('master_view');
   if (!guard.ok) return guard.response;
   const items = await prisma.product.findMany({
     orderBy: [{ active: 'desc' }, { code: 'asc' }],
-    take: 1000,
+    take: 100000, // 2026-06-04: 上限実質撤廃（商品マスタ全件表示）
   });
   return NextResponse.json({ data: { items }, message: 'OK' });
 }

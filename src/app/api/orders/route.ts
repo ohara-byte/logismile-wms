@@ -8,6 +8,7 @@
  *  - q: PkNo / 配送先 / 納品書№ 部分一致
  *  - carrier: 運送会社コード
  *  - includeDeleted: 'true' で論理削除も含める
+ *  - excludeHeld: 'true' で status='held' を結果から除外する（既定は含める）
  *  - page / limit
  */
 
@@ -26,6 +27,7 @@ export async function GET(req: Request) {
   const q = searchParams.get('q')?.trim();
   const carrier = searchParams.get('carrier');
   const includeDeleted = searchParams.get('includeDeleted') === 'true';
+  const excludeHeld = searchParams.get('excludeHeld') === 'true';
   const page = Math.max(parseInt(searchParams.get('page') ?? '1', 10) || 1, 1);
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '50', 10) || 50, 200);
 
@@ -38,7 +40,12 @@ export async function GET(req: Request) {
           },
         }
       : {}),
-    ...(status ? { status } : {}),
+    // status の明示指定が優先。excludeHeld は status 未指定時のみ作用させる
+    ...(status
+      ? { status }
+      : excludeHeld
+        ? { status: { not: 'held' } }
+        : {}),
     ...(carrier ? { carrierCode: carrier } : {}),
     ...(includeDeleted ? {} : { deletedAt: null }),
     ...(q
@@ -61,7 +68,11 @@ export async function GET(req: Request) {
       take: limit,
       include: {
         carrier: { select: { code: true, name: true, short: true, cool: true } },
-        items: { select: { qty: true, scannedQty: true, forceOk: true } },
+        items: { select: { productCode: true, qty: true, scannedQty: true, forceOk: true } },
+        // Sprint Z-1: 引当行を含めて allocStatus を計算
+        allocations: {
+          select: { productCode: true, qty: true, status: true },
+        },
       },
     }),
     prisma.shippingOrder.count({ where }),
@@ -69,26 +80,69 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     data: {
-      items: items.map((o) => ({
-        id: o.id,
-        pkNo: o.pkNo,
-        shipDate: o.shipDate,
-        status: o.status,
-        qrPrintFlag: o.qrPrintFlag,
-        invoiceNo: o.invoiceNo,
-        destName: o.destName,
-        carrier: o.carrier,
-        itemCount: o.items.length,
-        scannedRatio:
-          o.items.length === 0
-            ? 0
-            : Math.round(
-                (o.items.filter((it) => it.forceOk || it.scannedQty >= it.qty).length /
-                  o.items.length) *
-                  100,
-              ),
-        deletedAt: o.deletedAt,
-      })),
+      items: items.map((o) => {
+        // Sprint Z-1: 引当状態の計算
+        //   needBySku: 商品ごとの必要数
+        //   allocBySku: 商品ごとの引当数（released を除く）
+        //   allocStatus: 'full' / 'partial' / 'none'
+        const needBySku = new Map<string, number>();
+        for (const it of o.items) {
+          needBySku.set(
+            it.productCode,
+            (needBySku.get(it.productCode) ?? 0) + it.qty,
+          );
+        }
+        const allocBySku = new Map<string, number>();
+        for (const a of o.allocations) {
+          if (a.status === 'released') continue;
+          allocBySku.set(
+            a.productCode,
+            (allocBySku.get(a.productCode) ?? 0) + a.qty,
+          );
+        }
+        const totalNeed = Array.from(needBySku.values()).reduce(
+          (s, v) => s + v,
+          0,
+        );
+        const totalAlloc = Array.from(needBySku.entries()).reduce(
+          (s, [code, need]) => s + Math.min(allocBySku.get(code) ?? 0, need),
+          0,
+        );
+        const allocStatus: 'full' | 'partial' | 'none' =
+          totalNeed === 0
+            ? 'none'
+            : totalAlloc >= totalNeed
+              ? 'full'
+              : totalAlloc > 0
+                ? 'partial'
+                : 'none';
+
+        return {
+          id: o.id,
+          pkNo: o.pkNo,
+          shipDate: o.shipDate,
+          status: o.status,
+          qrPrintFlag: o.qrPrintFlag,
+          invoiceNo: o.invoiceNo,
+          destName: o.destName,
+          carrier: o.carrier,
+          itemCount: o.items.length,
+          scannedRatio:
+            o.items.length === 0
+              ? 0
+              : Math.round(
+                  (o.items.filter((it) => it.forceOk || it.scannedQty >= it.qty)
+                    .length /
+                    o.items.length) *
+                    100,
+                ),
+          // 引当 KPI
+          allocStatus,
+          allocatedQty: totalAlloc,
+          requiredQty: totalNeed,
+          deletedAt: o.deletedAt,
+        };
+      }),
       total,
       page,
       limit,

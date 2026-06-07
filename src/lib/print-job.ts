@@ -16,9 +16,19 @@ interface RunArgs {
   deviceCode: string;
   staffCode: string | null;
   isReprint: boolean;
+  /** QR印刷フラグ OFF 伝票への強制印刷だった場合 true。ログに [FORCE] 接頭辞を付与。 */
+  forcePrint?: boolean;
+  /** 再印刷理由（任意）。ログに [reason:xxx] として付記。 */
+  reason?: string;
 }
 
 export async function runPrintJob(args: RunArgs) {
+  // 監査ログの接頭辞を組み立てる（runMode / forcePrint / reason）
+  const tags: string[] = [];
+  if (args.forcePrint) tags.push('FORCE');
+  if (args.reason) tags.push(`reason:${args.reason}`);
+  const tagPrefix = tags.length > 0 ? `[${tags.join('|')}] ` : '';
+
   // 端末→プリンター解決
   const map = await prisma.devicePrinterMap.findUnique({
     where: { deviceCode: args.deviceCode },
@@ -35,7 +45,7 @@ export async function runPrintJob(args: RunArgs) {
         staffCode: args.staffCode,
         isReprint: args.isReprint,
         status: 'failed',
-        errorMsg: `端末 ${args.deviceCode} に既定プリンターが紐付いていません`,
+        errorMsg: `${tagPrefix}端末 ${args.deviceCode} に既定プリンターが紐付いていません`,
       },
     });
     return { ok: false as const, log };
@@ -48,6 +58,14 @@ export async function runPrintJob(args: RunArgs) {
     printerPort: map.printer.port,
   });
 
+  // 切り分け診断のため、dryRun の状態を error_msg に併記する（運用ログ）
+  //   2026-05-19: 「印刷できない」原因が DRY-RUN か実送信失敗かを DB だけで判別できるようにする。
+  const diagPrefix = result.dryRun ? '[DRY-RUN] ' : '[LIVE] ';
+  const errorMsgWithDiag =
+    result.errorMsg != null
+      ? `${tagPrefix}${diagPrefix}${result.errorMsg}`
+      : `${tagPrefix}${diagPrefix}bytes=${result.bytesSent}`;
+
   const log = await prisma.printLog.create({
     data: {
       orderId: args.orderId,
@@ -58,7 +76,7 @@ export async function runPrintJob(args: RunArgs) {
       staffCode: args.staffCode,
       isReprint: args.isReprint,
       status: result.status,
-      errorMsg: result.errorMsg,
+      errorMsg: errorMsgWithDiag,
     },
   });
 

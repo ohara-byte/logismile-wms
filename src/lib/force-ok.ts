@@ -32,6 +32,13 @@ export const REASON_REQUIRE_COMMENT: Record<ForceReasonCode, boolean> = {
 export const EXCLUDED_REASON_CODES: ForceReasonCode[] = ['R01'];
 
 /**
+ * 承認対象外とする「理由テキスト」の前方一致リスト（Sprint Y-4）。
+ *  - "F4 一括検品" や "F4 強制" 等の現場運用上の一括処理は承認不要としてスキップ。
+ *    R コード未付きでもこのリストに前方一致したら承認キューから除外する。
+ */
+export const EXCLUDED_REASON_PREFIXES: string[] = ['F4 一括検品', 'F4 強制', '一括検品'];
+
+/**
  * 自由記入の理由テキストから R コードを抽出する。
  * 例: "R02 JAN読取不可" → "R02"
  *     "在庫切れ"        → null

@@ -5,7 +5,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { requireRole } from '@/lib/auth/permissions';
+import { requirePermission } from '@/lib/auth/permissions';
 import {
   summaryReport,
   staffMhReport,
@@ -28,7 +28,8 @@ function toCsv(rows: Array<Record<string, unknown>>): string {
 }
 
 export async function GET(req: Request) {
-  const guard = await requireRole('admin', 'manager');
+  // Sprint Y-11: CSV 出力は lead にも許可
+  const guard = await requirePermission('csv_export');
   if (!guard.ok) return guard.response;
 
   const { searchParams } = new URL(req.url);

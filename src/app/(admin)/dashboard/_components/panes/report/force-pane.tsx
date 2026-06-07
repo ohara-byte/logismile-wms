@@ -5,7 +5,9 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useReportPeriod } from './report-period-context';
+import { KpiDrillModal, type DrillCell } from './kpi-drill-modal';
 import {
   FORCE_REASON_LABELS,
   reasonBadgeClass,
@@ -18,10 +20,25 @@ interface ForceData {
   byStaff: { staffCode: string; staffName: string; count: number }[];
 }
 
+interface ForceDrillCtx {
+  by: 'reason' | 'staff';
+  reasonCode?: string;
+  reasonLabel?: string;
+  staffCode?: string;
+  staffName?: string;
+}
+
 export function ForceReportPane() {
+  const router = useRouter();
   const period = useReportPeriod();
   const [data, setData] = useState<ForceData | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // C-3: ドリルダウン状態
+  const [drill, setDrill] = useState<ForceDrillCtx | null>(null);
+  const [drillRows, setDrillRows] = useState<DrillCell[][]>([]);
+  const [drillLoading, setDrillLoading] = useState(false);
+  const [drillErr, setDrillErr] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +54,53 @@ export function ForceReportPane() {
       cancelled = true;
     };
   }, [period.from, period.to]);
+
+  // ドリル fetch
+  useEffect(() => {
+    if (!drill) return;
+    let cancelled = false;
+    setDrillLoading(true);
+    setDrillErr(null);
+    setDrillRows([]);
+    (async () => {
+      try {
+        const params = new URLSearchParams({ from: period.from, to: period.to });
+        if (drill.reasonCode) params.set('reasonCode', drill.reasonCode);
+        if (drill.staffCode) params.set('staffCode', drill.staffCode);
+        const r = await fetch(`/api/report/drill/force-events?${params}`);
+        const j = await r.json();
+        if (cancelled) return;
+        if (!r.ok) throw new Error(j.message ?? `HTTP ${r.status}`);
+        const items: Array<{
+          occurredAt: string;
+          pkNo: string;
+          destName: string;
+          staffName: string;
+          reasonCode: string;
+          reasonText: string;
+          itemCode: string;
+        }> = j.data?.items ?? [];
+        setDrillRows(
+          items.map((it) => [
+            it.occurredAt,
+            it.pkNo,
+            it.destName,
+            it.staffName,
+            it.reasonCode,
+            it.reasonText,
+            it.itemCode,
+          ]),
+        );
+      } catch (e) {
+        if (!cancelled) setDrillErr(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setDrillLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [drill, period.from, period.to]);
 
   if (loading || !data) {
     return <div className="p-3 text-2xs text-ink-muted">読み込み中…</div>;
@@ -90,7 +154,19 @@ export function ForceReportPane() {
             </thead>
             <tbody>
               {data.byReason.map((r) => (
-                <tr key={r.code} className="border-t border-surface-border">
+                <tr
+                  key={r.code}
+                  onClick={() =>
+                    setDrill({
+                      by: 'reason',
+                      reasonCode: r.code,
+                      reasonLabel:
+                        FORCE_REASON_LABELS[r.code as ForceReasonCode] ?? r.code,
+                    })
+                  }
+                  className="border-t border-surface-border cursor-pointer hover:bg-blue-950/30"
+                  title="クリックで該当理由コードの発生明細"
+                >
                   <td className="px-1.5 py-1">
                     <span
                       className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${reasonBadgeClass(
@@ -102,6 +178,7 @@ export function ForceReportPane() {
                   </td>
                   <td className="px-1.5 py-1 text-ink">
                     {FORCE_REASON_LABELS[r.code as ForceReasonCode] ?? '—'}
+                    <span className="ml-1 text-3xs text-ink-muted">🔍</span>
                   </td>
                   <td className="px-1.5 py-1 text-right tabular-nums font-bold">{r.count}</td>
                   <td className="px-1.5 py-1 w-[40%]">
@@ -143,9 +220,23 @@ export function ForceReportPane() {
             </thead>
             <tbody>
               {data.byStaff.map((s) => (
-                <tr key={s.staffCode} className="border-t border-surface-border">
+                <tr
+                  key={s.staffCode}
+                  onClick={() =>
+                    setDrill({
+                      by: 'staff',
+                      staffCode: s.staffCode,
+                      staffName: s.staffName,
+                    })
+                  }
+                  className="border-t border-surface-border cursor-pointer hover:bg-blue-950/30"
+                  title="クリックで該当担当者の発生明細"
+                >
                   <td className="px-1.5 py-1 font-mono">{s.staffCode}</td>
-                  <td className="px-1.5 py-1 font-bold">{s.staffName}</td>
+                  <td className="px-1.5 py-1 font-bold">
+                    {s.staffName}
+                    <span className="ml-1 text-3xs text-ink-muted">🔍</span>
+                  </td>
                   <td className="px-1.5 py-1 text-right tabular-nums">{s.count}</td>
                   <td className="px-1.5 py-1">
                     <div className="h-1.5 bg-surface-panel rounded overflow-hidden">
@@ -161,6 +252,29 @@ export function ForceReportPane() {
           </table>
         </div>
       </div>
+
+      {/* C-3: ドリルダウン モーダル */}
+      <KpiDrillModal
+        open={drill !== null}
+        loading={drillLoading}
+        errorMsg={drillErr}
+        title={
+          drill?.by === 'reason'
+            ? `${drill.reasonCode} ${drill.reasonLabel ?? ''} — 強制OK 発生明細`
+            : drill?.by === 'staff'
+              ? `${drill.staffName} — 強制OK 発生明細`
+              : ''
+        }
+        subtitle={`${period.from} 〜 ${period.to} 期間中。最大 200 件・新しい順。`}
+        cols={['発生日時', '伝票No', '配送先', '担当者', '理由', '理由テキスト', '商品']}
+        rows={drillRows}
+        emptyHint="該当する強制OK 発生はありません"
+        onClose={() => setDrill(null)}
+        onRowClick={(row) => {
+          const pkNo = String(row[1] ?? '');
+          if (pkNo && pkNo !== '—') router.push(`/orders?pkNo=${encodeURIComponent(pkNo)}`);
+        }}
+      />
     </div>
   );
 }

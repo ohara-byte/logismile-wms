@@ -48,3 +48,10 @@ next-env.d.ts
 
 # 年次アーカイブ CSV（本番運用で生成。実顧客データを含むのでコミット禁止）
 /data/archives/
+
+# ★ 連携シークレット保管庫（HMAC キー・API トークン等。絶対コミット禁止）
+/docs/secrets/
+
+# パケットキャプチャ・サーバログ（コミット禁止）
+*.pcapng
+server.log

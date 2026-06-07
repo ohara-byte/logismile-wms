@@ -50,15 +50,15 @@ export function HeldResumeModal({ open, order, onResume, onRestart, onCancel }: 
         if (e.target === e.currentTarget) onCancel();
       }}
     >
-      <div className="bg-surface-panel border border-status-warn rounded-2xl shadow-modal max-w-lg w-full p-5">
-        <h2 className="text-lg font-bold text-status-warn mb-1">⏸ 保留中の伝票です</h2>
+      <div className="bg-surface-panel border-2 border-status-warn rounded-2xl shadow-modal max-w-lg w-full p-5">
+        <h2 className="text-lg font-bold text-status-warn mb-1">⏸ 保留伝票です</h2>
         <p className="text-2xs text-ink-subtle mb-3 leading-snug">
           この伝票は保留中で、
           <b className="text-status-ok">スキャン状態が保持</b>されています。
           「続きから」を選ぶと前回の状態を復元します。
         </p>
 
-        <div className="bg-surface-base border-l-4 border-status-warn rounded p-3 mb-4">
+        <div className="bg-status-warn-bg border-l-4 border-status-warn rounded p-3 mb-4">
           <Field k="ピッキングNo" v={<span className="font-mono text-accent-amber">{order.pkNo}</span>} />
           <Field
             k="納品書No"

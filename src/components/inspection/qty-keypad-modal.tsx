@@ -28,6 +28,12 @@ interface Props {
   totalQty: number;
   onConfirm: (addedQty: number) => Promise<void> | void;
   onCancel: () => void;
+  /**
+   * Sprint Y-14: ハンディの数字キー押下で keypad を起動した際に、
+   * トリガーとなった数字を初期値として反映させるための prop。
+   * 例: 数字「3」キー押下 → setQtyTarget(item) + initialDigit=3 → keypad の表示値が "3" で開く
+   */
+  initialDigit?: number;
 }
 
 export function QtyKeypadModal({
@@ -39,6 +45,7 @@ export function QtyKeypadModal({
   totalQty,
   onConfirm,
   onCancel,
+  initialDigit,
 }: Props) {
   const [buf, setBuf] = useState('');
   const [busy, setBusy] = useState(false);
@@ -46,16 +53,26 @@ export function QtyKeypadModal({
 
   const remain = Math.max(totalQty - alreadyScanned, 0);
   const value = buf === '' ? 0 : parseInt(buf, 10);
+  // 残数超過は確定不可（エラー扱いを継続）。残数内であれば 10 以上でも入力可。
   const isOver = value > remain;
   const canConfirm = !busy && value > 0 && !isOver;
 
-  // open のたびに初期化
+  // open のたびに初期化（initialDigit があれば反映）
   useEffect(() => {
     if (open) {
-      setBuf('');
+      const seed =
+        typeof initialDigit === 'number' &&
+        Number.isFinite(initialDigit) &&
+        initialDigit >= 0 &&
+        initialDigit <= 9
+          ? String(initialDigit)
+          : '';
+      setBuf(seed);
       setError(null);
       setBusy(false);
     }
+    // initialDigit はモーダル open のたびに 1 度だけ反映する想定なので依存に含めない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // Esc キャンセル / 物理キーボード入力対応
@@ -151,7 +168,7 @@ export function QtyKeypadModal({
           <small className="text-xs text-ink-muted ml-2">（残 {remain}）</small>
         </div>
 
-        {/* エラー表示 */}
+        {/* エラー表示 — 残数超過は確定不可 */}
         {(isOver || error) && (
           <div className="bg-red-900/40 text-red-200 border border-status-error/40 rounded px-3 py-2 mb-2 text-xs font-bold">
             {error

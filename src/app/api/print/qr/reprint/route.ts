@@ -2,8 +2,16 @@
  * POST /api/print/qr/reprint
  * QR再印刷（ラベル破損等のため）
  *
- * リクエスト: { pkNo, deviceCode, reason }
+ * リクエスト: { pkNo, deviceCode?, reason? }
  * is_reprint=true で print_logs に記録。
+ *
+ * 2026-05-22:
+ *   このエンドポイントは「ラベル破損による再印刷」と
+ *   「QR印刷フラグ OFF 伝票への強制印刷」の両用途を兼ねる。
+ *   UI 側（ReprintModal）は元から OFF 伝票で警告表示しつつ印字する設計のため、
+ *   ここで QR フラグ OFF を弾かない。
+ *   ※ 強制印刷の事実は print_logs.is_reprint=true で残るほか、
+ *      errorMsg 接頭辞 [FORCE] で識別可能にする。
  */
 
 import { NextResponse } from 'next/server';
@@ -15,7 +23,9 @@ import { runPrintJob } from '@/lib/print-job';
 const Body = z.object({
   pkNo: z.string().min(1),
   deviceCode: z.string().min(1).optional(),
-  reason: z.string().min(1),
+  // reason は監査用。UI からは未送信のケースもあるため optional とし、
+  // 受領した値は print_logs に [reason:xxx] として残す。
+  reason: z.string().optional(),
 });
 
 export async function POST(req: Request) {
@@ -51,12 +61,10 @@ export async function POST(req: Request) {
       { status: 404 },
     );
   }
-  if (!order.qrPrintFlag) {
-    return NextResponse.json(
-      { error: 'VALIDATION', message: 'QR印刷フラグが OFF のため再印刷できません' },
-      { status: 422 },
-    );
-  }
+
+  // QR印刷フラグ OFF でも「任意（強制）印刷」を許可する。
+  // ラベル破損ケースに加え、フラグ漏れ伝票への現場対応をカバーする。
+  const isForce = !order.qrPrintFlag;
 
   const result = await runPrintJob({
     orderId: order.id,
@@ -65,15 +73,16 @@ export async function POST(req: Request) {
     deviceCode,
     staffCode: guard.auth.staffCode,
     isReprint: true,
+    forcePrint: isForce,
+    reason: parsed.data.reason,
   });
 
-  // 再印刷の理由は print_logs.error_msg ではなく insp_log/別フィールドだが、
-  // 現スキーマでは print_logs に reason 列がないため alerts には残さず log のみ。
-  // 必要に応じて Phase 6 で print_logs にカラム追加を検討。
-  void parsed.data.reason;
-
   return NextResponse.json({
-    data: { ok: result.ok, dryRun: 'dryRun' in result ? result.dryRun : false },
+    data: {
+      ok: result.ok,
+      dryRun: 'dryRun' in result ? result.dryRun : false,
+      forcePrint: isForce,
+    },
     message: result.ok ? 'OK' : 'PRINT_FAILED',
   });
 }

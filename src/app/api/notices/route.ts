@@ -19,6 +19,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { parseDateAsUTC, todayJstAsUTC } from '@/lib/date-utils';
 
 export async function GET(req: Request) {
   const guard = await requireRole('admin', 'manager', 'staff');
@@ -27,8 +28,11 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const kind = searchParams.get('kind') as 'announce' | 'inbox' | null;
   const dateStr = searchParams.get('date');
-  const date = dateStr ? new Date(dateStr) : null;
-  if (date && isNaN(date.getTime())) {
+  // 2026-06-06 修正: 日付は JST 暦を UTC 真夜中に統一（date-utils）。
+  //   旧実装の `new Date()` + setHours は JST 環境で UTC 前日にずれ、@db.Date 保存値と
+  //   一致せず「端末が連絡を受け取らない／管理PC履歴が 0 件」になっていた（シフトと同じ1日ずれバグ）。
+  const date = dateStr ? parseDateAsUTC(dateStr) : null;
+  if (dateStr && !date) {
     return NextResponse.json(
       { error: 'VALIDATION', message: `不正な日付: ${dateStr}` },
       { status: 422 },
@@ -40,28 +44,94 @@ export async function GET(req: Request) {
   const category = searchParams.get('category');
   const unread = searchParams.get('unread') === 'true';
 
-  // モバイルからのアクセスは announce + 今日 + 自分宛のみに限定
+  // モバイルからのアクセスは「今日（JST 暦）」のレコードのみ。
   const isMobile = guard.auth.source === 'mobile';
-  const effectiveKind = isMobile ? 'announce' : kind;
-  const effectiveDate = isMobile ? new Date() : date;
-  if (effectiveDate) effectiveDate.setHours(0, 0, 0, 0);
+  const effectiveKind = kind; // モバイルでも kind が来ればそれを使う
+  const effectiveDate = isMobile ? todayJstAsUTC() : date;
+
+  // Sprint Y-16: モバイルからの参照は announce のみ（inbox は管理 PC が処理）
+  //   さらに unread=true の時は「現在の社員が ack していない」announce に絞る。
+  //   グローバルな readAt ではなく per-staff の NoticeAck で判定する。
+  const mobileStaffCode = isMobile ? guard.auth.staffCode : null;
+  const ackedIds = mobileStaffCode
+    ? new Set(
+        (
+          await prisma.noticeAck.findMany({
+            where: { staffCode: mobileStaffCode },
+            select: { noticeId: true },
+          })
+        ).map((a) => a.noticeId),
+      )
+    : null;
 
   const items = await prisma.notice.findMany({
     where: {
       active: true,
-      ...(effectiveKind ? { kind: effectiveKind } : {}),
+      ...(effectiveKind
+        ? { kind: effectiveKind }
+        : isMobile
+          ? { kind: 'announce' }
+          : {}),
       ...(effectiveDate ? { date: effectiveDate } : {}),
       ...(targetType
         ? { targetType, ...(targetId ? { targetId } : {}) }
         : {}),
       ...(category ? { category } : {}),
-      ...(unread ? { readAt: null } : {}),
+      // unread フィルタ:
+      //   PC: 旧来の Notice.readAt = null
+      //   モバイル: per-staff の NoticeAck に未登録（下で post-filter）
+      ...(unread && !isMobile ? { readAt: null } : {}),
     },
     orderBy: [{ priority: 'desc' }, { id: 'desc' }],
     take: 200,
   });
 
-  return NextResponse.json({ data: { items }, message: 'OK' });
+  // ── モバイルの宛先フィルタ配信（2026-06-06）──
+  //   targetType ごとに「この端末/担当者が対象か」を判定して配信する。
+  //   旧実装は target を無視して全 announce を返していたため、
+  //   「タブレット指定」がハンディにも、「担当者指定」が全員に届いていた。
+  let filtered = items;
+  if (isMobile) {
+    // 端末種別（tablet/handy）と所属グループを取得して照合
+    const dev = guard.auth.deviceCode
+      ? await prisma.device.findUnique({
+          where: { code: guard.auth.deviceCode },
+          select: { type: true },
+        })
+      : null;
+    const deviceType = dev?.type ?? null;
+    const st = mobileStaffCode
+      ? await prisma.staff.findUnique({
+          where: { code: mobileStaffCode },
+          select: { groupId: true },
+        })
+      : null;
+    const myGroupId = st?.groupId ?? null;
+
+    const matchesTarget = (n: { targetType: string; targetId: string | null }) => {
+      switch (n.targetType) {
+        case 'all':
+          return true;
+        case 'tablet':
+          return deviceType === 'tablet';
+        case 'handy':
+          return deviceType === 'handy';
+        case 'group':
+          return !!myGroupId && n.targetId === myGroupId;
+        case 'staff':
+          return n.targetId === mobileStaffCode;
+        default:
+          return true; // 'table' 等レガシーは配信（取りこぼし防止）
+      }
+    };
+
+    filtered = filtered.filter(matchesTarget);
+    if (unread && ackedIds) {
+      filtered = filtered.filter((n) => !ackedIds.has(n.id));
+    }
+  }
+
+  return NextResponse.json({ data: { items: filtered }, message: 'OK' });
 }
 
 const PostBody = z.object({
@@ -103,7 +173,8 @@ export async function POST(req: Request) {
   const created = await prisma.notice.create({
     data: {
       kind: parsed.data.kind,
-      date: new Date(parsed.data.date),
+      // JST 暦を UTC 真夜中に統一（GET 側 todayJstAsUTC/parseDateAsUTC と一致させる）
+      date: parseDateAsUTC(parsed.data.date) ?? todayJstAsUTC(),
       title: parsed.data.title,
       body: parsed.data.body ?? null,
       targetType: parsed.data.targetType,

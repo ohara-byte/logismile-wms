@@ -92,10 +92,19 @@ export function StaffAllocationGrid({ rows, summary }: Props) {
             );
           })}
 
-          {/* データ行 */}
-          {rows.map((r) => (
-            <Row key={`${r.category}-${r.label}`} row={r} currentIdx={currentIdx} />
-          ))}
+          {/* データ行（Sprint E-4: カテゴリ境目に薄いセパレータ — テキスト見出しなし） */}
+          {rows.map((r, i) => {
+            const prev = i > 0 ? rows[i - 1] : null;
+            const isCategoryStart = !prev || prev.category !== r.category;
+            return (
+              <Row
+                key={`${r.category}-${r.label}`}
+                row={r}
+                currentIdx={currentIdx}
+                separator={isCategoryStart && i > 0}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -109,13 +118,24 @@ export function StaffAllocationGrid({ rows, summary }: Props) {
   );
 }
 
-function Row({ row, currentIdx }: { row: Row; currentIdx: number }) {
+function Row({
+  row,
+  currentIdx,
+  separator,
+}: {
+  row: Row;
+  currentIdx: number;
+  separator?: boolean;
+}) {
+  // セパレータ: カテゴリ境目で上線のみ（テキスト見出しなし）
+  const sepCls = separator ? 'border-t border-surface-border-strong/60' : '';
   return (
     <>
       <div
         className={cn(
           'px-1 py-0.5 font-bold bg-surface-base sticky left-0 truncate',
           CATEGORY_COLORS[row.category],
+          sepCls,
         )}
         style={{ fontSize: '10px' }}
       >
@@ -131,6 +151,7 @@ function Row({ row, currentIdx }: { row: Row; currentIdx: number }) {
             className={cn(
               'text-center font-bold tabular-nums',
               cls,
+              sepCls,
               isNow && 'outline outline-1 outline-accent-amber',
             )}
             style={{ fontSize: '10px' }}

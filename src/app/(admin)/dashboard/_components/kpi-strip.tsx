@@ -41,10 +41,11 @@ export function KpiStrip({ overall }: Props) {
       {/* 全体進捗 */}
       <KpiCard tone="info" label="全体進捗">
         <div className="flex items-baseline">
-          <span className="text-2xl font-bold text-ink-strong tabular-nums">
+          {/* モック準拠：KPI 値は 22px（text-2xl=24px だと密度過多） */}
+          <span className="text-[22px] leading-none font-bold text-ink-strong tabular-nums">
             {overall.completionRate}
           </span>
-          <span className="text-xs text-ink-subtle ml-0.5">%</span>
+          <span className="text-2xs text-ink-subtle ml-0.5">%</span>
         </div>
         <div className="text-3xs text-ink-subtle mt-0.5">
           <span className="tabular-nums">{overall.packed.toLocaleString()}</span> /{' '}
@@ -65,7 +66,7 @@ export function KpiStrip({ overall }: Props) {
 
       {/* 18:00 完了予測 */}
       <KpiCard tone="ok" label="18:00 完了予測">
-        <div className="text-2xl font-bold text-ink-strong tabular-nums font-mono">
+        <div className="text-[22px] leading-none font-bold text-ink-strong tabular-nums font-mono">
           {overall.etaCompletion ?? '—'}
         </div>
         <div className="text-3xs text-ink-subtle mt-0.5">
@@ -87,11 +88,11 @@ export function KpiStrip({ overall }: Props) {
       {/* 強制OK 未承認 */}
       <KpiCard tone="error" label="強制OK / 未承認">
         <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-bold text-ink-strong tabular-nums">
+          <span className="text-[22px] leading-none font-bold text-ink-strong tabular-nums">
             {overall.forceOkCount}
           </span>
-          <span className="text-xs text-ink-subtle">件</span>
-          <span className="text-xs text-red-300 ml-1 tabular-nums">
+          <span className="text-2xs text-ink-subtle">件</span>
+          <span className="text-2xs text-red-300 ml-1 tabular-nums">
             / {overall.forceOkPending} 未承認
           </span>
         </div>
@@ -132,9 +133,8 @@ function KpiCard({
         className,
       )}
     >
-      <div className="text-3xs text-ink-subtle uppercase tracking-wider font-bold">
-        {label}
-      </div>
+      {/* モック準拠：日本語ラベルなので uppercase/tracking-wider は外し、フォントは 10px に */}
+      <div className="text-2xs text-ink-subtle font-bold">{label}</div>
       <div>{children}</div>
     </div>
   );
@@ -169,17 +169,18 @@ function StageBar({
   const currentStage = stages.find((s) => s.status === 'current') ?? stages[0];
   const delta = currentStage ? packed - currentStage.target : 0;
 
+  // Sprint Y-13: カード上部のラベル「予定数段階バー」と内部テキストが重なっていたので、
+  //   内部の同名ラベルを撤去し、現在/目標 のみを右寄せ表示
   return (
     <div className="w-full">
-      <div className="flex justify-between text-3xs">
-        <span className="text-ink-subtle">予定数段階バー</span>
+      <div className="flex justify-end text-3xs mb-1">
         <span className="text-accent-amber font-bold tabular-nums">
-          現在 {packed.toLocaleString()} / 目標 {currentStage?.target.toLocaleString() ?? '—'}（
-          {delta >= 0 ? '+' : ''}
+          現在 {packed.toLocaleString()} / 目標 {currentStage?.target.toLocaleString() ?? '—'}
+          （{delta >= 0 ? '+' : ''}
           {delta}）
         </span>
       </div>
-      <div className="relative h-5 bg-surface-base border border-surface-border rounded mt-1 overflow-hidden">
+      <div className="relative h-5 bg-surface-base border border-surface-border rounded overflow-hidden">
         {/* 進捗フィル */}
         <div
           className="absolute left-0 top-0 bottom-0 transition-all duration-500"

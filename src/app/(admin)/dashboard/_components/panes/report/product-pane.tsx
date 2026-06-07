@@ -10,11 +10,16 @@
 import { useEffect, useState } from 'react';
 import { useReportPeriod } from './report-period-context';
 
+// API（/api/report/product-abc → reports.ts productAbcReport）の実レスポンス形:
+//   { items: [{ productCode, productName, totalQty, orderCount, abc, cumRatio, category }] }
 interface ProductRow {
   productCode: string;
   productName: string;
-  qty: number;
-  jan: string | null;
+  totalQty: number;
+  orderCount: number;
+  abc?: 'A' | 'B' | 'C';
+  cumRatio?: number;
+  category?: string;
 }
 
 export function ProductPane() {
@@ -39,15 +44,20 @@ export function ProductPane() {
 
   if (loading) return <div className="p-3 text-2xs text-ink-muted">読み込み中…</div>;
 
-  const totalQty = items.reduce((s, i) => s + i.qty, 0);
-  const max = Math.max(...items.map((i) => i.qty), 1);
+  const totalQty = items.reduce((s, i) => s + (i.totalQty ?? 0), 0);
+  const max = Math.max(...items.map((i) => i.totalQty ?? 0), 1);
 
-  // ABC 累積
+  // ABC 累積（API 側で計算済みの abc / cumRatio を優先利用）
   let cum = 0;
   const ranked: Array<ProductRow & { cumRate: number; klass: 'A' | 'B' | 'C' }> = items.map((it) => {
-    cum += it.qty;
-    const cumRate = totalQty > 0 ? cum / totalQty : 0;
-    const klass: 'A' | 'B' | 'C' = cumRate <= 0.8 ? 'A' : cumRate <= 0.95 ? 'B' : 'C';
+    cum += it.totalQty ?? 0;
+    const cumRate = it.cumRatio !== undefined
+      ? it.cumRatio / 100
+      : totalQty > 0
+        ? cum / totalQty
+        : 0;
+    const klass: 'A' | 'B' | 'C' =
+      it.abc ?? (cumRate <= 0.8 ? 'A' : cumRate <= 0.95 ? 'B' : 'C');
     return { ...it, cumRate, klass };
   });
 
@@ -81,8 +91,9 @@ export function ProductPane() {
                 <th className="px-1.5 py-1 text-center text-3xs uppercase text-ink-subtle">区分</th>
                 <th className="px-1.5 py-1 text-left text-3xs uppercase text-ink-subtle">商品コード</th>
                 <th className="px-1.5 py-1 text-left text-3xs uppercase text-ink-subtle">商品名</th>
-                <th className="px-1.5 py-1 text-left text-3xs uppercase text-ink-subtle">JAN</th>
+                <th className="px-1.5 py-1 text-left text-3xs uppercase text-ink-subtle">カテゴリ</th>
                 <th className="px-1.5 py-1 text-right text-3xs uppercase text-ink-subtle">数量</th>
+                <th className="px-1.5 py-1 text-right text-3xs uppercase text-ink-subtle">伝票件数</th>
                 <th className="px-1.5 py-1 text-left text-3xs uppercase text-ink-subtle">分布</th>
                 <th className="px-1.5 py-1 text-right text-3xs uppercase text-ink-subtle">累積%</th>
               </tr>
@@ -96,15 +107,18 @@ export function ProductPane() {
                   </td>
                   <td className="px-1.5 py-1 font-mono">{r.productCode}</td>
                   <td className="px-1.5 py-1 truncate max-w-[260px]">{r.productName}</td>
-                  <td className="px-1.5 py-1 font-mono text-ink-subtle">{r.jan ?? '—'}</td>
+                  <td className="px-1.5 py-1 text-ink-subtle text-3xs">{r.category ?? '—'}</td>
                   <td className="px-1.5 py-1 text-right tabular-nums font-bold">
-                    {r.qty.toLocaleString()}
+                    {(r.totalQty ?? 0).toLocaleString()}
                   </td>
-                  <td className="px-1.5 py-1 w-[20%]">
+                  <td className="px-1.5 py-1 text-right tabular-nums text-ink-subtle">
+                    {(r.orderCount ?? 0).toLocaleString()}
+                  </td>
+                  <td className="px-1.5 py-1 w-[18%]">
                     <div className="h-1.5 bg-surface-panel rounded overflow-hidden">
                       <div
                         className="h-full bg-gradient-to-r from-amber-700 to-amber-300"
-                        style={{ width: `${(r.qty / max) * 100}%` }}
+                        style={{ width: `${((r.totalQty ?? 0) / max) * 100}%` }}
                       />
                     </div>
                   </td>

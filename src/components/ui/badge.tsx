@@ -42,10 +42,11 @@ interface Props {
 
 export function Badge({ children, variant = 'neutral', className, size = 'sm' }: Props) {
   const sizeCls = size === 'md' ? 'px-2.5 py-0.5 text-xs' : 'px-1.5 py-0.5 text-3xs';
+  // モック準拠：日本語ラベル中心のため uppercase / tracking-wide は外す
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded font-bold uppercase tracking-wide',
+        'inline-flex items-center gap-1 rounded font-bold',
         VARIANT_CLASSES[variant],
         sizeCls,
         className,

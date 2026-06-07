@@ -37,7 +37,7 @@ export async function GET(req: Request) {
         },
       },
     },
-    take: 5000,
+    take: 100000, // 2026-06-04: 上限実質撤廃（強制OKレポートの集計漏れ防止）
   });
 
   // 理由コード別集計

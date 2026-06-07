@@ -65,3 +65,308 @@ select {
     box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
   }
 }
+
+/* タブレット検品モック準拠 セクションタイトル（モック L157-163） */
+.section-title-mock {
+  font-size: 11px;
+  color: #94a3b8;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+/* タブレット検品モック準拠アニメーション */
+@keyframes tablet-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+.animate-tablet-shake { animation: tablet-shake 0.3s; }
+
+@keyframes tablet-pulse-banner {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.7); }
+  50%      { box-shadow: 0 0 0 6px rgba(234, 88, 12, 0); }
+}
+.animate-tablet-pulse-banner { animation: tablet-pulse-banner 1.8s infinite; }
+
+@keyframes tablet-hilite {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7); }
+  50%      { box-shadow: 0 0 0 8px rgba(251, 191, 36, 0); }
+}
+.animate-tablet-hilite { animation: tablet-hilite 1.2s infinite; }
+
+@keyframes tablet-pulse-circle {
+  0%   { transform: scale(0.8); opacity: 0.3; }
+  50%  { transform: scale(1.2); opacity: 0.9; }
+  100% { transform: scale(0.8); opacity: 0.3; }
+}
+.animate-tablet-pulse-circle { animation: tablet-pulse-circle 1.5s infinite; }
+
+/* ===========================================================
+ * Sprint Y-10: /settings ページのみライトテーマ
+ *   `.settings-light` を付けたコンテナ配下では surface / ink を
+ *   ホワイトベースに塗り替え、ハーフトーン（/30 /40 /60）の濃い色は
+ *   100% 不透明な薄色チップに差し替える。
+ * =========================================================== */
+.settings-light {
+  background-color: #ffffff;
+  color: #1f2937;
+  color-scheme: light;
+}
+.settings-light input[type='date'],
+.settings-light input[type='time'],
+.settings-light input[type='datetime-local'] {
+  color-scheme: light;
+}
+
+/* 表面 */
+.settings-light .bg-surface-base { background-color: #f1f5f9 !important; }
+.settings-light .bg-surface-panel { background-color: #ffffff !important; }
+.settings-light .bg-surface-raised { background-color: #e2e8f0 !important; }
+.settings-light .bg-surface-subtle { background-color: #f8fafc !important; }
+
+/* 境界線 */
+.settings-light .border-surface-border { border-color: #cbd5e1 !important; }
+.settings-light .border-surface-border-strong { border-color: #94a3b8 !important; }
+
+/* テキスト */
+.settings-light,
+.settings-light .text-ink { color: #1f2937 !important; }
+.settings-light .text-ink-strong { color: #0f172a !important; }
+.settings-light .text-ink-subtle { color: #475569 !important; }
+.settings-light .text-ink-muted { color: #64748b !important; }
+
+/* アクセント */
+.settings-light .text-accent-amber { color: #b45309 !important; }
+.settings-light .bg-accent-amber { background-color: #f59e0b !important; }
+.settings-light .text-status-error { color: #b91c1c !important; }
+.settings-light .text-status-warn { color: #b45309 !important; }
+.settings-light .text-status-ok { color: #047857 !important; }
+.settings-light .text-status-info { color: #1d4ed8 !important; }
+.settings-light .bg-status-error-bg { background-color: #fee2e2 !important; }
+.settings-light .border-status-error { border-color: #b91c1c !important; }
+.settings-light .border-status-warn { border-color: #b45309 !important; }
+
+/* ハーフトーン → 100% 不透明な薄色チップ */
+.settings-light [class*='bg-red-950'] { background-color: #fee2e2 !important; }
+.settings-light [class*='bg-amber-950'] { background-color: #fef3c7 !important; }
+.settings-light [class*='bg-orange-950'] { background-color: #ffedd5 !important; }
+.settings-light [class*='bg-emerald-950'] { background-color: #d1fae5 !important; }
+.settings-light [class*='bg-blue-950'] { background-color: #dbeafe !important; }
+.settings-light [class*='bg-violet-950'] { background-color: #ede9fe !important; }
+.settings-light [class*='bg-cyan-950'] { background-color: #cffafe !important; }
+.settings-light [class*='bg-purple-950'] { background-color: #f3e8ff !important; }
+
+.settings-light [class*='bg-red-900'] { background-color: #fecaca !important; }
+.settings-light [class*='bg-amber-900'] { background-color: #fde68a !important; }
+.settings-light [class*='bg-orange-900'] { background-color: #fed7aa !important; }
+.settings-light [class*='bg-emerald-900'] { background-color: #a7f3d0 !important; }
+.settings-light [class*='bg-blue-900'] { background-color: #bfdbfe !important; }
+.settings-light [class*='bg-violet-900'] { background-color: #ddd6fe !important; }
+.settings-light [class*='bg-cyan-900'] { background-color: #a5f3fc !important; }
+.settings-light [class*='bg-purple-900'] { background-color: #e9d5ff !important; }
+
+/* 明色テキスト系（100/200/300）→ 濃色（薄背景でも読めるよう） */
+.settings-light .text-red-100,
+.settings-light .text-red-200,
+.settings-light .text-red-300 { color: #991b1b !important; }
+.settings-light .text-amber-100,
+.settings-light .text-amber-200,
+.settings-light .text-amber-300 { color: #92400e !important; }
+.settings-light .text-orange-100,
+.settings-light .text-orange-200,
+.settings-light .text-orange-300 { color: #9a3412 !important; }
+.settings-light .text-emerald-100,
+.settings-light .text-emerald-200,
+.settings-light .text-emerald-300 { color: #047857 !important; }
+.settings-light .text-blue-100,
+.settings-light .text-blue-200,
+.settings-light .text-blue-300 { color: #1d4ed8 !important; }
+.settings-light .text-violet-100,
+.settings-light .text-violet-200,
+.settings-light .text-violet-300 { color: #6d28d9 !important; }
+.settings-light .text-cyan-100,
+.settings-light .text-cyan-200,
+.settings-light .text-cyan-300 { color: #155e75 !important; }
+.settings-light .text-purple-100,
+.settings-light .text-purple-200,
+.settings-light .text-purple-300 { color: #6d28d9 !important; }
+
+/* スクロールバー */
+.settings-light *::-webkit-scrollbar-track { background: #f1f5f9; }
+.settings-light *::-webkit-scrollbar-thumb { background: #94a3b8; }
+.settings-light *::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* ===========================================================
+ * 2026-05-20: メンバー割当モーダル ライトテーマ
+ *   `.assignment-light` は `.settings-light` と同じ配色ロジックを使う。
+ *   AssignmentClient に theme="light" を渡すと適用される。
+ * =========================================================== */
+.assignment-light {
+  background-color: #ffffff;
+  color: #1f2937;
+  color-scheme: light;
+}
+.assignment-light input[type='date'],
+.assignment-light input[type='time'],
+.assignment-light input[type='datetime-local'] {
+  color-scheme: light;
+}
+
+/* 表面 */
+.assignment-light .bg-surface-base { background-color: #f1f5f9 !important; }
+.assignment-light .bg-surface-panel { background-color: #ffffff !important; }
+.assignment-light .bg-surface-raised { background-color: #e2e8f0 !important; }
+.assignment-light .bg-surface-subtle { background-color: #f8fafc !important; }
+
+/* 境界線 */
+.assignment-light .border-surface-border { border-color: #cbd5e1 !important; }
+.assignment-light .border-surface-border-strong { border-color: #94a3b8 !important; }
+
+/* テキスト */
+.assignment-light,
+.assignment-light .text-ink { color: #1f2937 !important; }
+.assignment-light .text-ink-strong { color: #0f172a !important; }
+.assignment-light .text-ink-subtle { color: #475569 !important; }
+.assignment-light .text-ink-muted { color: #64748b !important; }
+
+/* アクセント */
+.assignment-light .text-accent-amber { color: #b45309 !important; }
+.assignment-light .bg-accent-amber { background-color: #f59e0b !important; }
+.assignment-light .text-status-error { color: #b91c1c !important; }
+.assignment-light .text-status-warn { color: #b45309 !important; }
+.assignment-light .text-status-ok { color: #047857 !important; }
+.assignment-light .text-status-info { color: #1d4ed8 !important; }
+
+/* ハーフトーン → 100% 不透明な薄色チップ（屋根に置くアクセント色） */
+.assignment-light [class*='bg-red-950'] { background-color: #fee2e2 !important; }
+.assignment-light [class*='bg-amber-950'] { background-color: #fef3c7 !important; }
+.assignment-light [class*='bg-orange-950'] { background-color: #ffedd5 !important; }
+.assignment-light [class*='bg-emerald-950'] { background-color: #d1fae5 !important; }
+.assignment-light [class*='bg-blue-950'] { background-color: #dbeafe !important; }
+.assignment-light [class*='bg-violet-950'] { background-color: #ede9fe !important; }
+.assignment-light [class*='bg-cyan-950'] { background-color: #cffafe !important; }
+.assignment-light [class*='bg-purple-950'] { background-color: #f3e8ff !important; }
+
+.assignment-light [class*='bg-red-900'] { background-color: #fecaca !important; }
+.assignment-light [class*='bg-amber-900'] { background-color: #fde68a !important; }
+.assignment-light [class*='bg-orange-900'] { background-color: #fed7aa !important; }
+.assignment-light [class*='bg-emerald-900'] { background-color: #a7f3d0 !important; }
+.assignment-light [class*='bg-blue-900'] { background-color: #bfdbfe !important; }
+.assignment-light [class*='bg-violet-900'] { background-color: #ddd6fe !important; }
+.assignment-light [class*='bg-cyan-900'] { background-color: #a5f3fc !important; }
+.assignment-light [class*='bg-purple-900'] { background-color: #e9d5ff !important; }
+
+/* 明色テキスト系（100/200/300）→ 濃色（薄背景でも読めるよう） */
+.assignment-light .text-red-100,
+.assignment-light .text-red-200,
+.assignment-light .text-red-300 { color: #991b1b !important; }
+.assignment-light .text-amber-100,
+.assignment-light .text-amber-200,
+.assignment-light .text-amber-300 { color: #92400e !important; }
+.assignment-light .text-orange-100,
+.assignment-light .text-orange-200,
+.assignment-light .text-orange-300 { color: #9a3412 !important; }
+.assignment-light .text-emerald-100,
+.assignment-light .text-emerald-200,
+.assignment-light .text-emerald-300 { color: #047857 !important; }
+.assignment-light .text-blue-100,
+.assignment-light .text-blue-200,
+.assignment-light .text-blue-300 { color: #1d4ed8 !important; }
+.assignment-light .text-violet-100,
+.assignment-light .text-violet-200,
+.assignment-light .text-violet-300 { color: #6d28d9 !important; }
+.assignment-light .text-cyan-100,
+.assignment-light .text-cyan-200,
+.assignment-light .text-cyan-300 { color: #155e75 !important; }
+.assignment-light .text-purple-100,
+.assignment-light .text-purple-200,
+.assignment-light .text-purple-300 { color: #6d28d9 !important; }
+.assignment-light .text-pink-200,
+.assignment-light .text-pink-300 { color: #be185d !important; }
+
+/* AssignmentClient 内のインライン背景色（ガント・プール）を上書き */
+/*   gantt の暗背景 #1e293b 系をモック準拠の白背景に置換 */
+.assignment-light [style*='background:#1e293b'],
+.assignment-light [style*='background: #1e293b'],
+.assignment-light [style*='background-color:#1e293b'],
+.assignment-light [style*='background-color: #1e293b'] {
+  background-color: #ffffff !important;
+}
+/*   gantt strip の濃いダーク背景 #0f172a → 薄グレー */
+.assignment-light [style*='background:#0f172a'],
+.assignment-light [style*='background: #0f172a'],
+.assignment-light [style*='background-color:#0f172a'],
+.assignment-light [style*='background-color: #0f172a'] {
+  background-color: #f8fafc !important;
+}
+/*   slate-800 系 #1f2937 → 薄グレー */
+.assignment-light [style*='background:#1f2937'],
+.assignment-light [style*='background: #1f2937'],
+.assignment-light [style*='background-color:#1f2937'] {
+  background-color: #f1f5f9 !important;
+}
+/*   slate-700 系 */
+.assignment-light [style*='background:#334155'],
+.assignment-light [style*='background: #334155'],
+.assignment-light [style*='background-color:#334155'] {
+  background-color: #e2e8f0 !important;
+}
+/*   slate-600 #475569（強調時間列の縦線） → 中濃度グレー */
+.assignment-light [style*='background:#475569'],
+.assignment-light [style*='background: #475569'],
+.assignment-light [style*='background-color:#475569'] {
+  background-color: #cbd5e1 !important;
+}
+/*   ガント時間ヘッダ列の slate-800 */
+.assignment-light .bg-slate-800 { background-color: #f1f5f9 !important; }
+.assignment-light .bg-slate-900 { background-color: #f8fafc !important; }
+.assignment-light .bg-slate-950 { background-color: #ffffff !important; }
+.assignment-light .bg-slate-700 { background-color: #e2e8f0 !important; }
+.assignment-light .text-slate-200,
+.assignment-light .text-slate-300 { color: #0f172a !important; }
+.assignment-light .border-slate-700 { border-color: #cbd5e1 !important; }
+.assignment-light .border-slate-600 { border-color: #94a3b8 !important; }
+
+/* 未設定メンバープール（オレンジ系）の暗背景を薄色チップに */
+.assignment-light [style*='background:#1a1409'],
+.assignment-light [style*='background: #1a1409'] {
+  background-color: #fef3c7 !important;
+}
+/* 未設定メンバープール内チップの濃赤茶 #7c2d12 → 薄オレンジ */
+.assignment-light [style*='background:#7c2d12'],
+.assignment-light [style*='background: #7c2d12'] {
+  background-color: #fed7aa !important;
+}
+/* ヘルプ要員プール内チップの紺 #1e3a8a → 薄青 */
+.assignment-light [style*='background:#1e3a8a'],
+.assignment-light [style*='background: #1e3a8a'] {
+  background-color: #bfdbfe !important;
+}
+/* ヘルプ要員ボタン #1e40af → 青（不透明・濃いまま、白字も維持） */
+/* （こちらはそのままで OK：白文字＋濃青が薄背景でも読める） */
+
+/* 未設定メンバーチップの文字色 #fed7aa → 濃オレンジ */
+.assignment-light [style*='color:#fed7aa'],
+.assignment-light [style*='color: #fed7aa'] {
+  color: #9a3412 !important;
+}
+.assignment-light [style*='color:#bfdbfe'],
+.assignment-light [style*='color: #bfdbfe'] {
+  color: #1e40af !important;
+}
+/* インライン色 #fbbf24（amber-400）→ 濃いアンバー（白bg で読める） */
+.assignment-light [style*='color:#fbbf24'],
+.assignment-light [style*='color: #fbbf24'] {
+  color: #b45309 !important;
+}
+
+/* 休みメンバーの濃赤 bg + 文字 */
+.assignment-light .bg-red-950 { background-color: #fee2e2 !important; }
+.assignment-light .text-red-200 { color: #991b1b !important; }
+
+/* スクロールバー */
+.assignment-light *::-webkit-scrollbar-track { background: #f1f5f9; }
+.assignment-light *::-webkit-scrollbar-thumb { background: #94a3b8; }
+.assignment-light *::-webkit-scrollbar-thumb:hover { background: #64748b; }

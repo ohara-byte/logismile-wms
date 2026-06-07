@@ -20,10 +20,17 @@ export async function GET(req: Request) {
   const severity = searchParams.get('severity');
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '100', 10) || 100, 500);
 
+  // Sprint Y-3 / Y-4: アラート表示ルール見直し
+  //   - 強制OK（type='force_ok'）は専用タブで承認/却下するため除外
+  //   - 未マップ商品（type='unmap_product'）／未マップ運送会社（type='unmap_carrier'）は
+  //     基幹連携タブの「未マップ」「受信ログ」で対応するため除外
+  //   - 計画遅延（type='delay'）等の運用警報は引き続き表示
+  //   ※ type クエリパラメータが明示指定された場合のみ全件取得
+  const EXCLUDED_TYPES = ['force_ok', 'unmap_product', 'unmap_carrier'];
   const items = await prisma.alert.findMany({
     where: {
       ...(resolved === 'true' ? { resolved: true } : resolved === 'false' ? { resolved: false } : {}),
-      ...(type ? { type } : {}),
+      ...(type ? { type } : { type: { notIn: EXCLUDED_TYPES } }),
       ...(severity ? { severity } : {}),
     },
     orderBy: [{ resolved: 'asc' }, { createdAt: 'desc' }],

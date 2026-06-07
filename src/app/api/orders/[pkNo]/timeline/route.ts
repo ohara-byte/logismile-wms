@@ -152,12 +152,22 @@ export async function GET(
       delete: '🗑',
       restore: '♻',
       edit: '✏',
+      hold: '⏸',
+      unhold: '▶',
     };
+    const labelMap: Record<string, string> = {
+      delete: 'キャンセル（論理削除）',
+      restore: '復活',
+      edit: '内容修正',
+      hold: '保留',
+      unhold: '保留解除',
+    };
+    const label = labelMap[a.action] ?? a.action;
     events.push({
       at: a.actedAt.toISOString(),
       kind: a.action,
       icon: iconMap[a.action] ?? '🔧',
-      message: `${a.action}${a.reason ? ` / ${a.reason}` : ''}`,
+      message: `${label}${a.reason ? ` / ${a.reason}` : ''}`,
       actor: a.actedBy,
     });
   }

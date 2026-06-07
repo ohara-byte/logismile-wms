@@ -16,6 +16,12 @@ const Body = z.object({
   special: z.boolean().default(false),
   noshi: z.boolean().default(false),
   active: z.boolean().default(true),
+  // Sprint Z-1 / Y-13: 既定 pass_through
+  productType: z
+    .enum(['warehouse', 'pass_through', 'made_to_order'])
+    .default('pass_through'),
+  safetyStock: z.number().int().min(0).default(0),
+  reorderPoint: z.number().int().min(0).nullable().optional(),
 });
 
 export async function PUT(

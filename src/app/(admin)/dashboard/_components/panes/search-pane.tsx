@@ -188,9 +188,9 @@ export function SearchPane() {
 
   return (
     <div className="p-3">
-      {/* 検索範囲ピル */}
+      {/* 検索範囲ピル — ユーザー要望（2026-05-18）：日付ピル +2px */}
       <div className="flex flex-wrap gap-1.5 items-center mb-2 p-2 bg-surface-base border border-surface-border rounded">
-        <span className="text-[10px] text-ink-subtle mr-1">📅 検索範囲:</span>
+        <span className="text-xs text-ink-subtle mr-1">📅 検索範囲:</span>
         {(['today', 'tomorrow', 'yesterday', 'custom'] as Range[]).map((r) => (
           <RangePill key={r} active={range === r} onClick={() => setRange(r)}>
             {RANGE_LABEL[r](today)}
@@ -201,16 +201,16 @@ export function SearchPane() {
             type="date"
             value={customDate}
             onChange={(e) => setCustomDate(e.target.value)}
-            className="ml-2 bg-surface-panel border border-surface-border rounded px-2 py-0.5 text-2xs text-ink"
+            className="ml-2 bg-surface-panel border border-surface-border rounded px-2 py-1 text-xs text-ink"
           />
         )}
       </div>
 
-      {/* ミックス検索フォーム */}
+      {/* ミックス検索フォーム — ユーザー要望（2026-05-18）：検索枠 +2px / 高さ調整 */}
       <div className="bg-surface-base border border-surface-border rounded p-2 mb-2">
-        <h4 className="text-2xs font-bold text-accent-amber mb-1.5">
+        <h4 className="text-xs font-bold text-accent-amber mb-1.5">
           🔍 ミックス検索{' '}
-          <span className="text-[10px] text-ink-muted font-normal">複数条件を AND 結合</span>
+          <span className="text-2xs text-ink-muted font-normal">複数条件を AND 結合</span>
         </h4>
         <div className="space-y-1">
           {conditions.map((c) => (
@@ -220,7 +220,7 @@ export function SearchPane() {
                 onChange={(e) =>
                   updateCondition(c.id, { field: e.target.value as Field })
                 }
-                className="bg-surface-panel border border-surface-border rounded px-1.5 py-1 text-2xs text-ink min-w-[140px]"
+                className="bg-surface-panel border border-surface-border rounded px-2 py-1.5 text-xs text-ink min-w-[140px]"
               >
                 {(Object.keys(FIELD_LABEL) as Field[]).map((f) => (
                   <option key={f} value={f}>
@@ -236,7 +236,7 @@ export function SearchPane() {
                   if (e.key === 'Enter') doSearch();
                 }}
                 placeholder={fieldPlaceholder(c.field)}
-                className="flex-1 bg-surface-panel border border-surface-border rounded px-2 py-1 text-2xs text-ink"
+                className="flex-1 bg-surface-panel border border-surface-border rounded px-2 py-1.5 text-xs text-ink"
               />
               <button
                 onClick={() => removeCondition(c.id)}
@@ -253,13 +253,13 @@ export function SearchPane() {
           <button
             onClick={addCondition}
             disabled={conditions.length >= 10}
-            className="text-2xs px-2 py-0.5 rounded border border-surface-border bg-surface-panel text-ink-subtle hover:text-ink hover:border-accent-amber disabled:opacity-50"
+            className="text-xs px-2.5 py-1 rounded border border-surface-border bg-surface-panel text-ink-subtle hover:text-ink hover:border-accent-amber disabled:opacity-50"
           >
             ＋ 条件追加
           </button>
           <button
             onClick={clearAll}
-            className="text-2xs px-2 py-0.5 rounded border border-surface-border bg-surface-panel text-ink-subtle hover:text-ink"
+            className="text-xs px-2.5 py-1 rounded border border-surface-border bg-surface-panel text-ink-subtle hover:text-ink"
           >
             クリア
           </button>
@@ -267,7 +267,7 @@ export function SearchPane() {
           <button
             onClick={doSearch}
             disabled={busy}
-            className="text-xs font-bold px-3 py-0.5 rounded bg-brand-primary text-white hover:bg-blue-600 disabled:opacity-50"
+            className="text-sm font-bold px-3.5 py-1 rounded bg-brand-primary text-white hover:bg-blue-600 disabled:opacity-50"
           >
             {busy ? '検索中…' : '🔍 検索'}
           </button>
@@ -330,10 +330,11 @@ function RangePill({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  // ユーザー要望（2026-05-18）：日付ピル +2px（10→12px）+ 高さ調整
   return (
     <button
       onClick={onClick}
-      className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
         active
           ? 'bg-amber-900 text-amber-100 border-accent-amber font-bold'
           : 'bg-surface-panel text-ink-subtle border-surface-border hover:text-ink'
@@ -353,10 +354,11 @@ function FlagChip({
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  // ユーザー要望（2026-05-18）：フラグチップ +2px（10→12px）+ 高さ調整
   return (
     <button
       onClick={onClick}
-      className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+      className={`text-xs px-2.5 py-1 rounded border transition-colors ${
         active
           ? 'bg-brand-primary text-white border-brand-primary font-bold'
           : 'bg-surface-panel text-ink-subtle border-surface-border hover:text-ink hover:border-accent-amber'
@@ -374,60 +376,75 @@ function SearchCard({
   item: SearchResult;
   onClick: () => void;
 }) {
+  // ユーザー要望（2026-05-18）:
+  //  - PkNo +1px（12→13px）
+  //  - 担当（割当）と 🚚運送会社 を PkNo の右隣に移動 +1px（10→11px）
+  //  - 顧客名は +3px（10→13px）でカード高さは維持
   const { color, label } = statusVisual(item.status, item.deleted);
   return (
     <div
       onClick={onClick}
       className="bg-surface-base border border-surface-border rounded mb-1 px-2.5 py-1.5 cursor-pointer hover:bg-surface-raised hover:border-accent-amber transition-colors"
     >
-      <div className="flex justify-between items-baseline mb-0.5">
-        <span className="text-xs font-mono font-bold text-accent-amber tabular-nums">
-          {item.pkNo.replace(/^[A-Z]{2,4}-?/, '')}
-          {item.prefix && (
-            <span className="ml-1.5 text-[9px] bg-blue-900 text-white px-1 rounded font-bold tracking-widest">
-              {item.prefix.slice(0, 2)}
+      <div className="flex justify-between items-baseline mb-0.5 gap-2">
+        <div className="flex items-baseline gap-2 min-w-0 flex-1">
+          <span className="text-[13px] font-mono font-bold text-accent-amber tabular-nums shrink-0">
+            {item.pkNo.replace(/^[A-Z]{2,4}-?/, '')}
+            {item.prefix && (
+              <span className="ml-1.5 text-[10px] bg-blue-900 text-white px-1 rounded font-bold tracking-widest">
+                {item.prefix.slice(0, 2)}
+              </span>
+            )}
+            {item.flags.includes('cancel') && (
+              <span className="ml-1.5 text-[10px] bg-slate-700 text-slate-200 px-1 rounded">
+                ❌取消
+              </span>
+            )}
+            {item.flags.includes('cool') && (
+              <span className="ml-1.5 text-[10px] bg-cyan-800 text-cyan-100 px-1 rounded">
+                ❄
+              </span>
+            )}
+            {item.flags.includes('special') && (
+              <span className="ml-1.5 text-[10px] bg-amber-800 text-amber-100 px-1 rounded">
+                ★特殊
+              </span>
+            )}
+            {item.flags.includes('force_ok') && (
+              <span className="ml-1.5 text-[10px] bg-red-900 text-red-100 px-1 rounded">
+                ⚠ 強制OK{item.forceReasonCode ? ` ${item.forceReasonCode}` : ''}
+              </span>
+            )}
+          </span>
+          {/* 担当（割当）+ 🚚 運送会社 を PkNo の右に移動 */}
+          <span className="text-[11px] text-ink-muted truncate min-w-0">
+            {item.deviceLocation && `${item.deviceLocation} ／ `}
+            <span className={item.inspStaff ? 'text-ink-subtle' : 'text-ink-muted'}>
+              {item.inspStaff?.name ?? '未割当'}
             </span>
-          )}
-          {item.flags.includes('cancel') && (
-            <span className="ml-1.5 text-[9px] bg-slate-700 text-slate-200 px-1 rounded">
-              ❌取消
-            </span>
-          )}
-          {item.flags.includes('cool') && (
-            <span className="ml-1.5 text-[9px] bg-cyan-800 text-cyan-100 px-1 rounded">
-              ❄
-            </span>
-          )}
-          {item.flags.includes('special') && (
-            <span className="ml-1.5 text-[9px] bg-amber-800 text-amber-100 px-1 rounded">
-              ★特殊
-            </span>
-          )}
-          {item.flags.includes('force_ok') && (
-            <span className="ml-1.5 text-[9px] bg-red-900 text-red-100 px-1 rounded">
-              ⚠ 強制OK{item.forceReasonCode ? ` ${item.forceReasonCode}` : ''}
-            </span>
-          )}
-        </span>
-        <span className={`text-[10px] font-bold ${color}`}>{label}</span>
+            {item.carrier && (
+              <span className="ml-1.5">
+                🚚 {item.carrier.short ?? item.carrier.name}
+              </span>
+            )}
+          </span>
+        </div>
+        <span className={`text-[11px] font-bold shrink-0 ${color}`}>{label}</span>
       </div>
-      <div className="text-2xs text-ink truncate">
+      {/* 顧客名 +3px（13px） */}
+      <div className="text-[13px] text-ink truncate">
         {item.destName ?? '—'} ／ {item.destAddr ?? '—'}
       </div>
-      <div className="flex justify-between text-[10px] text-ink-muted mt-0.5">
-        <span>
-          {item.deviceLocation && `${item.deviceLocation} ／ `}
-          {item.inspStaff?.name ?? '未割当'}
-          {item.carrier && ` ／ 🚚 ${item.carrier.short ?? item.carrier.name}`}
-        </span>
-        <span className="font-mono tabular-nums">
+      {/* 時刻のみ右寄せ（割当・運送は上段へ移動済み） */}
+      {(item.completedAt || item.startedAt) && (
+        <div className="text-[10px] text-ink-muted mt-0.5 text-right font-mono tabular-nums">
           {item.completedAt
             ? `${shortTime(item.completedAt)} 完了`
             : item.startedAt
               ? `${shortTime(item.startedAt)} 着手`
               : ''}
-        </span>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

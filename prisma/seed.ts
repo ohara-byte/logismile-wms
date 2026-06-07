@@ -84,6 +84,21 @@ async function main() {
   });
   console.log('  ✓ carriers: 5');
 
+  // 配送便種マッピング（基幹CSVの便種名 → carrier_code）。2026-06-02 DBマスタ化。
+  await prisma.carrierAlias.createMany({
+    skipDuplicates: true,
+    data: [
+      { aliasName: 'ヤマト運輸',           carrierCode: 'YMT-N' },
+      { aliasName: 'ヤマト運輸（クール便）', carrierCode: 'YMT-C' },
+      { aliasName: 'ヤマト便',             carrierCode: 'YMT-N' },
+      { aliasName: '佐川急便',             carrierCode: 'SGW-N' },
+      { aliasName: '佐川急便（クール便）',  carrierCode: 'SGW-C' },
+      { aliasName: 'ゆうパック',           carrierCode: 'JPP-N' },
+      { aliasName: '日本郵便',             carrierCode: 'JPP-N' },
+    ],
+  });
+  console.log('  ✓ carrier_aliases: 7');
+
   // ---------------------------------------------------------------
   // 14. printers（6台）
   // ---------------------------------------------------------------
@@ -153,18 +168,19 @@ async function main() {
 
   // ---------------------------------------------------------------
   // 8. devices（サンプル）
+  // Sprint Y-10/Y-15: tablet / handy のみ管理（PC は NextAuth 認証のため不要、
+  //   プリンタは別マスタ printers で管理）。旧 PC-01 サンプルは撤去済み。
   // ---------------------------------------------------------------
   await prisma.device.createMany({
     skipDuplicates: true,
     data: [
-      { code: 'PC-01',  name: '管理PC 1号機',    type: 'pc',     model: 'Dell OptiPlex',         location: '事務所' },
       { code: 'TBL-01', name: 'タブレット 1号機', type: 'tablet', model: 'HP14',                  location: 'ABLテーブル' },
       { code: 'TBL-02', name: 'タブレット 2号機', type: 'tablet', model: 'HP14',                  location: 'CDテーブル' },
       { code: 'HDY-01', name: 'ハンディ 1号機',   type: 'handy',  model: 'KEYENCE BT-A500',       location: 'EFテーブル' },
       { code: 'HDY-02', name: 'ハンディ 2号機',   type: 'handy',  model: 'KEYENCE BT-A500',       location: 'GHテーブル' },
     ],
   });
-  console.log('  ✓ devices: 5');
+  console.log('  ✓ devices: 4');
 
   // ---------------------------------------------------------------
   // 15. device_printer_map（サンプル）

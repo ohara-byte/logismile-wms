@@ -112,9 +112,20 @@ export async function getOverallProgress(date: Date): Promise<OverallProgress> {
   const inspecting = orders.filter((o) => o.status === 'inspecting').length;
   const held = orders.filter((o) => o.status === 'held').length;
 
-  const forceOkCount = await prisma.shippingOrderItem.count({
+  // Sprint S: 強制OK 件数 + 未承認件数 + 理由コード別集計
+  const forceOkItems = await prisma.shippingOrderItem.findMany({
     where: { forceOk: true, order: { shipDate: { gte: from, lte: to }, deletedAt: null } },
+    select: { forceApprovalStatus: true, forceReasonCode: true },
   });
+  const forceOkCount = forceOkItems.length;
+  const forceOkPending = forceOkItems.filter(
+    (i) => i.forceApprovalStatus === null || i.forceApprovalStatus === undefined,
+  ).length;
+  const forceOkByReason: Record<string, number> = {};
+  for (const i of forceOkItems) {
+    const code = i.forceReasonCode ?? '—';
+    forceOkByReason[code] = (forceOkByReason[code] ?? 0) + 1;
+  }
 
   // 直近 30 分の packed 遷移数
   const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
@@ -190,8 +201,8 @@ export async function getOverallProgress(date: Date): Promise<OverallProgress> {
     inspecting,
     held,
     forceOkCount,
-    forceOkPending: forceOkCount, // 承認フローはまだ未実装、現時点で全件を未承認扱い
-    forceOkByReason: {},
+    forceOkPending,
+    forceOkByReason,
     completionRate,
     recentRate,
     avgDurationSec,
@@ -214,6 +225,11 @@ export async function getGroupProgresses(date: Date): Promise<GroupProgress[]> {
       tables: true,
       stdTimes: { select: { stdMin: true } },
     },
+    // 2026-05-18: '独立作業'（ライン/仕分）はダッシュボード上で
+    //   別カード「独立作業エリア」に表示するため、テーブルグループ別進捗からは除外。
+    where: { category: { not: '独立作業' } },
+    // Sprint Y-10: 表示順マスタに従う（小さい順）
+    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
   });
 
   // 配置メンバー（assignment）
@@ -236,16 +252,48 @@ export async function getGroupProgresses(date: Date): Promise<GroupProgress[]> {
     assignedByGroup.set(a.groupId, cur);
   }
 
-  // 全件をグループ均等配分（暫定）。テーブル別割当は Phase 7-5 で対応。
+  // テーブルグループ別 進捗の集計（2026-06-02 改修：伝票自体のグループ属性で集計）
+  //
+  // 旧実装は done を「検品担当者の所属グループ(staff.groupId)」で集計していたが、
+  //   ① staff.groupId 未設定だと永遠に 0、② 別グループの応援検品で実績が誤グループに乗る、
+  //   という問題があった。本改修で「伝票がどのグループに属するか」で集計する。
+  //
+  // 判定ルール：pkNo の 2 文字目（テーブル文字）が、どのグループの tables[] に含まれるか。
+  //   例 "SB0121..." → "B" → tables に B を持つ群 AB。
+  //   plan = その群に属する伝票数 / done = うち packed|shipped の数。
+  //   どの群にも属さない文字は「未分類」群として別カードで可視化。
   const orders = await prisma.shippingOrder.findMany({
     where: { shipDate: { gte: from, lte: to }, deletedAt: null },
-    select: { status: true },
+    select: { pkNo: true, status: true },
   });
   const totalOrders = orders.length;
-  const packedOrders = orders.filter((o) => o.status === 'packed' || o.status === 'shipped').length;
-  const groupCount = Math.max(groups.length, 1);
-  const planPerGroup = Math.ceil(totalOrders / groupCount);
-  const donePerGroup = Math.floor(packedOrders / groupCount);
+
+  // テーブル文字 → groupId のマップ（groups は sortOrder, id 昇順）。
+  //   同一文字が複数群にある場合は先勝ち（id 昇順なので単品群 'K' が 'SAS' より先に確定）。
+  const UNCLASSIFIED = '__UNCLASSIFIED__';
+  const letterToGroup = new Map<string, string>();
+  for (const g of groups) {
+    for (const t of g.tables) {
+      const letter = (t ?? '').trim().toUpperCase();
+      if (letter && !letterToGroup.has(letter)) letterToGroup.set(letter, g.id);
+    }
+  }
+  const groupOfOrder = (pkNo: string): string => {
+    const letter = pkNo.length >= 2 ? pkNo[1].toUpperCase() : '';
+    return letterToGroup.get(letter) ?? UNCLASSIFIED;
+  };
+
+  // plan = 群に属する伝票数、done = うち packed|shipped 数（伝票自体のグループで集計）
+  const planByGroup = new Map<string, number>();
+  const doneByGroup = new Map<string, number>();
+  for (const o of orders) {
+    const gid = groupOfOrder(o.pkNo);
+    planByGroup.set(gid, (planByGroup.get(gid) ?? 0) + 1);
+    if (o.status === 'packed' || o.status === 'shipped') {
+      doneByGroup.set(gid, (doneByGroup.get(gid) ?? 0) + 1);
+    }
+  }
+  void totalOrders;
 
   const now = new Date();
 
@@ -261,8 +309,9 @@ export async function getGroupProgresses(date: Date): Promise<GroupProgress[]> {
     const hourlyCapacityPerStaff = stdMin > 0 ? (60 / stdMin) * skillCoef : 0;
     const hourlyCapacity = Math.round(assignedStaff * hourlyCapacityPerStaff);
 
-    const plan = planPerGroup;
-    const done = Math.min(donePerGroup, plan);
+    const plan = planByGroup.get(g.id) ?? 0;
+    const doneRaw = doneByGroup.get(g.id) ?? 0;
+    const done = Math.min(doneRaw, plan);
     const remaining = Math.max(0, plan - done);
     const progressRate = plan > 0 ? Math.round((done / plan) * 100) : 0;
 
@@ -311,6 +360,36 @@ export async function getGroupProgresses(date: Date): Promise<GroupProgress[]> {
       delayFlag: status === 'alert',
     };
   });
+
+  // 未分類（どの群の tables にも一致しない pkNo 文字）を別カードで可視化。
+  //   伝票が存在する場合のみ表示し、マスタ（tables）に追記すれば自動的に正しい群へ移る。
+  const unclassifiedPlan = planByGroup.get(UNCLASSIFIED) ?? 0;
+  if (unclassifiedPlan > 0) {
+    const unclassifiedDoneRaw = doneByGroup.get(UNCLASSIFIED) ?? 0;
+    const unclassifiedDone = Math.min(unclassifiedDoneRaw, unclassifiedPlan);
+    result.push({
+      groupId: UNCLASSIFIED,
+      groupName: '未分類',
+      tables: [],
+      assignedStaff: 0,
+      staffNames: [],
+      hourlyCapacity: 0,
+      done: unclassifiedDone,
+      plan: unclassifiedPlan,
+      remaining: Math.max(0, unclassifiedPlan - unclassifiedDone),
+      progressRate:
+        unclassifiedPlan > 0
+          ? Math.round((unclassifiedDone / unclassifiedPlan) * 100)
+          : 0,
+      status: 'wait',
+      etaTime: null,
+      etaStatus: null,
+      etaRemainingMin: null,
+      stdMin: 0,
+      skillCoef: 1,
+      delayFlag: false,
+    });
+  }
 
   return result;
 }

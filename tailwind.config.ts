@@ -29,7 +29,10 @@ const config: Config = {
         // 表面色（ダークテーマ）
         surface: {
           base: '#0f172a', // slate-900: ページ背景
-          panel: '#1e293b', // slate-800: パネル/カード
+          panel: '#1e293b', // slate-800: 外側パネル
+          // ★ モック準拠: パネル内の二次カード（grp-card / od-sec / ls-card 等）は
+          //   外側パネルより 1 段暗い slate-900 を使い階層感を出す
+          sunken: '#0f172a',
           subtle: '#0f172a', // 凹み箇所（input背景など）
           raised: '#334155', // slate-700: ホバー/活性化
           border: '#334155', // パネル境界

@@ -28,7 +28,8 @@ export async function GET() {
   if (!guard.ok) return guard.response;
   const items = await prisma.productAuxAttr.findMany({
     orderBy: [{ productCode: 'asc' }],
-    take: 1000,
+    take: 100000, // 2026-06-04: 上限実質撤廃
+
     include: { product: { select: { name: true, jan: true } } },
   });
   return NextResponse.json({

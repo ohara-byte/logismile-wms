@@ -24,6 +24,11 @@ import { UnmapPane } from './unmap-pane';
 import { ReimportPane } from './reimport-pane';
 import { AuxProdPane } from './aux-prod-pane';
 import { AuxSetPane } from './aux-set-pane';
+import { AuxCarrPane } from './aux-carr-pane';
+// Sprint Y-13: 顧客属性補助を placeholder から CustomerAuxAttr マスタの CRUD UI に切替
+import { MasterTable } from '../master/master-table';
+import { customerAuxConfig } from '../master/configs/customer-aux-config';
+import type { MasterConfig } from '../master/master-types';
 
 export function LinkPane() {
   const router = useRouter();
@@ -42,7 +47,8 @@ export function LinkPane() {
       <LinkStatusBanner />
 
       {/* サブタブ */}
-      <div className="grid grid-cols-7 gap-1">
+      {/* Sprint Y-13: 8 サブタブに変更（aux-campaign 追加） */}
+      <div className="grid grid-cols-4 lg:grid-cols-8 gap-1">
         {LINK_SUBTABS.map((t) => (
           <button
             key={t.id}
@@ -84,19 +90,21 @@ function renderPane(active: LinkSubTabId) {
     case 'aux-set':
       return <AuxSetPane />;
     case 'aux-cust':
+      // Sprint Y-13: CustomerAuxAttr マスタの CRUD UI
       return (
-        <PlaceholderPane
-          title="👤 顧客属性補助"
-          desc="個人 / 企業 / 置き配 等の顧客属性。CustomerAuxAttr テーブルが要件確定後に追加予定"
-          block="将来"
+        <MasterTable
+          config={customerAuxConfig as unknown as MasterConfig<Record<string, unknown>>}
         />
       );
     case 'aux-carr':
+      return <AuxCarrPane />;
+    case 'aux-campaign':
+      // Sprint Y-13: 期間限定キャンペーン（要件確定後に正式実装）
       return (
         <PlaceholderPane
-          title="🚚 配送便マッピング"
-          desc="基幹の便文字列（例: 'ヤマト'）→ WMS の便種コード（YAMATO_NORMAL）への変換テーブル"
-          block="将来"
+          title="📅 期間限定キャンペーン"
+          desc="「2026/05/01〜05/15、東日本配送には【母の日カード】同梱」のような期間ルール。CustomerAux + SetComp と連携して期間自動セット予定"
+          block="新基幹連携稼働後"
         />
       );
   }

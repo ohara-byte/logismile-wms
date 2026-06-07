@@ -8,13 +8,14 @@
 
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requireRole } from '@/lib/auth/permissions';
+import { requirePermission } from '@/lib/auth/permissions';
 
 export async function POST(
   _req: Request,
   { params }: { params: { itemId: string } },
 ) {
-  const guard = await requireRole('admin', 'manager');
+  // Sprint Y-11: 強制OK 承認は force_approve 権限（admin/manager のみ）
+  const guard = await requirePermission('force_approve');
   if (!guard.ok) return guard.response;
 
   const id = parseInt(params.itemId, 10);

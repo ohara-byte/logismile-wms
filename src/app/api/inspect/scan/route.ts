@@ -85,7 +85,13 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({
-    data: { result: judge.result, itemId: judge.itemId ?? null },
+    data: {
+      result: judge.result,
+      itemId: judge.itemId ?? null,
+      // 2026-06-03 ④軽量化: matched 時の確定スキャン数を返し、クライアントは
+      //   伝票全体の再取得(refreshOrder)なしでローカル更新できるようにする。
+      scannedQty: judge.nextScannedQty ?? null,
+    },
     message: 'OK',
   });
 }

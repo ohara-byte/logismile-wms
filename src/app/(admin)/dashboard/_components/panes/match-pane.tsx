@@ -35,6 +35,11 @@ interface MatchRow {
   matchStatus: 'none' | 'barcode' | 'visual';
   matchedAt: string | null;
   matchedBy: string | null;
+  // Sprint Z-5: 引当差分情報
+  requiredQty: number;
+  allocatedQty: number;
+  allocDiff: number;
+  allocStatus: 'full' | 'partial' | 'none';
 }
 
 interface Stats {
@@ -43,7 +48,14 @@ interface Stats {
   pending: number;
   matched: number;
   carryCandidate: number;
+  // Sprint Z-5
+  allocFull: number;
+  allocPartial: number;
+  allocNone: number;
+  allocDiffCount: number;
 }
+
+type AllocFilterKey = 'all' | 'diff' | 'full' | 'partial' | 'none';
 
 type ActionKind = 'complete' | 'carry' | 'cancel' | 'reprint' | 'note';
 
@@ -64,7 +76,11 @@ export function MatchPane() {
   const [busy, setBusy] = useState(false);
   const [scanFlash, setScanFlash] = useState<string | null>(null);
   const [actionTarget, setActionTarget] = useState<MatchRow | null>(null);
-  const [carryDialog, setCarryDialog] = useState(false);
+  // 一括処理ダイアログ — 'carry' / 'complete' / 'cancel' のいずれか起動中の種別
+  const [bulkDialog, setBulkDialog] = useState<null | 'carry' | 'complete' | 'cancel'>(
+    null,
+  );
+  const [allocFilter, setAllocFilter] = useState<AllocFilterKey>('all');
 
   const { refresh: refreshBadges } = useBadges();
   const { open: openOrderDetail } = useOrderDetailModal();
@@ -180,27 +196,29 @@ export function MatchPane() {
     }
   }
 
-  async function executeCarryover(reason: string) {
+  async function executeBulk(action: 'carry' | 'complete' | 'cancel', reason: string) {
     setBusy(true);
     try {
-      const r = await fetch('/api/orders/match/carryover', {
+      const r = await fetch('/api/orders/match/bulk-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, reason }),
+        body: JSON.stringify({ date, action, reason }),
       });
       const j = await r.json();
       if (!r.ok) {
         alert(j?.message ?? `HTTP ${r.status}`);
         return;
       }
-      alert(`✅ ${j.data.affected} 件を翌日へ繰越しました`);
+      const verb =
+        action === 'carry' ? '翌日繰越' : action === 'complete' ? '強制完了' : 'キャンセル';
+      alert(`✅ ${j.data.affected} 件を一括${verb}しました`);
       refreshBadges();
       reload();
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy(false);
-      setCarryDialog(false);
+      setBulkDialog(null);
     }
   }
 
@@ -283,98 +301,211 @@ export function MatchPane() {
         </div>
       )}
 
-      {/* 翌日繰越アクションバー */}
+      {/* Sprint Z-5: 引当差分フィルタ */}
+      {data && (
+        <div className="flex items-center gap-2 mb-2 text-2xs flex-wrap">
+          <span className="text-ink-subtle">引当差分:</span>
+          <FilterPills
+            value={allocFilter}
+            onChange={(v) => setAllocFilter(v as AllocFilterKey)}
+            options={[
+              { value: 'all', label: `全て (${data.stats.total})` },
+              {
+                value: 'diff',
+                label: `差分あり (${data.stats.allocDiffCount})`,
+                tone: 'red',
+              },
+              {
+                value: 'full',
+                label: `引当完了 (${data.stats.allocFull})`,
+                tone: 'emerald',
+              },
+              {
+                value: 'partial',
+                label: `部分引当 (${data.stats.allocPartial})`,
+                tone: 'amber',
+              },
+              {
+                value: 'none',
+                label: `未引当 (${data.stats.allocNone})`,
+                tone: 'red',
+              },
+            ]}
+          />
+          <span className="ml-2 text-3xs text-ink-muted">
+            ※ 承認前の状態で引当不足を確認するためのフィルタです
+          </span>
+        </div>
+      )}
+
+      {/* 一括処理アクションバー — 強制完了 / 翌日繰越 / キャンセル の 3 択 */}
       {matchedCount > 0 && (
-        <div className="mb-2 px-2.5 py-1.5 rounded border border-status-warn/50 bg-amber-950/30 flex items-center justify-between">
-          <div className="text-[10px] text-amber-100">
-            ✓ <b>{matchedCount}</b> 件の未検品伝票が照合済みです。
-            <b>翌日繰越処理を実行</b>すると、これらの伝票は明日へ繰越されます。
+        <div className="mb-2 px-2.5 py-1.5 rounded border border-status-warn/50 bg-amber-950/30 flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-[10px] text-amber-100 min-w-0">
+            ✓ <b>{matchedCount}</b> 件の未検品伝票が照合済みです。下記のいずれかの一括処理を選択してください。
           </div>
-          <button
-            onClick={() => setCarryDialog(true)}
-            disabled={busy}
-            className="px-2.5 py-1 rounded bg-orange-700 border border-orange-500 text-white text-[10px] font-bold hover:bg-orange-600 whitespace-nowrap"
-          >
-            🟠 翌日繰越を実行
-          </button>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              onClick={() => setBulkDialog('complete')}
+              disabled={busy}
+              className="px-2.5 py-1 rounded bg-emerald-700 border border-emerald-500 text-white text-[10px] font-bold hover:bg-emerald-600 whitespace-nowrap disabled:opacity-50"
+              title="検品せず完了扱いにする（実績送信対象）"
+            >
+              ✅ 強制完了を実行
+            </button>
+            <button
+              onClick={() => setBulkDialog('carry')}
+              disabled={busy}
+              className="px-2.5 py-1 rounded bg-orange-700 border border-orange-500 text-white text-[10px] font-bold hover:bg-orange-600 whitespace-nowrap disabled:opacity-50"
+              title="明日の出荷指示として繰越す"
+            >
+              🟠 翌日繰越を実行
+            </button>
+            <button
+              onClick={() => setBulkDialog('cancel')}
+              disabled={busy}
+              className="px-2.5 py-1 rounded bg-red-700 border border-red-500 text-white text-[10px] font-bold hover:bg-red-600 whitespace-nowrap disabled:opacity-50"
+              title="出荷取消（基幹へ取消通知）"
+            >
+              ❌ キャンセルを実行
+            </button>
+          </div>
         </div>
       )}
 
       {/* 一覧テーブル */}
-      {data && (
-        <div className="border border-surface-border rounded overflow-hidden">
-          <table className="w-full text-[10px]">
-            <thead className="bg-surface-base border-b border-surface-border">
-              <tr>
-                <th className="px-1.5 py-1 text-center w-[80px] uppercase text-ink-subtle font-bold">📷</th>
-                <th className="px-1.5 py-1 text-center w-[44px] uppercase text-ink-subtle font-bold">👁</th>
-                <th className="px-1.5 py-1 text-left uppercase text-ink-subtle font-bold">伝票No</th>
-                <th className="px-1.5 py-1 text-left uppercase text-ink-subtle font-bold">納品書</th>
-                <th className="px-1.5 py-1 text-left uppercase text-ink-subtle font-bold">顧客</th>
-                <th className="px-1.5 py-1 text-left uppercase text-ink-subtle font-bold">便</th>
-                <th className="px-1.5 py-1 text-center uppercase text-ink-subtle font-bold">担当</th>
-                <th className="px-1.5 py-1 text-right uppercase text-ink-subtle font-bold">点</th>
-                <th className="px-1.5 py-1 text-center uppercase text-ink-subtle font-bold">状態</th>
-                <th className="px-1.5 py-1 text-center uppercase text-ink-subtle font-bold">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.length === 0 ? (
+      {data && (() => {
+        const filteredItems = data.items.filter((it) => {
+          if (allocFilter === 'all') return true;
+          if (allocFilter === 'diff') return it.allocStatus !== 'full';
+          return it.allocStatus === allocFilter;
+        });
+        return (
+          <div className="border border-surface-border rounded overflow-hidden">
+            <table className="w-full text-[10px]">
+              <thead className="bg-surface-base border-b border-surface-border">
                 <tr>
-                  <td
-                    colSpan={10}
-                    className="text-center py-6 text-ink-muted text-2xs"
-                  >
-                    対象日の伝票がありません
-                  </td>
+                  <th className="px-1.5 py-1 text-center w-[80px] uppercase text-ink-subtle font-bold">📷</th>
+                  <th className="px-1.5 py-1 text-center w-[44px] uppercase text-ink-subtle font-bold">👁</th>
+                  <th className="px-1.5 py-1 text-left uppercase text-ink-subtle font-bold">伝票No</th>
+                  <th className="px-1.5 py-1 text-left uppercase text-ink-subtle font-bold">納品書</th>
+                  <th className="px-1.5 py-1 text-left uppercase text-ink-subtle font-bold">顧客</th>
+                  <th className="px-1.5 py-1 text-left uppercase text-ink-subtle font-bold">便</th>
+                  <th className="px-1.5 py-1 text-center uppercase text-ink-subtle font-bold">担当</th>
+                  <th className="px-1.5 py-1 text-right uppercase text-ink-subtle font-bold">点</th>
+                  <th className="px-1.5 py-1 text-right uppercase text-ink-subtle font-bold">引当差</th>
+                  <th className="px-1.5 py-1 text-center uppercase text-ink-subtle font-bold">状態</th>
+                  <th className="px-1.5 py-1 text-center uppercase text-ink-subtle font-bold">操作</th>
                 </tr>
-              ) : (
-                data.items.map((row) => (
-                  <MatchTr
-                    key={row.pkNo}
-                    row={row}
-                    onBarcode={() =>
-                      setMatchStatus(
-                        row.pkNo,
-                        row.matchStatus === 'barcode' ? 'none' : 'barcode',
-                      )
-                    }
-                    onVisual={() =>
-                      setMatchStatus(
-                        row.pkNo,
-                        row.matchStatus === 'visual' ? 'none' : 'visual',
-                      )
-                    }
-                    onAction={() => setActionTarget(row)}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {filteredItems.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={11}
+                      className="text-center py-6 text-ink-muted text-2xs"
+                    >
+                      該当する伝票がありません
+                    </td>
+                  </tr>
+                ) : (
+                  filteredItems.map((row) => (
+                    <MatchTr
+                      key={row.pkNo}
+                      row={row}
+                      onBarcode={() =>
+                        setMatchStatus(
+                          row.pkNo,
+                          row.matchStatus === 'barcode' ? 'none' : 'barcode',
+                        )
+                      }
+                      onVisual={() =>
+                        setMatchStatus(
+                          row.pkNo,
+                          row.matchStatus === 'visual' ? 'none' : 'visual',
+                        )
+                      }
+                      onAction={() => setActionTarget(row)}
+                    />
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
 
-      {/* 翌日繰越 確認ダイアログ */}
+      {/* 一括処理 確認ダイアログ — action 別に文言と色を切替 */}
       <ConfirmDialog
-        open={carryDialog}
-        title="翌日繰越を実行しますか？"
+        open={bulkDialog !== null}
+        title={
+          bulkDialog === 'complete'
+            ? '強制完了を一括実行しますか？'
+            : bulkDialog === 'carry'
+              ? '翌日繰越を一括実行しますか？'
+              : 'キャンセル（出荷取消）を一括実行しますか？'
+        }
         body={
           <div className="space-y-1 text-2xs">
             <div>
               照合済の<b className="text-accent-amber">{matchedCount}件</b>
-              の未検品伝票を 明日（{nextDate(date)}）の出荷指示として繰越します。
+              の未検品伝票に対し
+              {bulkDialog === 'complete' && (
+                <>
+                  <b className="text-status-ok">「強制完了」</b>を一括実行します。
+                  ステータスが <b>packed</b> に更新され、実績送信対象となります。
+                </>
+              )}
+              {bulkDialog === 'carry' && (
+                <>
+                  <b className="text-status-warn">「翌日繰越」</b>を一括実行します。
+                  shipDate が 明日（{nextDate(date)}）に変更されます。
+                </>
+              )}
+              {bulkDialog === 'cancel' && (
+                <>
+                  <b className="text-status-error">「キャンセル」</b>を一括実行します。
+                  伝票が論理削除され、基幹へ取消通知が送信されます。
+                </>
+              )}
             </div>
             <div className="text-status-warn">
-              ⚠ 元に戻す機能はありません。実行前にご確認ください。
+              ⚠ この操作は伝票単位のロールバック機能がありません。実行前に必ずご確認ください。
             </div>
           </div>
         }
-        promptLabel="繰越理由（必須）"
-        promptPlaceholder="例: 繁忙期で時間切れのため翌日繰越"
-        confirmLabel="🟠 一括繰越実行"
-        variant="warn"
-        onConfirm={executeCarryover}
-        onCancel={() => setCarryDialog(false)}
+        promptLabel={
+          bulkDialog === 'complete'
+            ? '強制完了の理由（必須）'
+            : bulkDialog === 'carry'
+              ? '繰越理由（必須）'
+              : 'キャンセル理由（必須）'
+        }
+        promptPlaceholder={
+          bulkDialog === 'complete'
+            ? '例: 検品時間切れ、現場確認済のため一括完了'
+            : bulkDialog === 'carry'
+              ? '例: 繁忙期で時間切れのため翌日繰越'
+              : '例: 配送会社の集荷時刻超過、お客様連絡済'
+        }
+        confirmLabel={
+          bulkDialog === 'complete'
+            ? '✅ 一括強制完了'
+            : bulkDialog === 'carry'
+              ? '🟠 一括繰越実行'
+              : '❌ 一括キャンセル'
+        }
+        variant={
+          bulkDialog === 'complete'
+            ? 'success'
+            : bulkDialog === 'carry'
+              ? 'warn'
+              : 'danger'
+        }
+        onConfirm={(reason) => {
+          if (bulkDialog) executeBulk(bulkDialog, reason);
+        }}
+        onCancel={() => setBulkDialog(null)}
       />
 
       {/* mtoa-modal */}
@@ -403,7 +534,21 @@ function recomputeStats(items: MatchRow[]): Stats {
   const pending = total - done;
   const matched = items.filter((i) => i.matchStatus !== 'none').length;
   const carryCandidate = items.filter((i) => !i.inspected && i.matchStatus !== 'none').length;
-  return { total, done, pending, matched, carryCandidate };
+  const allocFull = items.filter((i) => i.allocStatus === 'full').length;
+  const allocPartial = items.filter((i) => i.allocStatus === 'partial').length;
+  const allocNone = items.filter((i) => i.allocStatus === 'none').length;
+  const allocDiffCount = items.filter((i) => i.allocStatus !== 'full').length;
+  return {
+    total,
+    done,
+    pending,
+    matched,
+    carryCandidate,
+    allocFull,
+    allocPartial,
+    allocNone,
+    allocDiffCount,
+  };
 }
 
 function nextDate(iso: string): string {
@@ -468,6 +613,9 @@ function MatchTr({
         {row.staffName ?? row.tableLabel ?? '—'}
       </td>
       <td className="px-1.5 py-1 text-right tabular-nums">{row.itemCount}</td>
+      <td className="px-1.5 py-1 text-right tabular-nums">
+        <AllocCell row={row} />
+      </td>
       <td className="px-1.5 py-1 text-center">
         <StatusPill status={row.status} inspected={row.inspected} />
       </td>
@@ -507,19 +655,29 @@ function StatBox({
   value: number;
   tone: 'blue' | 'green' | 'orange' | 'violet' | 'red';
 }) {
-  const map = {
-    blue: 'border-blue-500/40 bg-blue-950/30 text-blue-200',
-    green: 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200',
-    orange: 'border-orange-500/40 bg-orange-950/30 text-orange-200',
-    violet: 'border-violet-500/40 bg-violet-950/30 text-violet-200',
-    red: 'border-red-500/40 bg-red-950/30 text-red-200',
+  // Sprint Z-2: 数値を大きく + 値ゼロ非ゼロでアクセントを変える
+  const map: Record<typeof tone, { border: string; accent: string; valueColor: string }> = {
+    blue: { border: 'border-l-blue-500', accent: 'text-blue-300', valueColor: 'text-blue-100' },
+    green: { border: 'border-l-emerald-500', accent: 'text-emerald-300', valueColor: 'text-emerald-100' },
+    orange: { border: 'border-l-orange-500', accent: 'text-orange-300', valueColor: 'text-orange-100' },
+    violet: { border: 'border-l-violet-500', accent: 'text-violet-300', valueColor: 'text-violet-100' },
+    red: { border: 'border-l-red-500', accent: 'text-red-300', valueColor: 'text-red-100' },
   };
+  const tones = map[tone];
+  // 0 件はやや控えめに、>0 は強調
+  const isZero = value === 0;
   return (
-    <div className={`rounded border ${map[tone]} px-2 py-1.5 text-center`}>
-      <div className="text-[9px] text-ink-muted">{label}</div>
-      <div className="text-base font-bold tabular-nums leading-none mt-0.5">
+    <div
+      className={`rounded-md border border-surface-border bg-surface-panel border-l-4 ${tones.border} px-2.5 py-2 text-center transition-all ${
+        isZero ? 'opacity-60' : 'opacity-100'
+      }`}
+    >
+      <div className={`text-2xs font-bold ${tones.accent}`}>{label}</div>
+      <div
+        className={`text-2xl font-bold tabular-nums leading-tight mt-1 ${tones.valueColor}`}
+      >
         {value}
-        <small className="text-[10px] font-normal ml-0.5">件</small>
+        <small className="text-2xs font-normal ml-1 text-ink-muted">件</small>
       </div>
     </div>
   );
@@ -592,7 +750,7 @@ function MatchActionModal({
         if (e.target === e.currentTarget && !busy) onClose();
       }}
     >
-      <div className="bg-surface-panel border border-surface-border rounded-2xl shadow-modal max-w-xl w-full max-h-[90vh] overflow-auto">
+      <div className="bg-surface-panel border-2 border-accent-amber rounded-[10px] shadow-modal max-w-xl w-full max-h-[90vh] overflow-auto">
         <div className="px-4 py-3 border-b border-surface-border flex justify-between items-center">
           <h3 className="text-sm font-bold text-ink-strong">⚙ 未検品伝票の処理</h3>
           <button
@@ -701,6 +859,69 @@ function KVRow({ k, v }: { k: string; v: React.ReactNode }) {
     <div className="grid grid-cols-[80px_1fr] gap-1">
       <span className="text-ink-subtle">{k}</span>
       <span className="text-ink">{v}</span>
+    </div>
+  );
+}
+
+function AllocCell({ row }: { row: MatchRow }) {
+  if (row.allocStatus === 'full') {
+    return (
+      <span className="text-status-ok text-[10px] font-bold">
+        ✓ {row.allocatedQty}/{row.requiredQty}
+      </span>
+    );
+  }
+  if (row.allocStatus === 'partial') {
+    return (
+      <span className="text-accent-amber text-[10px] font-bold" title={`不足 ${row.allocDiff}`}>
+        ⚠ {row.allocatedQty}/{row.requiredQty}
+        <span className="text-3xs ml-0.5 opacity-80">(-{row.allocDiff})</span>
+      </span>
+    );
+  }
+  return (
+    <span className="text-status-error text-[10px] font-bold" title={`未引当 ${row.requiredQty}`}>
+      ✗ 0/{row.requiredQty}
+    </span>
+  );
+}
+
+function FilterPills({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: Array<{
+    value: string;
+    label: string;
+    tone?: 'red' | 'emerald' | 'amber';
+  }>;
+  onChange: (v: string) => void;
+}) {
+  const toneClass: Record<'red' | 'emerald' | 'amber', string> = {
+    red: 'text-red-200',
+    emerald: 'text-emerald-200',
+    amber: 'text-amber-200',
+  };
+  return (
+    <div className="inline-flex border border-surface-border rounded overflow-hidden">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={`px-2.5 py-1 text-[10px] font-bold ${
+            value === opt.value
+              ? 'bg-accent-amber text-surface-base'
+              : `bg-surface-base hover:bg-surface-panel ${
+                  opt.tone ? toneClass[opt.tone] : 'text-ink-subtle'
+                }`
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
     </div>
   );
 }

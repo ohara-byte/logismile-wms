@@ -24,7 +24,7 @@ export async function GET() {
     where: { active: true, auxAttr: { is: null } },
     orderBy: { code: 'asc' },
     select: { code: true, name: true, jan: true, cat: true, frozen: true },
-    take: 200,
+    take: 100000, // 2026-06-04: 上限実質撤廃（未マップ商品の取りこぼし防止）
   });
 
   return NextResponse.json({

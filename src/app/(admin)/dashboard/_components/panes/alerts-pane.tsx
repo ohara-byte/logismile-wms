@@ -97,8 +97,8 @@ export function AlertsPane() {
 
   if (items === null) {
     return (
-      <div className="p-3 text-2xs text-ink-muted flex items-center gap-2">
-        <span className="w-1.5 h-1.5 bg-accent-amber rounded-full animate-pulse" />
+      <div className="p-3 text-xs text-ink-muted flex items-center gap-2">
+        <span className="w-2 h-2 bg-accent-amber rounded-full animate-pulse" />
         読み込み中…
       </div>
     );
@@ -107,15 +107,15 @@ export function AlertsPane() {
   return (
     <div className="p-3">
       {error && (
-        <div className="mb-2 p-2 text-2xs bg-status-error-bg text-status-error border border-status-error rounded">
+        <div className="mb-2 p-2 text-xs bg-status-error-bg text-status-error border border-status-error rounded">
           {error}
         </div>
       )}
 
       {items.length === 0 ? (
-        <div className="text-center py-8">
-          <div className="text-3xl mb-2 opacity-50">✅</div>
-          <p className="text-2xs text-ink-muted">未解決のアラートはありません</p>
+        <div className="text-center py-10">
+          <div className="text-4xl mb-2 opacity-50">✅</div>
+          <p className="text-sm text-ink-muted">未解決のアラートはありません</p>
         </div>
       ) : (
         items.map((a) => {
@@ -134,7 +134,7 @@ export function AlertsPane() {
         })
       )}
 
-      <div className="mt-2 text-3xs text-ink-muted text-right">
+      <div className="mt-2 text-xs text-ink-muted text-right">
         {items.length} 件 / 5 秒ごとに自動更新
       </div>
     </div>
@@ -157,30 +157,31 @@ function AlertCard({
   const sevClass = severityClass(alert.severity);
   const icon = severityIcon(alert.severity);
 
+  // Sprint Y-1 UI: フォント・ボタン拡大（モック L443-461 準拠 〜 +1 段階）
   return (
     <div
-      className={`bg-surface-base rounded mb-1.5 px-2.5 py-1.5 border-l-[3px] ${sevClass}`}
+      className={`bg-surface-base rounded mb-2 px-3 py-2.5 border-l-[4px] ${sevClass}`}
     >
-      <div className="flex justify-between items-baseline mb-1 gap-2">
-        <div className="text-xs font-bold text-ink-strong leading-tight flex-1 min-w-0">
-          <span className="mr-1">{icon}</span>
+      <div className="flex justify-between items-baseline mb-1.5 gap-2">
+        <div className="text-sm font-bold text-ink-strong leading-tight flex-1 min-w-0">
+          <span className="mr-1.5">{icon}</span>
           {alert.title}
         </div>
-        <div className="text-[9px] font-mono text-ink-muted shrink-0 tabular-nums">
+        <div className="text-xs font-mono text-ink-muted shrink-0 tabular-nums">
           {formatTime(alert.createdAt)}
         </div>
       </div>
       {alert.body && (
-        <div className="text-2xs text-ink leading-snug mb-1.5 whitespace-pre-wrap">
+        <div className="text-xs text-ink leading-relaxed mb-2 whitespace-pre-wrap">
           {alert.body}
         </div>
       )}
-      <div className="flex gap-1.5">
+      <div className="flex gap-2">
         {onJump && (
           <button
             onClick={onJump}
             disabled={busy}
-            className="text-[10px] px-2 py-0.5 rounded border border-brand-primary bg-blue-900 text-white hover:bg-blue-700 disabled:opacity-50"
+            className="text-xs px-3 py-1.5 rounded border border-brand-primary bg-blue-900 text-white hover:bg-blue-700 font-bold disabled:opacity-50"
           >
             {route?.label ?? '関連画面へ'}
           </button>
@@ -188,7 +189,7 @@ function AlertCard({
         <button
           onClick={onResolve}
           disabled={busy}
-          className="text-[10px] px-2 py-0.5 rounded border border-surface-border bg-surface-panel text-ink hover:bg-surface-raised hover:border-accent-amber disabled:opacity-50"
+          className="text-xs px-3 py-1.5 rounded border border-surface-border bg-surface-panel text-ink hover:bg-surface-raised hover:border-accent-amber font-bold disabled:opacity-50"
         >
           {busy ? '…' : '既読'}
         </button>

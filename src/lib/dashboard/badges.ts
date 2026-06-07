@@ -14,6 +14,8 @@
 
 import { prisma } from '@/lib/db';
 import { type BadgeCounts } from './badges-types';
+import { EXCLUDED_REASON_PREFIXES } from '@/lib/force-ok';
+import type { Prisma } from '@prisma/client';
 
 export { type BadgeCounts, ZERO_BADGES, badgesEqual } from './badges-types';
 
@@ -23,15 +25,23 @@ export async function getBadgeCounts(): Promise<BadgeCounts> {
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
-  const [alerts, forcePending, annUnread, matchPending] = await Promise.all([
-    // alerts: 未解決アラート
-    prisma.alert.count({ where: { resolved: false } }),
+  const [alerts, forcePending, annUnread, matchPending, linkUnmap] = await Promise.all([
+    // alerts: 未解決アラート（Sprint Y-3 / Y-4）
+    //   - 強制OK は専用タブで処理するため除外
+    //   - 未マップ商品/運送会社は基幹連携タブで処理するため除外
+    prisma.alert.count({
+      where: {
+        resolved: false,
+        type: { notIn: ['force_ok', 'unmap_product', 'unmap_carrier'] },
+      },
+    }),
 
     // force: 強制OK 未承認件数（A-05）
     //   forceOk=true かつ forceApprovalStatus=null（承認・却下のいずれもされていない）
-    //   ただし R01「セット品時間制約」は日常運用のため承認対象から除外
-    //   削除済み伝票も対象外
-    prisma.shippingOrderItem.count({
+    //   - R01「セット品時間制約」は日常運用のため承認対象から除外
+    //   - F4 一括検品 等の現場運用上の一括処理も承認対象外（Sprint Y-4）
+    //   - 削除済み伝票も対象外
+    (prisma.shippingOrderItem.count({
       where: {
         forceOk: true,
         forceApprovalStatus: null,
@@ -39,9 +49,12 @@ export async function getBadgeCounts(): Promise<BadgeCounts> {
           { forceReasonCode: null },
           { forceReasonCode: { not: 'R01' } },
         ],
+        AND: EXCLUDED_REASON_PREFIXES.map((p) => ({
+          forceReason: { not: { startsWith: p } },
+        })) as Prisma.ShippingOrderItemWhereInput[],
         order: { deletedAt: null },
       },
-    }),
+    })),
 
     // ann: 着信 (inbox) の未読件数（A-06）
     //   モック準拠: 現場（タブレット/ハンディ）からの本部連絡のうち
@@ -66,13 +79,19 @@ export async function getBadgeCounts(): Promise<BadgeCounts> {
         matchStatus: 'none',
       },
     }),
+
+    // Sprint S: 基幹連携 未マップ件数（A-11）
+    //   ProductAuxAttr が紐付いていない active な商品の数
+    prisma.product.count({
+      where: { active: true, auxAttr: { is: null } },
+    }),
   ]);
 
   return {
     alerts,
     force: forcePending,
     ann: annUnread,
-    link: 0, // TODO A-11
+    link: linkUnmap,
     match: matchPending,
   };
 }

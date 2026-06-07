@@ -14,8 +14,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/cn';
 import { NoticesModal } from '@/components/inspection/notices-modal';
-import { NoshiConfirmationModal } from '@/components/inspection/noshi-confirmation-modal';
-import { AccompaniesModal } from '@/components/inspection/accompanies-modal';
+import { FinalCheckModal } from '@/components/inspection/final-check-modal';
+import { PrintConfirmModal } from '@/components/inspection/print-confirm-modal';
 import { ForceOkModal } from '@/components/inspection/force-ok-modal';
 import { QtyKeypadModal } from '@/components/inspection/qty-keypad-modal';
 import { HoldMenuModal } from '@/components/inspection/hold-menu-modal';
@@ -23,6 +23,8 @@ import { HoldContactModal } from '@/components/inspection/hold-contact-modal';
 import { ReprintModal } from '@/components/inspection/reprint-modal';
 import { useStickyForceOk } from '@/lib/use-sticky-force-ok';
 import { useHardwareKeys } from '@/lib/use-hardware-keys';
+import { useScanSound } from '@/lib/use-scan-sound';
+import { SoundToggle } from '@/components/inspection/sound-toggle';
 
 export interface InspectionItem {
   id: number;
@@ -63,6 +65,21 @@ interface Props {
 type ScanResult = 'matched' | 'over_scan' | 'not_found' | 'already_done';
 type FlashColor = 'green' | 'red' | 'blue' | null;
 
+/**
+ * 検品済（強制OK / 数量到達）行を末尾に並べ替えて返す。
+ *   - ユーザー要望（2026-05-20）: 点数多い伝票で未検品の見切れを防ぐため
+ *   - 安定ソート（同状態内は元の id 順を保持）
+ *   - 表示順とキーボード選択順を一致させるため、両方で同じ並びを使う
+ */
+function sortInspectionItems(items: InspectionItem[]): InspectionItem[] {
+  return [...items].sort((a, b) => {
+    const aDone = a.forceOk || a.scannedQty >= a.qty;
+    const bDone = b.forceOk || b.scannedQty >= b.qty;
+    if (aDone !== bDone) return aDone ? 1 : -1;
+    return a.id - b.id;
+  });
+}
+
 export function HandyInspectionScreen({ order: initialOrder, employee }: Props) {
   const router = useRouter();
   const [order, setOrder] = useState(initialOrder);
@@ -79,17 +96,14 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     print: { ok: boolean; dryRun: boolean } | null;
   } | null>(null);
 
-  // 入力モード
-  const [scanMode, setScanMode] = useState<'product' | 'invoice'>('product');
-
   // フラッシュアニメ
   const [flash, setFlash] = useState<FlashColor>(null);
 
   // モーダル制御
-  const [showNotices, setShowNotices] = useState(true);
-  const [showNoshi, setShowNoshi] = useState(false);
-  const [showAccompanies, setShowAccompanies] = useState(false);
-  const [accompaniesConfirmed, setAccompaniesConfirmed] = useState(false);
+  // ※ 連絡事項は idle 画面で既に表示済みのため、検品画面では既定 false。
+  //    F1 押下時のみ再表示する（モック L2725-2728 の挙動相当）。
+  const [showNotices, setShowNotices] = useState(false);
+  const [showFinalCheck, setShowFinalCheck] = useState(false);
   const [forceTarget, setForceTarget] = useState<InspectionItem | null>(null);
   const [qtyTarget, setQtyTarget] = useState<InspectionItem | null>(null);
   const [holdMenuOpen, setHoldMenuOpen] = useState(false);
@@ -99,17 +113,30 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
   // 選択行（Up/Down で移動、Enter or Trigger で +1 スキャン）
   const [selectedRow, setSelectedRow] = useState<number>(-1);
 
+  // Sprint Y-14: ハンディの数字キーで keypad を開いた時の初期入力値（0-9 のいずれか）
+  const [qtyInitialDigit, setQtyInitialDigit] = useState<number | null>(null);
+
   // Sticky 強制検品モード（A-15）
   const sticky = useStickyForceOk();
 
+  // 検品スキャン音 / 完了音（2026-05-23 追加）
+  const {
+    playBeep,
+    playError,
+    playSuccess,
+    enabled: soundEnabled,
+    setEnabled: setSoundEnabled,
+  } = useScanSound();
+
   const scanInputRef = useRef<HTMLInputElement>(null);
+  // 自動展開の二重発火防止（D-1, モック L2167 と同等）
+  const autoExpandedThisLoad = useRef(false);
 
   const allInspected = order.items.every((it) => it.forceOk || it.scannedQty >= it.qty);
 
   const anyModalOpen =
     showNotices ||
-    showNoshi ||
-    showAccompanies ||
+    showFinalCheck ||
     forceTarget !== null ||
     qtyTarget !== null ||
     holdMenuOpen ||
@@ -121,7 +148,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     setTimeout(() => setFlash(null), 500);
   }, []);
 
-  // セッション開始
+  // セッション開始（D-2: 起動時 NoshiConfirmation 撤廃）
   useEffect(() => {
     if (sessionId || completed) return;
     fetch('/api/inspect/start', {
@@ -131,26 +158,35 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     })
       .then((r) => r.json())
       .then((j) => {
-        if (j.data?.id) {
-          setSessionId(j.data.id);
-          if (order.qrPrintFlag) setShowNoshi(true);
-        } else setErrorMsg(j.message ?? 'セッション開始に失敗');
+        if (j.data?.id) setSessionId(j.data.id);
+        else setErrorMsg(j.message ?? 'セッション開始に失敗');
       })
       .catch((e) => setErrorMsg(String(e)));
-  }, [order.pkNo, order.qrPrintFlag, sessionId, completed]);
+  }, [order.pkNo, sessionId, completed]);
 
   // モーダル閉じたらフォーカス回復
   useEffect(() => {
-    if (!showNotices && !showNoshi && !showAccompanies) {
+    if (!showNotices && !showFinalCheck) {
       scanInputRef.current?.focus();
     }
-  }, [showNotices, showNoshi, showAccompanies]);
+  }, [showNotices, showFinalCheck]);
 
-  // 全件完了で自動的に納品書モードに
+  // D-1: 商品検品完了で最終チェックモーダルを自動展開
   useEffect(() => {
-    if (allInspected && scanMode === 'product') setScanMode('invoice');
-    else if (!allInspected && scanMode === 'invoice') setScanMode('product');
-  }, [allInspected, scanMode]);
+    if (
+      allInspected &&
+      !autoExpandedThisLoad.current &&
+      !showNotices &&
+      !showFinalCheck &&
+      !completed &&
+      sessionId
+    ) {
+      autoExpandedThisLoad.current = true;
+      const id = setTimeout(() => setShowFinalCheck(true), 350);
+      return () => clearTimeout(id);
+    }
+    if (!allInspected) autoExpandedThisLoad.current = false;
+  }, [allInspected, showNotices, showFinalCheck, completed, sessionId]);
 
   async function refreshOrder() {
     const res = await fetch(`/api/orders/${encodeURIComponent(order.pkNo)}`);
@@ -186,24 +222,98 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     }
   }
 
+  // 商品スキャンのみ。納品書は最終チェックモーダル内で処理（D-1）
   async function onScan(e: React.FormEvent) {
     e.preventDefault();
     const value = scanInput.trim();
     if (!value || !sessionId) return;
+
+    // 数量プレフィックス機能は **ピッキング中（商品検品中）のみ** 有効化。
+    //   - 全件完了後（allInspected=true）は納品書スキャンなので、qty-prefix は適用しない。
+    //   - 納品書スキャンは最終チェックモーダル内のハンドラで処理される。
+    if (!allInspected) {
+      // ──────────────────────────────────────────────────
+      // パターン①：1〜3 桁の数字のみ → 選択行への数量入力（既存挙動）
+      //   現場で数量だけ加算したいとき（スキャンなし）
+      // ──────────────────────────────────────────────────
+      if (/^\d{1,3}$/.test(value)) {
+        const qty = parseInt(value, 10);
+        const sorted = sortInspectionItems(order.items);
+        const target =
+          selectedRow >= 0 && sorted[selectedRow]
+            ? sorted[selectedRow]
+            : sorted.find((it) => !it.forceOk && it.scannedQty < it.qty);
+        if (target && qty > 0) {
+          setScanInput('');
+          setErrorMsg(null);
+          try {
+            await applyManualQty(target, qty);
+          } catch {
+            /* applyManualQty 内で setErrorMsg / フラッシュ済 */
+          } finally {
+            scanInputRef.current?.focus();
+          }
+          return;
+        }
+        // 対象なし or 0 の場合は通常のスキャン処理へフォールバック
+      }
+
+      // ──────────────────────────────────────────────────
+      // パターン②：「数字プレフィックス + バーコード」自動分離
+      //   2026-05-20 ユーザー要望：機能キーで数字を先入力 → そのままスキャンで
+      //   その数量がスキャン対象に加算される（Enter 押下不要、業務効率 UP）。
+      //
+      //   仕組み：
+      //     a. まず入力全体を JAN/商品コードとして検索
+      //     b. ヒットしなければ、先頭 1〜3 桁を数量と仮定し、残りを JAN/商品コードとして再検索
+      //     c. ヒットした qty で applyManualQty を呼ぶ（API は 1 回のみ）
+      // ──────────────────────────────────────────────────
+      const findItem = (code: string) =>
+        order.items.find(
+          (it) => it.productCode === code || it.productJan === code,
+        );
+
+      // (a) 入力全体が JAN / 商品コード一致 → qty=1 でスキャン
+      let matchedItem = findItem(value);
+      let prefixQty = 1;
+
+      // (b) ヒットなし → 先頭 1〜3 桁を数量プレフィックスとして再試行
+      if (!matchedItem && /^\d/.test(value)) {
+        for (const plen of [1, 2, 3]) {
+          if (value.length < plen + 4) break; // 残りが短すぎ（最低 4 桁は欲しい）
+          const prefix = value.slice(0, plen);
+          if (!/^\d+$/.test(prefix)) break;
+          const rest = value.slice(plen);
+          const found = findItem(rest);
+          if (found) {
+            matchedItem = found;
+            prefixQty = parseInt(prefix, 10);
+            break;
+          }
+        }
+      }
+
+      if (matchedItem && prefixQty > 0) {
+        setScanInput('');
+        setErrorMsg(null);
+        try {
+          await applyManualQty(matchedItem, prefixQty);
+        } catch {
+          /* applyManualQty 内で setErrorMsg 済 */
+        } finally {
+          scanInputRef.current?.focus();
+        }
+        return;
+      }
+    }
+
+    // ──────────────────────────────────────────────────
+    // パターン③：上記いずれにも該当しない → 従来通り API スキャン
+    //   (新規商品 / 未登録 JAN のチェックなど、サーバ側のロジックに委ねる)
+    // ──────────────────────────────────────────────────
     setScanInput('');
     setBusy(true);
     setErrorMsg(null);
-
-    if (scanMode === 'invoice') {
-      if (!accompaniesConfirmed) {
-        setShowAccompanies(true);
-      } else {
-        await actuallyComplete(value);
-      }
-      setBusy(false);
-      scanInputRef.current?.focus();
-      return;
-    }
 
     try {
       const res = await fetch('/api/inspect/scan', {
@@ -215,21 +325,43 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
       if (!res.ok) {
         setErrorMsg(j.message ?? `エラー: HTTP ${res.status}`);
         triggerFlash('red');
+        playError();
       } else {
         setLastResult(j.data);
         if (j.data.result === 'matched') {
           triggerFlash('green');
-          await refreshOrder();
+          playBeep();
+          applyScannedQtyLocal(j.data.itemId, j.data.scannedQty);
         } else if (j.data.result === 'already_done') {
+          // ③ 2026-06-03: 完了済み商品の再スキャン（個数オーバー相当）はエラー音に
           triggerFlash('blue');
+          playError();
         } else {
           triggerFlash('red');
+          playError();
         }
       }
     } finally {
       setBusy(false);
       scanInputRef.current?.focus();
     }
+  }
+
+  /**
+   * ④ 2026-06-03 軽量化: matched 応答の scannedQty で該当行のみローカル更新し、
+   *   伝票全体の再取得（refreshOrder）を避ける。欠落時のみ全体再取得にフォールバック。
+   */
+  function applyScannedQtyLocal(itemId: number | null, scannedQty: number | null) {
+    if (itemId == null || scannedQty == null) {
+      void refreshOrder();
+      return;
+    }
+    setOrder((prev) => ({
+      ...prev,
+      items: prev.items.map((it) =>
+        it.id === itemId ? { ...it, scannedQty } : it,
+      ),
+    }));
   }
 
   // 強制OK ボタン押下 → Sticky 有効時は即実行、無効時は ForceOkModal を起動
@@ -292,19 +424,25 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
       if (!res.ok) {
         setErrorMsg(j.message ?? '数量入力失敗');
         triggerFlash('red');
+        playError();
         throw new Error(j.message ?? `HTTP ${res.status}`);
       }
       setLastResult(j.data);
       if (j.data.result === 'matched') {
         triggerFlash('green');
-        await refreshOrder();
+        playBeep();
+        applyScannedQtyLocal(j.data.itemId, j.data.scannedQty);
       } else if (j.data.result === 'over_scan') {
         triggerFlash('red');
+        playError();
         throw new Error('残数を超えています');
       } else if (j.data.result === 'already_done') {
+        // ③ 2026-06-03: 完了済み商品の再入力はエラー音に
         triggerFlash('blue');
+        playError();
       } else {
         triggerFlash('red');
+        playError();
       }
     } finally {
       setBusy(false);
@@ -327,10 +465,9 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     }
   }
 
-  async function actuallyComplete(invoiceValue?: string) {
+  async function actuallyComplete(invoiceValue: string) {
     setBusy(true);
     setErrorMsg(null);
-    const inv = invoiceValue ?? '';
     try {
       const res = await fetch('/api/inspect/complete', {
         method: 'POST',
@@ -338,16 +475,22 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
         body: JSON.stringify({
           sessionId,
           pkNo: order.pkNo,
-          invoiceNo: inv,
+          invoiceNo: invoiceValue,
           ...(boxCode ? { boxCode } : {}),
+          // 2026-06-03 ②: 完了と印刷を分離。ここでは印刷せず完了し、印刷は完了画面後の確認で。
+          skipPrint: true,
         }),
       });
       const j = await res.json();
       if (!res.ok) {
         setErrorMsg(j.message ?? '完了処理失敗');
+        playError();
         return;
       }
+      setShowFinalCheck(false);
       setCompleted(true);
+      // 検品完了：達成感ある上昇アルペジオ
+      playSuccess();
       setCompletionInfo({
         durationSec: j.data.durationSec,
         qrPrintFlag: j.data.qrPrintFlag,
@@ -383,9 +526,9 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     }
   }
 
-  // 選択行を上下に移動（未完了行のみ対象）
+  // 選択行を上下に移動（sortInspectionItems の並びで巡回）
   function moveSelectedRow(delta: 1 | -1) {
-    const itemsArr = order.items;
+    const itemsArr = sortInspectionItems(order.items);
     if (itemsArr.length === 0) return;
     const cur = selectedRow >= 0 ? selectedRow : 0;
     let next = cur;
@@ -400,14 +543,12 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
   // ハードキー Enter / Trigger: 選択行を +1 スキャン or 次の未完了をスキャン
   async function onTriggerScan() {
     if (!sessionId) return;
-    const target =
-      selectedRow >= 0
-        ? selectedRow
-        : order.items.findIndex(
-            (it) => !it.forceOk && it.scannedQty < it.qty,
-          );
-    if (target < 0) return;
-    const it = order.items[target];
+    const sorted = sortInspectionItems(order.items);
+    const it =
+      selectedRow >= 0 && sorted[selectedRow]
+        ? sorted[selectedRow]
+        : sorted.find((x) => !x.forceOk && x.scannedQty < x.qty);
+    if (!it) return;
     if (it.forceOk || it.scannedQty >= it.qty) return;
     setBusy(true);
     try {
@@ -424,12 +565,17 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
       if (!res.ok) {
         setErrorMsg(j.message ?? `エラー: HTTP ${res.status}`);
         triggerFlash('red');
+        playError();
       } else {
         setLastResult(j.data);
         if (j.data.result === 'matched') {
           triggerFlash('green');
-          await refreshOrder();
-        } else triggerFlash('red');
+          playBeep();
+          applyScannedQtyLocal(j.data.itemId, j.data.scannedQty);
+        } else {
+          triggerFlash('red');
+          playError();
+        }
       }
     } finally {
       setBusy(false);
@@ -438,24 +584,46 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
   }
 
   // F4 一括検品: 残全件を強制OK 扱いで完了させる（モック skipAndFinish 準拠）
+  // 既に全件完了している場合は最終チェックモーダルを再オープン（モック L2335-2342 準拠）
   async function onBulkComplete() {
     if (!sessionId) return;
+    if (allInspected) {
+      autoExpandedThisLoad.current = true; // 再オープンを許容
+      setShowFinalCheck(true);
+      return;
+    }
     if (!confirm('残り全ての商品を一括検品で完了させますか？（強制OK 相当）')) return;
     const targets = order.items.filter(
       (it) => !it.forceOk && it.scannedQty < it.qty,
     );
     setBusy(true);
+    setErrorMsg(null);
     try {
-      for (const it of targets) {
-        await fetch('/api/inspect/force-ok', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId,
-            itemId: it.id,
-            reason: 'F4 一括検品',
+      // Sprint Y-15: 並列実行 + 失敗集約
+      const results = await Promise.allSettled(
+        targets.map((it) =>
+          fetch('/api/inspect/force-ok', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId,
+              itemId: it.id,
+              reason: 'F4 一括検品',
+            }),
+          }).then(async (r) => {
+            if (!r.ok) {
+              const j = await r.json().catch(() => ({}));
+              throw new Error(j?.message ?? `HTTP ${r.status}`);
+            }
+            return true;
           }),
-        });
+        ),
+      );
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed > 0) {
+        setErrorMsg(
+          `一括検品: ${failed} 件の処理に失敗しました（成功 ${results.length - failed} 件）`,
+        );
       }
       await refreshOrder();
     } finally {
@@ -463,24 +631,34 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     }
   }
 
-  // ハードウェアキー（A-18）— モーダル開いてないときのみ反応
+  // ハードウェアキー（A-18 / モック L2651-2767 hwKey 準拠）
+  // - F1〜F4 はモーダル開いていても発火（モック仕様: F は常時有効。anyModalOpen でガードしない）
+  //   ただしモック側は anyModalOpen 中は F1-F4 を return しているので、ここでも安全側で同様に。
+  // - 数字キー: 検品画面で押すと QtyKeypadModal を即オープン（モック L2654-2666）
   useHardwareKeys({
     enabled: !anyModalOpen,
-    onF1: () => {
-      // 待機画面では連絡再表示のみ（idle 時は別画面なので通常ここには来ない）
-      setShowNotices(true);
-    },
+    onF1: () => setShowNotices(true),
     onF2: () => {
-      // F2 = 強制OK（選択行 or 先頭の未完了行）
+      const sorted = sortInspectionItems(order.items);
       const target =
-        selectedRow >= 0
-          ? order.items[selectedRow]
-          : order.items.find((it) => !it.forceOk && it.scannedQty < it.qty);
+        selectedRow >= 0 && sorted[selectedRow]
+          ? sorted[selectedRow]
+          : sorted.find((it) => !it.forceOk && it.scannedQty < it.qty);
       if (target) onForceOk(target);
     },
     onF3: () => {
-      // F3 = 次の同梱物 toggle（同梱モーダルが開いていなければ何もしない）
-      // 同梱物モーダルは AccompaniesModal 側で対応想定。ここでは noop。
+      // F3 = 数量入力モーダル起動（2026-05-18 ユーザー要望）
+      //   選択行（なければ先頭の未完了行）の QtyKeypadModal を開く。
+      const sorted = sortInspectionItems(order.items);
+      const target =
+        selectedRow >= 0 &&
+        sorted[selectedRow] &&
+        sorted[selectedRow].scannedQty < sorted[selectedRow].qty
+          ? sorted[selectedRow]
+          : sorted.find((it) => !it.forceOk && it.scannedQty < it.qty);
+      if (!target) return;
+      setQtyInitialDigit(null);
+      setQtyTarget(target);
     },
     onF4: () => {
       onBulkComplete();
@@ -490,9 +668,20 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     onTab: () => moveSelectedRow(1),
     onEnter: () => onTriggerScan(),
     onTrigger: () => onTriggerScan(),
-    onEscape: () => {
-      // 検品中の Esc は保留メニュー（モック準拠）
-      setHoldMenuOpen(true);
+    onEscape: () => setHoldMenuOpen(true),
+    onDigit: (d: number) => {
+      // モック準拠: 数字キー押下 → 選択行（または先頭未完了行）の数量キーパッドをオープン
+      // Sprint Y-14: トリガーとなった数字を初期値として keypad に渡す（初手入力消失バグ修正）
+      const sorted = sortInspectionItems(order.items);
+      const target =
+        selectedRow >= 0 &&
+        sorted[selectedRow] &&
+        sorted[selectedRow].scannedQty < sorted[selectedRow].qty
+          ? sorted[selectedRow]
+          : sorted.find((it) => !it.forceOk && it.scannedQty < it.qty);
+      if (!target) return;
+      setQtyInitialDigit(d);
+      setQtyTarget(target);
     },
   });
 
@@ -506,33 +695,13 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
   }, [order.pkNo]);
 
   // === 完了画面 ===
+  // モック L1104-1111 .complete-screen 準拠（ハンディ版）
+  // - 完了サマリ表示 + 「次の伝票をスキャンしてください」
+  // - 3.5 秒で /handy へ自動遷移（モック L2665 と同じタイミング）
+  // - 不可視 input でスキャナ Enter を受け取り即遷移
   if (completed) {
     return (
-      <main className="min-h-screen bg-gradient-to-br from-emerald-900 to-emerald-800 flex items-center justify-center p-4 text-ink-strong">
-        <div className="text-center">
-          <div className="text-7xl mb-3 animate-pulse">✅</div>
-          <h1 className="text-2xl font-bold mb-1">梱包完了</h1>
-          <p className="text-emerald-100 mb-4 text-xs font-mono">{order.pkNo}</p>
-          <dl className="bg-emerald-950/40 border border-emerald-700/40 rounded-lg p-3 grid grid-cols-2 gap-2 text-2xs max-w-xs mx-auto mb-4">
-            <dt className="text-emerald-300">所要時間</dt>
-            <dd className="text-right font-mono tabular-nums">
-              {completionInfo?.durationSec ?? '—'} 秒
-            </dd>
-            <dt className="text-emerald-300">QR印刷</dt>
-            <dd className="text-right">
-              {completionInfo?.qrPrintFlag ? 'ON' : 'OFF'}
-              {completionInfo?.print &&
-                ` / ${completionInfo.print.ok ? '送信' : '失敗'}${completionInfo.print.dryRun ? '*' : ''}`}
-            </dd>
-          </dl>
-          <button
-            onClick={() => router.push('/handy')}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold border border-blue-400"
-          >
-            次の伝票へ (Enter)
-          </button>
-        </div>
-      </main>
+      <HandyCompleteScreen order={order} completionInfo={completionInfo} />
     );
   }
 
@@ -542,6 +711,10 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     (s, i) => s + (i.forceOk ? i.qty : i.scannedQty),
     0,
   );
+
+  // selectedRow / 上下キー / F2 / F3 / 数字キー の対象は sortInspectionItems() の
+  // 並び順を基準とする（ScanLine 描画と同じ順序）。
+  const sortedItems = sortInspectionItems(order.items);
 
   const flashCls =
     flash === 'green'
@@ -568,26 +741,33 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
       {showNotices && (
         <NoticesModal variant="handy-launch" onClose={() => setShowNotices(false)} />
       )}
-      {showNoshi && (
-        <NoshiConfirmationModal
-          pkNo={order.pkNo}
-          noshiName={order.noshiName}
-          qrPrintFlag={order.qrPrintFlag}
-          onConfirm={() => setShowNoshi(false)}
-          onCancel={() => router.push('/handy')}
-        />
-      )}
-      {showAccompanies && (
-        <AccompaniesModal
-          pkNo={order.pkNo}
-          onConfirm={() => {
-            setAccompaniesConfirmed(true);
-            setShowAccompanies(false);
-            actuallyComplete();
-          }}
-          onCancel={() => setShowAccompanies(false)}
-        />
-      )}
+      <FinalCheckModal
+        open={showFinalCheck}
+        variant="handy"
+        pkNo={order.pkNo}
+        noshiName={order.noshiName}
+        qrPrintFlag={order.qrPrintFlag}
+        // ★ サンドイッチ照合: 取込済みの納品書№（権威値）
+        expectedInvoiceNo={order.invoiceNo}
+        items={order.items.map((it) => ({
+          id: it.id,
+          productName: it.productName,
+          qty: it.qty,
+          scannedQty: it.scannedQty,
+          forceOk: it.forceOk,
+          // 2026-05-31 緊急修正: 納品書誤読検出のため商品コード/JAN を渡す
+          productCode: it.productCode,
+          productJan: it.productJan,
+        }))}
+        onConfirm={async (invoiceNo) => {
+          await actuallyComplete(invoiceNo);
+        }}
+        onBack={() => {
+          // ★戻るで閉じたあとは自動再展開させない（autoExpandedThisLoad は true のまま）
+          //   再度開きたい場合は F4 または「一括検品」ボタンを押下する。
+          setShowFinalCheck(false);
+        }}
+      />
       <ForceOkModal
         open={forceTarget !== null}
         productName={forceTarget?.productName}
@@ -602,11 +782,16 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
         productJan={qtyTarget?.productJan ?? null}
         alreadyScanned={qtyTarget?.scannedQty ?? 0}
         totalQty={qtyTarget?.qty ?? 0}
+        initialDigit={qtyInitialDigit ?? undefined}
         onConfirm={async (n) => {
           if (qtyTarget) await applyManualQty(qtyTarget, n);
           setQtyTarget(null);
+          setQtyInitialDigit(null);
         }}
-        onCancel={() => setQtyTarget(null)}
+        onCancel={() => {
+          setQtyTarget(null);
+          setQtyInitialDigit(null);
+        }}
       />
       <HoldMenuModal
         open={holdMenuOpen}
@@ -646,6 +831,12 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
         <span className="text-2xs font-bold text-ink-strong">ハンディ検品</span>
         <span className="text-3xs text-ink-muted">{employee?.deviceCode}</span>
         <div className="flex-1" />
+        {/* 検品スキャン音 ON/OFF（2026-05-23 追加） */}
+        <SoundToggle
+          enabled={soundEnabled}
+          onToggle={() => setSoundEnabled(!soundEnabled)}
+          variant="handy"
+        />
         <button
           onClick={() => router.push('/handy')}
           className="text-3xs text-ink-subtle hover:text-status-error"
@@ -695,20 +886,19 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
         </button>
       </div>
 
-      {/* 商品リスト */}
+      {/* 商品リスト — sortedItems を使用（検品済を最下段に） */}
       <div className="flex-1 overflow-auto px-1.5 py-1.5 space-y-1">
-        {order.items.map((it, idx) => (
+        {sortedItems.map((it, idx) => (
           <ScanLine
             key={it.id}
             item={it}
             isLast={lastResult?.itemId === it.id}
             lastResult={lastResult}
-            onForceOk={onForceOk}
             onOpenKeypad={(item) => setQtyTarget(item)}
             isSelected={selectedRow === idx}
           />
         ))}
-        {order.items.length === 0 && (
+        {sortedItems.length === 0 && (
           <p className="text-center text-ink-muted text-2xs py-4">商品がありません</p>
         )}
       </div>
@@ -733,11 +923,14 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
       >
         <label
           className={cn(
-            'block text-3xs font-bold uppercase tracking-wider mb-1',
+            // モック準拠：日本語ラベルなので uppercase / tracking-wider は外す
+            'block text-3xs font-bold mb-1',
             allInspected ? 'text-cyan-300 animate-pulse' : 'text-accent-amber',
           )}
         >
-          {allInspected ? '👉 納品書№ をスキャン' : '商品 JAN/コード をスキャン'}
+          {allInspected
+            ? '👉 納品書№ をスキャン'
+            : 'ピッキング：数量＋スキャン（例：5 → 即スキャン）'}
         </label>
         <input
           ref={scanInputRef}
@@ -754,39 +947,88 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
         />
       </form>
 
-      {/* フッタ操作（小さめのボタン2つ） */}
-      <footer className="bg-surface-panel border-t border-surface-border h-10 grid grid-cols-2 gap-1 p-1 shrink-0">
-        <button
+      {/* フッタ操作（Sprint F-4: モック L1383-1389 / L1466-1469 に合わせ F1〜F4 + Esc の 5 ボタン構成）
+          モック準拠：footer 高さ 62px（タップしやすさ確保） */}
+      <footer className="bg-surface-panel border-t border-surface-border h-[62px] grid grid-cols-5 gap-1 p-1 shrink-0">
+        <HandyFkeyBtn
+          label="連絡"
+          sub="F1"
+          tone="amber"
+          disabled={busy}
+          onClick={() => setShowNotices(true)}
+        />
+        <HandyFkeyBtn
+          label="強制OK"
+          sub="F2"
+          tone="orange"
+          disabled={busy || allInspected}
+          onClick={() => {
+            const target =
+              selectedRow >= 0 && sortedItems[selectedRow]
+                ? sortedItems[selectedRow]
+                : sortedItems.find(
+                    (it) => !it.forceOk && it.scannedQty < it.qty,
+                  );
+            if (target) onForceOk(target);
+          }}
+        />
+        <HandyFkeyBtn
+          label="数量"
+          sub="F3"
+          tone="slate"
+          disabled={busy || allInspected}
+          onClick={() => {
+            // F3 = 数量入力モーダル起動（選択行 or 先頭未完了行）
+            const target =
+              selectedRow >= 0 &&
+              sortedItems[selectedRow] &&
+              sortedItems[selectedRow].scannedQty < sortedItems[selectedRow].qty
+                ? sortedItems[selectedRow]
+                : sortedItems.find(
+                    (it) => !it.forceOk && it.scannedQty < it.qty,
+                  );
+            if (!target) return;
+            setQtyInitialDigit(null);
+            setQtyTarget(target);
+          }}
+        />
+        <HandyFkeyBtn
+          label={allInspected ? '最終チェック' : '一括検品'}
+          sub="F4"
+          tone="emerald"
+          disabled={busy}
+          highlight={allInspected}
+          onClick={() => onBulkComplete()}
+        />
+        <HandyFkeyBtn
+          label="保留"
+          sub="Esc"
+          tone="red"
+          disabled={busy}
           onClick={onHold}
-          disabled={busy}
-          className="bg-red-700 hover:bg-red-600 text-white rounded border border-red-500 text-2xs font-bold disabled:opacity-50"
-        >
-          🚧 保留
-        </button>
-        <button
-          onClick={() => router.push('/handy')}
-          disabled={busy}
-          className="bg-slate-700 hover:bg-slate-600 text-white rounded border border-slate-500 text-2xs font-bold disabled:opacity-50"
-        >
-          ⏻ 中断
-        </button>
+        />
       </footer>
     </main>
   );
 }
 
+/**
+ * scan-line — ユーザー要望（2026-05-18）でシンプル化：
+ *   row1: 商品名 + バッジ（フォント +3px）
+ *   row2: 数量表示 + 🔢数量入力ボタン
+ *   ※ 商品コード/JAN 行は廃止（現場で目視確認に不要）
+ * ※ 強制OK は機能キー F2 で対応するため、行内ボタンは出さない
+ */
 function ScanLine({
   item,
   isLast,
   lastResult,
-  onForceOk,
   onOpenKeypad,
   isSelected,
 }: {
   item: InspectionItem;
   isLast: boolean;
   lastResult: { result: ScanResult; itemId: number | null } | null;
-  onForceOk: (i: InspectionItem) => void;
   onOpenKeypad: (i: InspectionItem) => void;
   isSelected?: boolean;
 }) {
@@ -795,73 +1037,148 @@ function ScanLine({
 
   return (
     <div
-      className={cn(
-        'grid items-center gap-1.5 px-1.5 py-1 rounded border-l-4',
-        warn
-          ? 'border-l-status-error bg-red-950/40 animate-shake'
+      style={{
+        background: warn
+          ? '#450a0a'
           : done
-            ? 'border-l-status-ok bg-emerald-950/40'
-            : 'border-l-surface-border-strong bg-surface-panel',
-        isSelected && 'ring-2 ring-accent-amber',
-      )}
-      style={{ gridTemplateColumns: '24px 1fr 56px 44px' }}
+            ? '#064e3b'
+            : isSelected
+              ? '#422006'
+              : '#1e293b',
+        borderLeft: `4px solid ${
+          warn
+            ? '#ef4444'
+            : done
+              ? '#10b981'
+              : isSelected
+                ? '#fbbf24'
+                : '#64748b'
+        }`,
+        boxShadow: isSelected ? '0 0 0 1px #fbbf24' : undefined,
+        borderRadius: 6,
+        padding: '10px 12px',
+        transition: 'all 0.15s',
+      }}
+      className={warn ? 'animate-tablet-shake' : ''}
     >
+      {/* row1: 商品名 + バッジ — フォントを +3px に拡大（13→16） */}
       <div
-        className={cn(
-          'w-5 h-5 rounded flex items-center justify-center text-3xs font-bold',
-          done ? 'bg-status-ok text-white' : 'bg-surface-raised text-ink-muted',
-        )}
+        style={{
+          fontSize: 16,
+          fontWeight: 'bold',
+          color: '#f1f5f9',
+          marginBottom: 6,
+          display: 'flex',
+          gap: 6,
+          alignItems: 'center',
+          minWidth: 0,
+          lineHeight: 1.2,
+        }}
       >
-        {done ? '✓' : '○'}
-      </div>
-      <div className="min-w-0">
-        <div className="flex items-center gap-1 truncate">
-          <span className="text-xs font-bold text-ink-strong truncate">
-            {item.productName}
+        <span
+          style={{
+            flex: 1,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {item.productName}
+        </span>
+        {item.productFrozen && (
+          <span className="text-2xs bg-frozen-bg text-frozen-light px-1 rounded shrink-0">
+            冷
           </span>
-          {item.productFrozen && (
-            <span className="text-3xs bg-frozen-bg text-frozen-light px-1 rounded">
-              冷
-            </span>
-          )}
-          {item.forceOk && (
-            <span className="text-3xs bg-status-warn-bg text-accent-amber px-1 rounded">
-              強
-            </span>
-          )}
-        </div>
-        <div className="text-3xs text-ink-muted font-mono truncate leading-tight">
-          {item.productJan ?? item.productCode}
-        </div>
-      </div>
-      <div className="text-right">
-        {done ? (
-          <div className="text-sm font-bold tabular-nums font-mono text-status-ok">
-            {item.scannedQty}
-            <span className="text-ink-muted text-2xs">/{item.qty}</span>
-          </div>
-        ) : (
-          <button
-            onClick={() => onOpenKeypad(item)}
-            className="text-sm font-bold tabular-nums font-mono text-ink-strong hover:text-accent-amber"
-            title="数量入力"
-          >
-            {item.scannedQty}
-            <span className="text-ink-muted text-2xs">/{item.qty}</span>
-          </button>
+        )}
+        {item.forceOk && (
+          <span className="text-2xs bg-status-warn-bg text-accent-amber px-1 rounded shrink-0">
+            強
+          </span>
         )}
       </div>
-      <div className="text-right">
+      {/* row2: 数量表示 + 🔢 数量入力 — フォントを +3px に拡大（16→19 / 11→14） */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 19,
+            fontWeight: 'bold',
+            fontVariantNumeric: 'tabular-nums',
+            color: done ? '#6ee7b7' : isSelected ? '#fbbf24' : '#f1f5f9',
+          }}
+        >
+          {item.scannedQty}
+          <span style={{ fontSize: 14, color: '#94a3b8', margin: '0 4px', fontWeight: 'normal' }}>
+            /
+          </span>
+          {item.qty}
+          <span style={{ fontSize: 14, color: '#94a3b8', marginLeft: 4, fontWeight: 'normal' }}>
+            点
+          </span>
+        </div>
         {!done && (
           <button
-            onClick={() => onForceOk(item)}
-            className="text-3xs text-status-warn hover:underline font-bold"
+            onClick={() => onOpenKeypad(item)}
+            title="数量入力（残数を加算）"
+            style={{
+              background: '#4338ca',
+              color: '#fff',
+              padding: '6px 12px',
+              borderRadius: 4,
+              fontSize: 14,
+              fontWeight: 'bold',
+              border: '1px solid #6366f1',
+            }}
+            className="hover:brightness-110 active:scale-95"
           >
-            強制
+            🔢 数量
           </button>
         )}
       </div>
     </div>
+  );
+}
+
+function HandyFkeyBtn({
+  label,
+  sub,
+  tone,
+  disabled,
+  onClick,
+  highlight,
+}: {
+  label: string;
+  sub: string;
+  tone: 'amber' | 'orange' | 'slate' | 'emerald' | 'red';
+  disabled?: boolean;
+  onClick?: () => void;
+  highlight?: boolean;
+}) {
+  const toneCls: Record<typeof tone, string> = {
+    amber: 'bg-amber-700 hover:bg-amber-600 border-amber-500',
+    orange: 'bg-orange-700 hover:bg-orange-600 border-orange-500',
+    slate: 'bg-slate-700 hover:bg-slate-600 border-slate-500',
+    emerald: 'bg-emerald-700 hover:bg-emerald-600 border-emerald-500',
+    red: 'bg-red-700 hover:bg-red-600 border-red-500',
+  };
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        'rounded border text-white text-2xs font-bold flex flex-col items-center justify-center leading-tight px-1 active:scale-95 transition-transform disabled:opacity-40 disabled:cursor-not-allowed',
+        toneCls[tone],
+        highlight && 'animate-tablet-hilite',
+      )}
+    >
+      <span>{label}</span>
+      <span className="text-[8px] opacity-70 font-normal">{sub}</span>
+    </button>
   );
 }
 
@@ -874,4 +1191,264 @@ function ScanResultBanner({ result }: { result: ScanResult }) {
   };
   const m = map[result];
   return <div className={cn('text-2xs font-bold', m.cls)}>{m.text}</div>;
+}
+
+/* ====== 完了画面（モック L1104-1111 .complete-screen 準拠 + 自動遷移） ====== */
+function HandyCompleteScreen({
+  order,
+  completionInfo,
+}: {
+  order: InspectionOrder;
+  completionInfo: {
+    durationSec: number;
+    qrPrintFlag: boolean;
+    print: { ok: boolean; dryRun: boolean } | null;
+  } | null;
+}) {
+  const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [scanInput, setScanInput] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [navigating, setNavigating] = useState(false);
+  // 2026-06-03 ②: 完了後、QR印刷フラグ ON なら自動で印刷確認を表示（表示中は自動遷移・次スキャン抑止）
+  const [showPrint, setShowPrint] = useState(completionInfo?.qrPrintFlag === true);
+  const [printing, setPrinting] = useState(false);
+
+  // 不可視 input にフォーカス維持
+  useEffect(() => {
+    const focus = () => inputRef.current?.focus();
+    requestAnimationFrame(focus);
+    const t1 = setTimeout(focus, 50);
+    const t2 = setTimeout(focus, 200);
+    const t3 = setTimeout(focus, 500);
+    const interval = setInterval(() => {
+      if (
+        document.activeElement !== inputRef.current &&
+        !navigating &&
+        inputRef.current
+      ) {
+        inputRef.current.focus();
+      }
+    }, 1000);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearInterval(interval);
+    };
+  }, [navigating]);
+
+  // モック L2665 準拠: 3.5 秒で /handy へ自動遷移
+  //   2026-06-03 ②: 印刷確認モーダル表示中は自動遷移を抑止。
+  useEffect(() => {
+    if (navigating || showPrint) return;
+    const id = setTimeout(() => {
+      if (!navigating) router.push('/handy');
+    }, 3500);
+    return () => clearTimeout(id);
+  }, [router, navigating, showPrint]);
+
+  // 2026-06-03 ②: 印刷確認の決定。印刷ありなら reprint API で印字 → 待機画面へ。
+  async function decidePrint(doPrint: boolean) {
+    if (printing) return;
+    setNavigating(true);
+    try {
+      if (doPrint) {
+        setPrinting(true);
+        // 完了時の初回印刷は通常印刷 API（is_reprint=false で記録）。
+        await fetch('/api/print/qr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pkNo: order.pkNo }),
+        }).catch(() => {});
+      }
+    } finally {
+      setShowPrint(false);
+      router.push('/handy');
+    }
+  }
+
+  // グローバルキー捕捉（万一 input にフォーカスが奪われていても受ける）
+  useEffect(() => {
+    let buffer = '';
+    let lastKeyAt = 0;
+    function onKey(e: KeyboardEvent) {
+      if (navigating || showPrint) return; // 印刷確認中は次スキャン抑止
+      if (document.activeElement === inputRef.current) return;
+      const tag = (document.activeElement?.tagName ?? '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      const now = Date.now();
+      if (now - lastKeyAt > 200) buffer = '';
+      lastKeyAt = now;
+      if (e.key === 'Enter') {
+        const value = buffer.trim();
+        buffer = '';
+        if (!value) return;
+        e.preventDefault();
+        void submitNext(value);
+        return;
+      }
+      if (e.key.length === 1) buffer += e.key;
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigating, showPrint]);
+
+  async function submitNext(value: string) {
+    if (navigating) return;
+    setNavigating(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch(`/api/orders/${encodeURIComponent(value)}`);
+      if (res.status === 404) {
+        setErrorMsg(`該当する出荷指示が見つかりません: ${value}`);
+        setScanInput('');
+        setNavigating(false);
+        return;
+      }
+      if (!res.ok) {
+        setErrorMsg(`エラー: HTTP ${res.status}`);
+        setScanInput('');
+        setNavigating(false);
+        return;
+      }
+      const j = await res.json();
+      const nextPkNo = j.data?.pkNo as string | undefined;
+      if (!nextPkNo) {
+        setErrorMsg('PkNo が取得できません');
+        setScanInput('');
+        setNavigating(false);
+        return;
+      }
+      const status = j.data?.status as string | undefined;
+      if (status === 'held' || status === 'packed' || status === 'shipped') {
+        router.push(`/handy?pkNo=${encodeURIComponent(nextPkNo)}`);
+        return;
+      }
+      router.push(`/handy/inspect/${encodeURIComponent(nextPkNo)}`);
+    } catch (err) {
+      setErrorMsg(String(err));
+      setNavigating(false);
+    }
+  }
+
+  async function onScanNext(e: React.FormEvent) {
+    e.preventDefault();
+    const value = scanInput.trim();
+    if (!value || navigating) return;
+    await submitNext(value);
+    setScanInput('');
+  }
+
+  return (
+    <>
+    <main
+      className="min-h-screen flex flex-col items-center justify-center p-6 text-center"
+      style={{
+        background: 'linear-gradient(135deg, #065f46, #047857)',
+        color: '#fff',
+        gap: 12,
+      }}
+      onClick={() => inputRef.current?.focus()}
+    >
+      {/* 不可視 input — HID スキャナ Enter 受信用 */}
+      <form
+        onSubmit={onScanNext}
+        style={{
+          position: 'absolute',
+          left: -9999,
+          top: -9999,
+          width: 1,
+          height: 1,
+          overflow: 'hidden',
+          opacity: 0,
+        }}
+        aria-hidden
+      >
+        <input
+          ref={inputRef}
+          type="text"
+          value={scanInput}
+          onChange={(e) => setScanInput(e.target.value)}
+          autoFocus
+          autoComplete="off"
+          aria-label="次の伝票バーコード"
+          disabled={navigating}
+          tabIndex={-1}
+        />
+      </form>
+
+      <div
+        style={{
+          fontSize: 110,
+          color: '#fff',
+          filter: 'drop-shadow(0 6px 12px rgba(0,0,0,0.3))',
+          lineHeight: 1,
+        }}
+      >
+        ✓
+      </div>
+      <h1 style={{ fontSize: 28, color: '#fff', fontWeight: 'bold', margin: 0 }}>
+        梱包完了
+      </h1>
+      <p
+        style={{
+          fontSize: 13,
+          color: '#a7f3d0',
+          margin: 0,
+          fontFamily: 'Consolas, monospace',
+          letterSpacing: 1,
+        }}
+      >
+        {order.pkNo}
+      </p>
+      {completionInfo && (
+        <p style={{ fontSize: 12, color: '#d1fae5', margin: 0 }}>
+          所要 {completionInfo.durationSec} 秒
+          {completionInfo.qrPrintFlag
+            ? completionInfo.print
+              ? ` ・ QR ${completionInfo.print.ok ? '送信済' : '失敗'}${completionInfo.print.dryRun ? '*' : ''}`
+              : ' ・ QR フラグ ON'
+            : ' ・ QR なし'}
+        </p>
+      )}
+      <p
+        style={{ fontSize: 12, color: '#a7f3d0', margin: 0 }}
+        className="animate-pulse"
+      >
+        次の伝票をスキャンしてください
+      </p>
+      {errorMsg && (
+        <div
+          style={{
+            background: 'rgba(127, 29, 29, 0.7)',
+            color: '#fecaca',
+            padding: '6px 10px',
+            borderRadius: 6,
+            fontSize: 12,
+          }}
+        >
+          ⚠ {errorMsg}
+        </div>
+      )}
+    </main>
+
+    {/* 2026-06-03 ②: 完了後に自動表示する印刷確認。印刷/印刷しない → 待機画面へ */}
+    <PrintConfirmModal
+      open={showPrint}
+      order={{
+        pkNo: order.pkNo,
+        destName: order.destName,
+        destZip: order.destZip,
+        carrierName: order.carrier?.name ?? null,
+        cool: !!order.carrier?.cool,
+        noshiName: order.noshiName,
+        invoiceNo: order.invoiceNo ?? '',
+      }}
+      onConfirm={(doPrint) => void decidePrint(doPrint)}
+      onCancel={() => void decidePrint(false)}
+    />
+    </>
+  );
 }

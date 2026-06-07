@@ -17,6 +17,8 @@ const Body = z.object({
   tables: z.union([z.string(), z.array(z.string())]).optional(),
   category: z.string().min(1).max(20),
   needStaff: z.number().int().min(0).default(1),
+  // Sprint Y-10: ダッシュボード表示順（小さい順）
+  sortOrder: z.number().int().min(0).default(100),
   note: z.string().nullable().optional(),
 });
 
@@ -33,7 +35,8 @@ export async function GET() {
   const guard = await requireRole('admin', 'manager');
   if (!guard.ok) return guard.response;
   const items = await prisma.inspectionGroup.findMany({
-    orderBy: [{ id: 'asc' }],
+    // Sprint Y-10: 表示順 → id の二段ソート
+    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
   });
   // tables[] を表示用に CSV 文字列でも返す
   const out = items.map((g) => ({

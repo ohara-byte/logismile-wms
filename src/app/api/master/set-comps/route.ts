@@ -22,14 +22,34 @@ const Body = z.object({
 export async function GET() {
   const guard = await requireRole('admin', 'manager');
   if (!guard.ok) return guard.response;
+  // Sprint Y-2: 親商品＝構成＋同梱品。子商品（構成商品）の情報も合わせて返す
+  //   - 子商品コード／品名／点数／標準時間（productAux.stdSec から逆引き）
+  //   親商品の確定は子商品コードの組合せから逆算するため、子商品情報はマスタ画面でも閲覧できる必要がある。
   const items = await prisma.setComp.findMany({
     orderBy: [{ parentCode: 'asc' }],
     include: {
       _count: { select: { children: true } },
       fixedBox: { select: { code: true, name: true } },
+      children: {
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        select: { id: true, childCode: true, childName: true, qty: true },
+      },
     },
-    take: 500,
+    take: 100000, // 2026-06-04: 上限実質撤廃
   });
+
+  // 子商品コード一覧から標準時間（秒）を一括取得
+  const childCodes = Array.from(
+    new Set(items.flatMap((s) => s.children.map((c) => c.childCode))),
+  );
+  const auxList = childCodes.length
+    ? await prisma.productAuxAttr.findMany({
+        where: { productCode: { in: childCodes } },
+        select: { productCode: true, stdSec: true },
+      })
+    : [];
+  const stdSecMap = new Map(auxList.map((a) => [a.productCode, a.stdSec]));
+
   return NextResponse.json({
     data: {
       items: items.map((s) => ({
@@ -42,6 +62,26 @@ export async function GET() {
         packingNote: s.packingNote,
         note: s.note,
         childCount: s._count.children,
+        // 子商品（構成商品）情報サマリ
+        children: s.children.map((c) => ({
+          id: c.id,
+          childCode: c.childCode,
+          childName: c.childName,
+          qty: c.qty,
+          stdSec: stdSecMap.get(c.childCode) ?? null,
+        })),
+        // 一覧表示用に「コードA×n / コードB×m」形式の文字列も予生成
+        childrenSummary: s.children
+          .map(
+            (c) =>
+              `${c.childCode}${c.qty > 1 ? `×${c.qty}` : ''}${c.childName ? `(${c.childName})` : ''}`,
+          )
+          .join(', '),
+        // 標準時間合計（秒）
+        totalStdSec: s.children.reduce(
+          (sum, c) => sum + (stdSecMap.get(c.childCode) ?? 0) * c.qty,
+          0,
+        ),
         updatedAt: s.updatedAt.toISOString().slice(0, 10),
       })),
     },

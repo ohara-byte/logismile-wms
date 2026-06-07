@@ -4,6 +4,11 @@
 
 generator client {
   provider = "prisma-client-js"
+  // 2026-06-06: 本番 VPS（Linux / node:20-bookworm-slim = Debian 12 / OpenSSL 3.x）用の
+  //   クエリエンジンも生成する。これが無いと Linux コンテナ起動時に
+  //   「Query engine library for current platform could not be found」で落ちる。
+  //   native = 開発機(Windows)用、debian-openssl-3.0.x = 本番コンテナ用。
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -30,15 +35,131 @@ model Product {
   noshi     Boolean  @default(false)
   active    Boolean  @default(true)
   note      String?  @db.Text
+  /// Sprint Z-1: 商品種別（'pass_through' = 通過型 / 'warehouse' = 倉庫在庫 / 'made_to_order' = 受注生産）
+  /// Sprint Y-13: 大江ノ郷の基本運用が通過型のため既定を pass_through に変更
+  productType  String   @default("pass_through") @map("product_type") @db.VarChar(20)
+  /// 安全在庫（reorderPoint と組み合わせて補充タイミング判定）
+  safetyStock  Int      @default(0) @map("safety_stock")
+  reorderPoint Int?     @map("reorder_point")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   auxAttr            ProductAuxAttr?
   shippingOrderItems ShippingOrderItem[]
+  stock              Stock?
+  manufacturingInstructions ManufacturingInstruction[]
 
   @@index([jan])
   @@index([cat])
+  @@index([productType])
   @@map("products")
+}
+
+/// 1-A. 在庫マスタ（Sprint Z-1） — SKU 単位の在庫サマリ（1 商品 1 行）
+model Stock {
+  productCode  String    @id @map("product_code") @db.VarChar(20)
+  qty          Int       @default(0)
+  allocatedQty Int       @default(0) @map("allocated_qty")
+  inspectedAt  DateTime? @map("inspected_at") @db.Timestamptz
+  inspectedBy  String?   @map("inspected_by") @db.VarChar(10)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  product     Product         @relation(fields: [productCode], references: [code], onDelete: Cascade)
+  movements   StockMovement[]
+  allocations Allocation[]
+
+  @@map("stocks")
+}
+
+/// 1-B. 在庫増減ログ（Sprint Z-1）
+///   type: 'inbound' / 'outbound' / 'adjust' / 'inspection_count' / 'production_complete'
+model StockMovement {
+  id          Int      @id @default(autoincrement())
+  productCode String   @map("product_code") @db.VarChar(20)
+  type        String   @db.VarChar(20)
+  qtyDelta    Int      @map("qty_delta")
+  /// 関連エンティティ種別（'order' / 'instruction' / 'session' / null）
+  refType     String?  @map("ref_type") @db.VarChar(20)
+  refId       String?  @map("ref_id") @db.VarChar(40)
+  note        String?  @db.Text
+  createdBy   String?  @map("created_by") @db.VarChar(10)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  stock Stock @relation(fields: [productCode], references: [productCode], onDelete: Cascade)
+
+  @@index([productCode, createdAt])
+  @@index([refType, refId])
+  @@map("stock_movements")
+}
+
+/// 1-C. 引当行（Sprint Z-1） — 出荷指示×商品ごとの引当数
+///   status: 'reserved'（引当済・未出荷）/ 'fulfilled'（出荷完了）/ 'released'（取消）
+///   source: 'warehouse' / 'pass_through' / 'made_to_order'
+model Allocation {
+  id           Int      @id @default(autoincrement())
+  orderId      String   @map("order_id") @db.Uuid
+  pkNo         String   @map("pk_no") @db.VarChar(30)
+  productCode  String   @map("product_code") @db.VarChar(20)
+  qty          Int
+  status       String   @default("reserved") @db.VarChar(20)
+  source       String   @default("warehouse") @db.VarChar(20)
+  allocatedAt  DateTime @default(now()) @map("allocated_at") @db.Timestamptz
+  fulfilledAt  DateTime? @map("fulfilled_at") @db.Timestamptz
+  sessionId    String?  @map("session_id") @db.Uuid
+
+  order ShippingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  stock Stock         @relation(fields: [productCode], references: [productCode])
+
+  @@unique([orderId, productCode])
+  @@index([productCode, status])
+  @@index([pkNo])
+  @@map("allocations")
+}
+
+/// 1-D. 製造指示（Sprint Z-1）
+///   status: 'draft'（自動下書き）/ 'pending'（送信待ち）/ 'sent'（工場送信済）/
+///           'producing'（生産中）/ 'completed'（完成）/ 'cancelled'（取消）
+model ManufacturingInstruction {
+  id            Int      @id @default(autoincrement())
+  instructionNo String   @unique @map("instruction_no") @db.VarChar(30)
+  productCode   String   @map("product_code") @db.VarChar(20)
+  qty           Int
+  shortageQty   Int      @default(0) @map("shortage_qty")
+  status        String   @default("draft") @db.VarChar(20)
+  /// Sprint Z-4: 承認フラグ。true で「更新」ボタン押下時に一括で工場送信
+  approved      Boolean  @default(false) @map("approved")
+  targetDate    DateTime @map("target_date") @db.Date
+  requestedBy   String?  @map("requested_by") @db.VarChar(10)
+  factoryRef    String?  @map("factory_ref") @db.VarChar(60)
+  sentAt        DateTime? @map("sent_at") @db.Timestamptz
+  completedAt   DateTime? @map("completed_at") @db.Timestamptz
+  note          String?  @db.Text
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  product Product @relation(fields: [productCode], references: [code])
+
+  @@index([status, targetDate])
+  @@index([productCode, status])
+  @@index([approved, status])
+  @@map("manufacturing_instructions")
+}
+
+/// 1-E. 在庫検品＋引当 セッション（Sprint Z-1）
+///   既存 InspSession（出荷検品）とは独立した別系統
+///   scope: 'inventory_count'（在庫検品）/ 'allocation_run'（引当ラン）/ 'production_input'（出来高入力）
+model StockAllocSession {
+  id          String    @id @default(uuid()) @db.Uuid
+  staffCode   String    @map("staff_code") @db.VarChar(10)
+  deviceCode  String    @map("device_code") @db.VarChar(20)
+  scope       String    @db.VarChar(30)
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz
+  completedAt DateTime? @map("completed_at") @db.Timestamptz
+  itemCount   Int       @default(0) @map("item_count")
+  note        String?   @db.Text
+
+  @@index([staffCode, startedAt])
+  @@map("stock_alloc_sessions")
 }
 
 /// 2. 商品属性補助マスタ
@@ -131,8 +252,59 @@ model Carrier {
   note     String? @db.Text
 
   shippingOrders ShippingOrder[]
+  aliases        CarrierAlias[]
 
   @@map("carriers")
+}
+
+/// 6-2. 運送会社 便種名マッピング（2026-06-02 追加）
+///   基幹（Thomas）CSV の「配送便種」文字列（例『ヤマト運輸』）→ carriers.code への対応表。
+///   旧来は mapping.ts のハードコードだったが、現場で編集できるよう DB マスタ化。
+model CarrierAlias {
+  id          Int      @id @default(autoincrement())
+  /// 基幹側の便種名（CSV の値そのまま）。一意。
+  aliasName   String   @unique @map("alias_name") @db.VarChar(100)
+  /// 対応する運送会社コード（carriers.code）
+  carrierCode String   @map("carrier_code") @db.VarChar(20)
+  active      Boolean  @default(true)
+  note        String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  carrier Carrier @relation(fields: [carrierCode], references: [code])
+
+  @@index([carrierCode])
+  @@map("carrier_aliases")
+}
+
+/// 6-3. のし確認 除外マスタ（2026-06-02 追加）
+///   検品時、伝票の noshiName / noshiPerson が matchText と完全一致したら
+///   「のし☑ 確認」をスルーする（のし対象外として扱う）。
+model NoshiExclusion {
+  id        Int      @id @default(autoincrement())
+  /// 除外対象テキスト（熨斗名称 or 熨斗氏名 と完全一致で判定）。一意。
+  matchText String   @unique @map("match_text") @db.VarChar(100)
+  active    Boolean  @default(true)
+  note      String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("noshi_exclusions")
+}
+
+/// 6-4. QR印刷 強制マスタ（2026-06-02 追加）
+///   取込時、QR印刷フラグが OFF でも noshiName / noshiPerson が matchText と
+///   完全一致したら QR印刷フラグを ON にして取り込む（例『特殊包装』）。
+model QrForceKeyword {
+  id        Int      @id @default(autoincrement())
+  /// QR を強制 ON にするテキスト（熨斗名称 or 熨斗氏名 と完全一致で判定）。一意。
+  matchText String   @unique @map("match_text") @db.VarChar(100)
+  active    Boolean  @default(true)
+  note      String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("qr_force_keywords")
 }
 
 /// 7. 担当者マスタ
@@ -141,7 +313,10 @@ model Staff {
   empCode             String    @unique @map("emp_code") @db.VarChar(20)
   name                String    @db.VarChar(30)
   kana                String?   @db.VarChar(40)
+  /// ロール: admin / manager / staff / parttime（Sprint Y-5 でアルバイト追加）
   role                String    @default("staff") @db.VarChar(20)
+  /// 部署（Sprint Y-5）。例: 製造 / 出荷 / 配送 / 仕分 / 管理 / その他
+  department          String?   @db.VarChar(30)
   employmentTypeCode  String?   @map("employment_type_code") @db.VarChar(20)
   groupId             String?   @map("group_id") @db.VarChar(10)
   defaultShiftPattern String?   @map("default_shift_pattern") @db.VarChar(10)
@@ -179,11 +354,31 @@ model Device {
   location String? @db.VarChar(50)
   active   Boolean @default(true)
 
+  // Sprint Y-9: 重複ログイン防止用ロック
+  //   ログインで占有 → ログアウト/タイムアウトで解放。
+  //   activeStaffCode が非 null の間、他の社員はログイン不可。
+  activeStaffCode String?   @map("active_staff_code") @db.VarChar(10)
+  activeSince     DateTime? @map("active_since") @db.Timestamptz
+  lastSeen        DateTime? @map("last_seen") @db.Timestamptz
+
   printerMap   DevicePrinterMap?
   inspSessions InspSession[]
   printLogs    PrintLog[]
 
   @@map("devices")
+}
+
+/// 9-A. 部署マスタ（Sprint Y-7）
+model Department {
+  code      String   @id @db.VarChar(20)
+  name      String   @db.VarChar(50)
+  sortOrder Int      @default(0) @map("sort_order")
+  active    Boolean  @default(true)
+  note      String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("departments")
 }
 
 /// 9. 検品グループマスタ
@@ -193,6 +388,9 @@ model InspectionGroup {
   tables    String[] @default([])
   category  String   @db.VarChar(20)
   needStaff Int      @default(1) @map("need_staff")
+  /// Sprint Y-10: ダッシュボード「テーブルグループ別 進捗」カードの表示順
+  /// 小さい順に左上から並ぶ。同値の場合は id の辞書順。
+  sortOrder Int      @default(100) @map("sort_order")
   note      String?  @db.Text
 
   staff             Staff[]
@@ -324,9 +522,27 @@ model Notice {
   readBy     String?  @map("read_by") @db.VarChar(10)
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
 
+  acks NoticeAck[]
+
   @@index([kind, active, date])
   @@index([kind, readAt])
   @@map("notices")
+}
+
+/// 9-B. 連絡事項 個別既読（Sprint Y-16）
+///   announce 通知は複数の社員が個別に確認するため、
+///   Notice.readAt の global フラグだけでは「他者が読んだら自分には出ない」ことになる。
+///   このテーブルで (notice_id, staff_code) ごとに既読を管理する。
+model NoticeAck {
+  noticeId  Int      @map("notice_id")
+  staffCode String   @map("staff_code") @db.VarChar(10)
+  ackedAt   DateTime @default(now()) @map("acked_at") @db.Timestamptz
+
+  notice Notice @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+
+  @@id([noticeId, staffCode])
+  @@index([staffCode])
+  @@map("notice_acks")
 }
 
 // =====================================================
@@ -343,6 +559,8 @@ model ShippingOrder {
   status       String    @default("pending") @db.VarChar(20)
   qrPrintFlag  Boolean   @default(false) @map("qr_print_flag")
   noshiName    String?   @map("noshi_name") @db.VarChar(50)
+  /// 熨斗氏名（2026-06-02 追加・基幹CSV「熨斗氏名」）。のし除外/QR強制の照合に使用。
+  noshiPerson  String?   @map("noshi_person") @db.VarChar(50)
   destZip      String?   @map("dest_zip") @db.VarChar(8)
   destAddr     String?   @map("dest_addr") @db.VarChar(200)
   destName     String?   @map("dest_name") @db.VarChar(100)
@@ -364,6 +582,8 @@ model ShippingOrder {
   inspSession    InspSession?
   printLogs      PrintLog[]
   orderAuditLogs OrderAuditLog[]
+  /// Sprint Z-1: 引当行
+  allocations    Allocation[]
 
   @@index([shipDate, status])
   @@index([deletedAt])
@@ -567,4 +787,38 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("sessions")
+}
+
+/// 29. 顧客属性補助マスタ（Sprint Y-13 / 作業補助タブ）
+///   個人/企業/置き配/誤配多発 等、注意が必要な顧客の補助情報。
+///   検品時のアラート・置き配判定・誤配警告などに将来連携。
+model CustomerAuxAttr {
+  id            Int      @id @default(autoincrement())
+  customerName  String   @map("customer_name") @db.VarChar(100)
+  customerKana  String?  @map("customer_kana") @db.VarChar(100)
+  /// 'corp' = 企業 / 'personal' = 個人 / 'leave_at_door' = 置き配指定 /
+  /// 'redelivery_alert' = 誤配・再配達多発 / 'attention' = 要注意 / 'note' = メモのみ
+  attrType      String   @default("note") @map("attr_type") @db.VarChar(20)
+  note          String?  @db.Text
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy     String?  @map("created_by") @db.VarChar(10)
+
+  @@index([customerName])
+  @@index([active, attrType])
+  @@map("customer_aux_attrs")
+}
+
+/// 28. 権限オーバーライド（Sprint Y-10）
+///   permissions-shared.ts の DEFAULT を上書き可能にする DB ストア。
+///   admin/manager が /settings 画面から編集できる。
+///   レコードが無いキーはコード側の既定値を使う（部分オーバーライド可）。
+model PermissionOverride {
+  permissionKey String   @id @map("permission_key") @db.VarChar(50)
+  allowedRoles  String[] @map("allowed_roles") @db.VarChar(20)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy     String?  @map("updated_by") @db.VarChar(10)
+
+  @@map("permission_overrides")
 }

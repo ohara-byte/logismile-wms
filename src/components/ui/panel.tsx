@@ -43,14 +43,16 @@ interface HeaderProps {
 }
 export function PanelHeader({ title, meta, action, className }: HeaderProps) {
   return (
+    // モック準拠：半透明の凹み感を出すために bg-surface-base/50 を敷く。
+    // 日本語タイトルが大半なので uppercase / tracking-wider は外す（字間が広がりすぎ）。
     <div
       className={cn(
-        'flex items-center justify-between px-3 py-2 border-b border-surface-border',
+        'flex items-center justify-between px-3 py-1.5 border-b border-surface-border bg-surface-base/50',
         className,
       )}
     >
       <div className="flex items-baseline gap-2 min-w-0">
-        <h3 className="text-xs font-bold text-accent-amber uppercase tracking-wider truncate">
+        <h3 className="text-xs font-bold text-accent-amber truncate">
           {title}
         </h3>
         {meta && <span className="text-2xs text-ink-subtle truncate">{meta}</span>}

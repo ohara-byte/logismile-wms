@@ -1,0 +1,41 @@
+{
+  "name": "LogiSmile タブレット検品",
+  "short_name": "LS タブレット",
+  "description": "LogiSmile タブレット検品アプリ（大江ノ郷自然牧場 WMS）",
+  "start_url": "/tablet/login",
+  "scope": "/tablet/",
+  "id": "/tablet/",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#29A6F6",
+  "lang": "ja",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/icon-tablet-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-tablet-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-tablet-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-tablet.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    }
+  ]
+}

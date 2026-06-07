@@ -1,11 +1,13 @@
 /**
  * PUT /api/notices/[id]/read
- * 連絡事項の既読化。
+ * 連絡事項の既読化（Sprint Y-16 で per-staff 管理に拡張）。
  *
  * 認証:
- *   admin / manager … inbox（着信）の既読化（管理 PC 操作）
- *   staff           … announce（発信）の既読化（モバイル ack_required フロー用）
- * 副作用: BadgeCounts.ann が即時減算される（次回 SSE で配信）
+ *   admin / manager … inbox（着信）の既読化 → Notice.readAt を更新（管理 PC 一括）
+ *   staff           … announce の既読化 → NoticeAck (notice_id, staff_code) を upsert（個別）
+ *
+ * 副作用:
+ *   BadgeCounts.ann は次回 SSE で再配信。
  */
 
 import { NextResponse } from 'next/server';
@@ -16,7 +18,6 @@ export async function PUT(
   _req: Request,
   { params }: { params: { id: string } },
 ) {
-  // B-1 / H-4: モバイル端末からの announce 既読化を許可
   const guard = await requireRole('admin', 'manager', 'staff');
   if (!guard.ok) return guard.response;
 
@@ -33,12 +34,13 @@ export async function PUT(
     select: { id: true, kind: true, readAt: true },
   });
   if (!notice) {
-    return NextResponse.json({ error: 'NOT_FOUND', message: 'notice が見つかりません' }, { status: 404 });
+    return NextResponse.json(
+      { error: 'NOT_FOUND', message: 'notice が見つかりません' },
+      { status: 404 },
+    );
   }
 
   // ロール × kind の整合性チェック
-  // - inbox の既読化は admin/manager のみ（管理 PC で受信した連絡を消化）
-  // - announce の既読化は staff のみ（モバイル端末で「了解」タップ）
   if (guard.auth.source === 'mobile' && notice.kind !== 'announce') {
     return NextResponse.json(
       {
@@ -58,6 +60,27 @@ export async function PUT(
     );
   }
 
+  // Sprint Y-16: モバイル → 個別 ack（NoticeAck）／ PC → 全体 readAt
+  if (guard.auth.source === 'mobile') {
+    const staffCode = guard.auth.staffCode;
+    if (!staffCode) {
+      return NextResponse.json(
+        { error: 'FORBIDDEN', message: '社員コードが取得できません' },
+        { status: 403 },
+      );
+    }
+    await prisma.noticeAck.upsert({
+      where: { noticeId_staffCode: { noticeId: id, staffCode } },
+      create: { noticeId: id, staffCode },
+      update: {}, // 既に ack 済みなら何もしない（acked_at は維持）
+    });
+    return NextResponse.json({
+      data: { id, staffCode, ackedAt: new Date().toISOString() },
+      message: 'OK',
+    });
+  }
+
+  // PC（admin/manager）: 旧来通り Notice.readAt をグローバルに更新
   const updated = await prisma.notice.update({
     where: { id },
     data: {
@@ -65,6 +88,5 @@ export async function PUT(
       readBy: guard.auth.staffCode ?? null,
     },
   });
-
   return NextResponse.json({ data: updated, message: 'OK' });
 }

@@ -70,7 +70,7 @@ export const authOptions: NextAuthOptions = {
           id: user.id,
           email: user.email,
           name: user.staff?.name ?? user.email,
-          role: user.role as 'admin' | 'manager' | 'staff',
+          role: user.role as 'admin' | 'manager' | 'lead' | 'staff' | 'parttime',
           staffCode: user.staffCode,
         };
       },
@@ -79,7 +79,10 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        const u = user as { role: 'admin' | 'manager' | 'staff'; staffCode: string | null };
+        const u = user as {
+          role: 'admin' | 'manager' | 'lead' | 'staff' | 'parttime';
+          staffCode: string | null;
+        };
         token.role = u.role;
         token.staffCode = u.staffCode;
       }

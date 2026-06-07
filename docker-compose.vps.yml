@@ -1,0 +1,70 @@
+# =====================================================================
+# LogiSmile WMS — Xserver VPS 本番 compose（共用サーバ規約準拠）
+#
+#   厳守事項（GW引き継ぎ資料）:
+#     - コンテナ/ネットワーク/ボリューム名は logismile_ で前置
+#     - アプリは 80/443 を bind しない（Caddy が使用）
+#     - アプリは 127.0.0.1:3001 のみで待受（外部直アクセス不可。公開は Caddy 経由）
+#     - DB はホストにポート公開しない（compose 内部ネットだけで完結）
+#     - 1アプリ RAM 3GB 以内目安
+#
+#   公開URL : https://logismile.oenosato.net  （Caddy が SSL/プロキシ済）
+#   構成    : Caddy → 127.0.0.1:3001 → logismile_app(:3000) → logismile_db(:5432 内部)
+#
+#   配置先  : /var/www/logismile
+#   起動    : docker compose -f docker-compose.vps.yml up -d --build
+#   環境変数: 同ディレクトリの .env（compose が自動読込＋app の env_file）
+# =====================================================================
+
+name: logismile
+
+services:
+  db:
+    image: postgres:16
+    container_name: logismile_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wms_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-wms_db}
+      TZ: Asia/Tokyo
+    volumes:
+      - logismile_pgdata:/var/lib/postgresql/data
+    networks:
+      - logismile_internal
+    restart: always
+    # ★ ホストへポート公開しない（内部ネットのみ）
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-wms_user} -d ${POSTGRES_DB:-wms_db}']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 768m
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: logismile_app:latest
+    container_name: logismile_app
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Tokyo
+    depends_on:
+      db:
+        condition: service_healthy
+    # ★ ループバックのみに公開。Caddy が https://logismile.oenosato.net をここへプロキシ
+    ports:
+      - '127.0.0.1:3001:3000'
+    networks:
+      - logismile_internal
+    restart: always
+    mem_limit: 2g
+
+networks:
+  logismile_internal:
+    name: logismile_internal
+
+volumes:
+  logismile_pgdata:
+    name: logismile_pgdata

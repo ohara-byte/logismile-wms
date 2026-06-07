@@ -24,37 +24,149 @@ function endOf(d: Date) {
   return x;
 }
 
+/**
+ * サマリーレポート（日別 / 期間合計）— Sprint I-3b: pane の期待形に合わせて拡張。
+ *
+ * 返却:
+ *   {
+ *     from, to,
+ *     daily: [{ date, weekday, shipped, packed, packMin, manHours, forceOk, staffCount }],
+ *     total: { shipped, packed, packMin, manHours, forceOk },
+ *     avg:   { perDay, perOrderMin },
+ *     best:  { date, shipped },
+ *     worst: { date, shipped },
+ *   }
+ */
 export async function summaryReport(from: Date, to: Date) {
-  const sessions = await prisma.inspSession.findMany({
-    where: {
-      completedAt: { gte: startOf(from), lte: endOf(to) },
-      durationSec: { not: null },
-    },
-    select: { durationSec: true, forceOkCount: true },
-  });
+  const sFrom = startOf(from);
+  const sTo = endOf(to);
 
+  // 期間内の出荷指示 + 検品セッションを一気に取得
   const orders = await prisma.shippingOrder.findMany({
-    where: { shipDate: { gte: startOf(from), lte: endOf(to) }, deletedAt: null },
-    select: { id: true, status: true },
+    where: { shipDate: { gte: sFrom, lte: sTo }, deletedAt: null },
+    select: { id: true, status: true, shipDate: true },
+  });
+  const sessions = await prisma.inspSession.findMany({
+    where: { completedAt: { gte: sFrom, lte: sTo, not: null } },
+    select: {
+      staffCode: true,
+      durationSec: true,
+      forceOkCount: true,
+      completedAt: true,
+    },
   });
 
-  const totalShipped = orders.length;
-  const totalPacked = orders.filter((o) => o.status === 'packed' || o.status === 'shipped').length;
-  const totalForceOk = sessions.reduce((s, x) => s + x.forceOkCount, 0);
+  const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+  // 日付キー（YYYY-MM-DD）でバケット
+  type Bucket = {
+    shipped: number;
+    packed: number;
+    packSec: number; // 検品セッション所要時間合計（秒）
+    forceOk: number;
+    staffSet: Set<string>;
+  };
+  const byDay = new Map<string, Bucket>();
+  function get(key: string): Bucket {
+    let b = byDay.get(key);
+    if (!b) {
+      b = { shipped: 0, packed: 0, packSec: 0, forceOk: 0, staffSet: new Set() };
+      byDay.set(key, b);
+    }
+    return b;
+  }
+
+  // 出荷指示 → shipped/packed
+  for (const o of orders) {
+    const key = o.shipDate.toISOString().slice(0, 10);
+    const b = get(key);
+    b.shipped++;
+    if (o.status === 'packed' || o.status === 'shipped') b.packed++;
+  }
+
+  // 検品セッション → 完了日でカウント
+  for (const s of sessions) {
+    if (!s.completedAt) continue;
+    const key = s.completedAt.toISOString().slice(0, 10);
+    const b = get(key);
+    b.packSec += s.durationSec ?? 0;
+    b.forceOk += s.forceOkCount ?? 0;
+    if (s.staffCode) b.staffSet.add(s.staffCode);
+  }
+
+  // 期間内の全日付を埋める（出荷ゼロ日も daily に含める）
+  const daily: Array<{
+    date: string;
+    weekday: string;
+    shipped: number;
+    packed: number;
+    packMin: number;
+    manHours: number;
+    forceOk: number;
+    staffCount: number;
+  }> = [];
+  for (
+    let d = new Date(sFrom);
+    d <= sTo;
+    d = new Date(d.getTime() + 24 * 60 * 60 * 1000)
+  ) {
+    const key = d.toISOString().slice(0, 10);
+    const b = byDay.get(key);
+    daily.push({
+      date: key,
+      weekday: WEEKDAYS[d.getDay()],
+      shipped: b?.shipped ?? 0,
+      packed: b?.packed ?? 0,
+      packMin: b ? Math.round((b.packSec / 60) * 10) / 10 : 0,
+      manHours: b ? Math.round((b.packSec / 3600) * 100) / 100 : 0,
+      forceOk: b?.forceOk ?? 0,
+      staffCount: b?.staffSet.size ?? 0,
+    });
+  }
+
+  const totalShipped = daily.reduce((s, d) => s + d.shipped, 0);
+  const totalPacked = daily.reduce((s, d) => s + d.packed, 0);
+  const totalPackMin = daily.reduce((s, d) => s + d.packMin, 0);
+  const totalManHours = daily.reduce((s, d) => s + d.manHours, 0);
+  const totalForceOk = daily.reduce((s, d) => s + d.forceOk, 0);
+
+  const days = daily.length || 1;
+  const perDay = Math.round(totalShipped / days);
+  const perOrderMin = totalShipped > 0 ? (totalManHours * 60) / totalShipped : 0;
+
+  const sorted = [...daily].sort((a, b) => b.shipped - a.shipped);
+  const best = sorted[0] ?? { date: '', shipped: 0 };
+  const worst = sorted[sorted.length - 1] ?? { date: '', shipped: 0 };
+
+  // 後方互換: 旧 /reports ページや CSV 出力が依存していたフラット フィールド
   const totalDurationSec = sessions.reduce((s, x) => s + (x.durationSec ?? 0), 0);
   const avgPackingSec =
     sessions.length > 0 ? Math.round(totalDurationSec / sessions.length) : null;
-  const totalMhHours = totalDurationSec / 3600;
 
   return {
-    from: startOf(from).toISOString().slice(0, 10),
-    to: startOf(to).toISOString().slice(0, 10),
+    from: sFrom.toISOString().slice(0, 10),
+    to: endOf(to).toISOString().slice(0, 10),
+    daily,
+    total: {
+      shipped: totalShipped,
+      packed: totalPacked,
+      packMin: Math.round(totalPackMin * 10) / 10,
+      manHours: Math.round(totalManHours * 100) / 100,
+      forceOk: totalForceOk,
+    },
+    avg: {
+      perDay,
+      perOrderMin: Math.round(perOrderMin * 100) / 100,
+    },
+    best: { date: best.date, shipped: best.shipped },
+    worst: { date: worst.date, shipped: worst.shipped },
+    // 旧仕様互換（/reports ページ・CSV 出力など）
     totalShipped,
     totalPacked,
     completedCount: sessions.length,
     forceOkCount: totalForceOk,
     avgPackingSec,
-    totalMhHours: Math.round(totalMhHours * 100) / 100,
+    totalMhHours: Math.round(totalManHours * 100) / 100,
   };
 }
 

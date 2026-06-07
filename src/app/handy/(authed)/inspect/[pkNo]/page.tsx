@@ -6,6 +6,7 @@
 import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/db';
 import { getEmployeeSession } from '@/lib/auth/employee-session';
+import { isNoshiExcluded } from '@/lib/inspection/noshi-exclusion';
 import { HandyInspectionScreen } from './_components/handy-inspection-screen';
 
 export default async function HandyInspectPage({
@@ -31,6 +32,9 @@ export default async function HandyInspectPage({
 
   const session = await getEmployeeSession();
 
+  // 2026-06-03: のし除外マスタ（熨斗名称のみで照合）に一致する場合は のし☑ 確認をスルー。
+  const noshiExcluded = await isNoshiExcluded(order.noshiName);
+
   return (
     <HandyInspectionScreen
       order={{
@@ -39,7 +43,7 @@ export default async function HandyInspectPage({
         status: order.status,
         qrPrintFlag: order.qrPrintFlag,
         invoiceNo: order.invoiceNo,
-        noshiName: order.noshiName,
+        noshiName: noshiExcluded ? null : order.noshiName,
         destName: order.destName,
         destZip: order.destZip,
         destAddr: order.destAddr,

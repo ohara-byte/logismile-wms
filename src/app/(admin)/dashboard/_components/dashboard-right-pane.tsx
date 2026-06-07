@@ -13,7 +13,6 @@
 import { useSearchParams } from 'next/navigation';
 import { DEFAULT_TAB, isTabId, type TabId } from './tabs-config';
 import { DashboardTabBar } from './dashboard-tab-bar';
-import { PlaceholderPane } from './panes/placeholder-pane';
 import { AlertsPane } from './panes/alerts-pane';
 import { ForcePane } from './panes/force-pane';
 import { AnnPane } from './panes/ann-pane';
@@ -23,6 +22,8 @@ import { MatchPane } from './panes/match-pane';
 import { MasterPane } from './panes/master/master-pane';
 import { LinkPane } from './panes/link/link-pane';
 import { ReportPane } from './panes/report/report-pane';
+import { MfgPane } from './panes/mfg-pane';
+import { StockMatchPane } from './panes/stock-match-pane';
 
 interface Props {
   badges?: Partial<Record<TabId, number>>;
@@ -55,15 +56,6 @@ function PaneContent({ tab }: { tab: TabId }) {
       return <CarrPane />;
     case 'search':
       return <SearchPane />;
-    case 'csv':
-      return (
-        <PlaceholderPane
-          title="📁 CSV 取込・出力"
-          block="A-07-CSV"
-          legacyHref="/imports"
-          legacyLabel="従来の CSV 取込画面へ"
-        />
-      );
     case 'master':
       return <MasterPane />;
     case 'link':
@@ -72,5 +64,9 @@ function PaneContent({ tab }: { tab: TabId }) {
       return <ReportPane />;
     case 'match':
       return <MatchPane />;
+    case 'stockmatch':
+      return <StockMatchPane />;
+    case 'mfg':
+      return <MfgPane />;
   }
 }

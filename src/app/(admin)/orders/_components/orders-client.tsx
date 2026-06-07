@@ -19,6 +19,10 @@ interface OrderRow {
   carrier: { code: string; name: string; short: string | null; cool: boolean } | null;
   itemCount: number;
   scannedRatio: number;
+  // Sprint Z-1: 引当状態
+  allocStatus?: 'full' | 'partial' | 'none';
+  allocatedQty?: number;
+  requiredQty?: number;
   deletedAt: string | null;
 }
 
@@ -38,7 +42,10 @@ export function OrdersClient() {
   const [shipDate, setShipDate] = useState('');
   const [status, setStatus] = useState('');
   const [q, setQ] = useState('');
-  const [includeDeleted, setIncludeDeleted] = useState(false);
+  // 用語統一: 「取消」→「キャンセル」（モーダルの処理アクションと合わせる）
+  const [includeCancelled, setIncludeCancelled] = useState(false);
+  // 保留も表示するか（既定 = 表示）。OFF にすると status='held' を結果から除外する。
+  const [includeHeld, setIncludeHeld] = useState(true);
 
   const { open: openDetail } = useOrderDetailModal();
 
@@ -52,7 +59,8 @@ export function OrdersClient() {
     if (shipDate) params.set('shipDate', shipDate);
     if (status) params.set('status', status);
     if (q) params.set('q', q);
-    if (includeDeleted) params.set('includeDeleted', 'true');
+    if (includeCancelled) params.set('includeDeleted', 'true');
+    if (!includeHeld) params.set('excludeHeld', 'true');
     const res = await fetch(`/api/orders?${params}`);
     const j = await res.json();
     if (j.data) {
@@ -152,18 +160,33 @@ export function OrdersClient() {
             </div>
           </div>
           <div className="flex justify-between items-center mt-3">
-            <label className="text-xs flex items-center gap-2 text-ink-subtle">
-              <input
-                type="checkbox"
-                checked={includeDeleted}
-                onChange={(e) => setIncludeDeleted(e.target.checked)}
-                className="accent-accent-amber"
-              />
-              🗑 削除済みも含める
-            </label>
-            <Button onClick={reload} disabled={busy} size="sm">
-              {busy ? '…' : '検索'}
-            </Button>
+            <div className="flex items-center gap-4">
+              <label className="text-xs flex items-center gap-2 text-ink-subtle">
+                <input
+                  type="checkbox"
+                  checked={includeHeld}
+                  onChange={(e) => setIncludeHeld(e.target.checked)}
+                  className="accent-status-warn"
+                />
+                ⏸ 保留も表示
+              </label>
+              <label className="text-xs flex items-center gap-2 text-ink-subtle">
+                <input
+                  type="checkbox"
+                  checked={includeCancelled}
+                  onChange={(e) => setIncludeCancelled(e.target.checked)}
+                  className="accent-accent-amber"
+                />
+                🗑 キャンセル済みも含める
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Sprint Z-2: 再引当ボタン（業務優先度で再分配） */}
+              <ReallocButton shipDate={shipDate} onDone={reload} />
+              <Button onClick={reload} disabled={busy} size="sm">
+                {busy ? '…' : '検索'}
+              </Button>
+            </div>
           </div>
         </PanelBody>
       </Panel>
@@ -180,10 +203,11 @@ export function OrdersClient() {
             <TH>納品書</TH>
             <TH align="center">QR</TH>
             <TH>状態</TH>
+            <TH align="center">引当</TH>
             <TH align="right">進捗</TH>
           </THead>
           <TBody>
-            {items.length === 0 && <EmptyRow colSpan={8} message="該当する伝票がありません" />}
+            {items.length === 0 && <EmptyRow colSpan={9} message="該当する伝票がありません" />}
             {items.map((o) => (
               <TR key={o.id} onClick={() => openDetail(o.pkNo)} muted={!!o.deletedAt}>
                 <TD className="text-2xs whitespace-nowrap">
@@ -208,6 +232,13 @@ export function OrdersClient() {
                 <TD>
                   <StatusBadge status={o.status} deleted={!!o.deletedAt} />
                 </TD>
+                <TD align="center">
+                  <AllocBadge
+                    status={o.allocStatus ?? 'none'}
+                    allocated={o.allocatedQty ?? 0}
+                    required={o.requiredQty ?? 0}
+                  />
+                </TD>
                 <TD align="right" mono>
                   <span className={o.scannedRatio === 100 ? 'text-status-ok font-bold' : 'text-ink'}>
                     {o.scannedRatio}%
@@ -225,7 +256,8 @@ export function OrdersClient() {
 }
 
 function StatusBadge({ status, deleted }: { status: string; deleted: boolean }) {
-  if (deleted) return <Badge variant="neutral">削除済</Badge>;
+  // 用語統一: 「削除済」→「キャンセル済」（モーダル側の処理アクションと一致）
+  if (deleted) return <Badge variant="neutral">キャンセル済</Badge>;
   const map: Record<string, { variant: Parameters<typeof Badge>[0]['variant']; label: string }> = {
     pending: { variant: 'wait', label: '未着手' },
     inspecting: { variant: 'working', label: '検品中' },
@@ -235,4 +267,113 @@ function StatusBadge({ status, deleted }: { status: string; deleted: boolean }) 
   };
   const m = map[status] ?? { variant: 'neutral' as const, label: status };
   return <Badge variant={m.variant}>{m.label}</Badge>;
+}
+
+/** Sprint Z-1: 引当バッジ（full=✓ 緑 / partial=⚠ 橙 / none=✗ 赤）*/
+function AllocBadge({
+  status,
+  allocated,
+  required,
+}: {
+  status: 'full' | 'partial' | 'none';
+  allocated: number;
+  required: number;
+}) {
+  if (required === 0) return <span className="text-ink-muted text-3xs">—</span>;
+  const tooltip = `引当 ${allocated} / 必要 ${required}`;
+  if (status === 'full')
+    return (
+      <span title={tooltip} className="text-status-ok font-bold">
+        ✓
+      </span>
+    );
+  if (status === 'partial')
+    return (
+      <span
+        title={tooltip}
+        className="text-accent-amber font-bold tabular-nums text-2xs"
+      >
+        ⚠ {allocated}/{required}
+      </span>
+    );
+  return (
+    <span title={tooltip} className="text-status-error font-bold">
+      ✗
+    </span>
+  );
+}
+
+/**
+ * Sprint Z-2: 再引当ボタン
+ *  shipDate（フィルタの出荷日）を対象に、reserved Allocation を一旦 release して
+ *  業務優先度（運送会社cutoff・冷凍便・受注順）で再引当を実行。
+ */
+function ReallocButton({
+  shipDate,
+  onDone,
+}: {
+  shipDate: string;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [includeInspecting, setIncludeInspecting] = useState(false);
+
+  async function run() {
+    if (!shipDate) {
+      alert('再引当する出荷日を指定してください（フィルタの「出荷日」欄）');
+      return;
+    }
+    const msg = includeInspecting
+      ? `${shipDate} の出荷指示を再引当します。\n⚠ 検品中の Allocation も一旦 release します（検品作業中の現場にも影響します）。\n本当に実行しますか？`
+      : `${shipDate} の出荷指示を再引当します（pending / held のみ対象）。\n業務優先度（出荷日・運送会社cutoff・冷凍便）で再分配されます。`;
+    if (!confirm(msg)) return;
+    setBusy(true);
+    try {
+      const r = await fetch(
+        `/api/allocation/realloc?date=${shipDate}&includeInspecting=${includeInspecting}`,
+        { method: 'POST' },
+      );
+      const j = await r.json();
+      if (!r.ok) {
+        alert(`再引当に失敗しました: ${j.message ?? r.status}`);
+        return;
+      }
+      const d = j.data ?? {};
+      alert(
+        `✓ 再引当 完了\n対象 ${d.orderCount} 件 / 引当成功 ${d.allocatedCount} 件\n不足 SKU ${d.shortageSkus} 件 / 製造指示 draft ${d.draftInstructions} 件作成`,
+      );
+      onDone();
+    } catch (e) {
+      alert(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <label className="text-2xs text-ink-subtle flex items-center gap-1">
+        <input
+          type="checkbox"
+          checked={includeInspecting}
+          onChange={(e) => setIncludeInspecting(e.target.checked)}
+          className="accent-accent-amber"
+        />
+        検品中も対象
+      </label>
+      <button
+        type="button"
+        onClick={run}
+        disabled={busy || !shipDate}
+        className="text-xs px-3 py-1.5 rounded border border-purple-500 bg-purple-900 text-purple-100 hover:bg-purple-800 font-bold disabled:opacity-50"
+        title={
+          shipDate
+            ? `${shipDate} の出荷指示を業務優先度で再引当`
+            : '出荷日を指定してください'
+        }
+      >
+        {busy ? '再引当中…' : '🔄 再引当'}
+      </button>
+    </div>
+  );
 }

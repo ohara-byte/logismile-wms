@@ -19,6 +19,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useBadges } from '@/components/admin/badge-context';
 
+/** ブラウザ（JST）のローカル暦日を YYYY-MM-DD で返す。
+ *  toISOString は UTC のため JST 早朝に前日になる不具合があった（2026-06-06 修正）。 */
+const todayLocalYmd = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 interface Notice {
   id: number;
   date: string;
@@ -75,7 +82,7 @@ export function AnnPane() {
 
   const reload = useCallback(async () => {
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayLocalYmd();
       const [aRes, iRes] = await Promise.all([
         fetch(`/api/notices?kind=announce&date=${today}`),
         fetch('/api/notices?kind=inbox'),
@@ -202,7 +209,62 @@ function AnnSendPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 宛先候補（2026-06-06）: グループ→グループマスタ / 担当者→当日出勤者
+  const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
+  const [staffToday, setStaffToday] = useState<{ code: string; name: string }[]>([]);
+  const [candLoading, setCandLoading] = useState(false);
+
   const needsTargetId = target === 'group' || target === 'staff';
+
+  // 宛先を group/staff にしたとき候補を取得（staff は当日出勤者のみ）
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCandidates() {
+      if (target === 'group') {
+        if (groups.length > 0) return;
+        setCandLoading(true);
+        try {
+          const r = await fetch('/api/master/groups');
+          const j = await r.json();
+          if (!cancelled) {
+            setGroups(
+              (j.data?.items ?? []).map((g: { id: string; name: string }) => ({
+                id: g.id,
+                name: g.name,
+              })),
+            );
+          }
+        } catch {
+          /* ignore */
+        } finally {
+          if (!cancelled) setCandLoading(false);
+        }
+      } else if (target === 'staff') {
+        setCandLoading(true);
+        try {
+          const r = await fetch('/api/shifts/today'); // 既定=本日(JST)
+          const j = await r.json();
+          const items: Array<{
+            staff: { code: string; name: string } | null;
+            pattern: { isOff: boolean } | null;
+          }> = j.data?.items ?? [];
+          const working = items
+            .filter((s) => s.staff && !s.pattern?.isOff)
+            .map((s) => ({ code: s.staff!.code, name: s.staff!.name }));
+          if (!cancelled) setStaffToday(working);
+        } catch {
+          /* ignore */
+        } finally {
+          if (!cancelled) setCandLoading(false);
+        }
+      }
+    }
+    loadCandidates();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target]);
   const canSend = title.trim().length > 0 && (!needsTargetId || targetId.trim().length > 0) && !busy;
 
   async function handleSend() {
@@ -215,7 +277,7 @@ function AnnSendPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           kind: 'announce',
-          date: new Date().toISOString().slice(0, 10),
+          date: todayLocalYmd(),
           targetType: target,
           targetId: needsTargetId ? targetId.trim() : null,
           title: title.trim(),
@@ -250,7 +312,14 @@ function AnnSendPanel({
         <FormRow label="宛先">
           <div className="flex flex-wrap gap-1">
             {(Object.keys(TARGET_LABEL) as TargetType[]).map((t) => (
-              <Chip key={t} active={target === t} onClick={() => setTarget(t)}>
+              <Chip
+                key={t}
+                active={target === t}
+                onClick={() => {
+                  setTarget(t);
+                  setTargetId(''); // 宛先タイプ切替時は選択をリセット
+                }}
+              >
                 {TARGET_LABEL[t]}
               </Chip>
             ))}
@@ -258,13 +327,34 @@ function AnnSendPanel({
         </FormRow>
 
         {needsTargetId && (
-          <FormRow label={target === 'group' ? 'グループ' : '担当者'}>
-            <input
-              value={targetId}
-              onChange={(e) => setTargetId(e.target.value)}
-              placeholder={target === 'group' ? '例: ABL' : '例: S001'}
-              className="w-full bg-surface-panel border border-surface-border rounded px-2 py-1 text-xs text-ink"
-            />
+          <FormRow label={target === 'group' ? 'グループ' : '担当者（当日出勤）'}>
+            {candLoading ? (
+              <span className="text-2xs text-ink-muted">候補を読み込み中…</span>
+            ) : target === 'group' ? (
+              groups.length === 0 ? (
+                <span className="text-2xs text-ink-muted">グループがありません</span>
+              ) : (
+                <div className="flex flex-wrap gap-1">
+                  {groups.map((g) => (
+                    <Chip key={g.id} active={targetId === g.id} onClick={() => setTargetId(g.id)}>
+                      {g.name}
+                    </Chip>
+                  ))}
+                </div>
+              )
+            ) : staffToday.length === 0 ? (
+              <span className="text-2xs text-ink-muted">
+                本日の出勤者がいません（シフト未登録の可能性）
+              </span>
+            ) : (
+              <div className="flex flex-wrap gap-1 max-h-32 overflow-auto">
+                {staffToday.map((s) => (
+                  <Chip key={s.code} active={targetId === s.code} onClick={() => setTargetId(s.code)}>
+                    {s.name}
+                  </Chip>
+                ))}
+              </div>
+            )}
           </FormRow>
         )}
 

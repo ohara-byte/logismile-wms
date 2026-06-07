@@ -82,3 +82,41 @@ export function isLocked(key: string): { locked: boolean; retryAfterSec?: number
 export function clearFailures(key: string) {
   buckets.delete(key);
 }
+
+/**
+ * Sprint Z-5: 設定タブから現在の失敗バケットを参照するためのインスペクタ。
+ * key は `<scope>:<value>` 形式（例：`emp:E001` / `ip:192.168.1.10`）。
+ * 既に解除されたバケットは除外。
+ */
+export interface BucketSnapshot {
+  key: string;
+  attempts: number;
+  firstAttemptAt: number;
+  unlockAt: number;
+  locked: boolean;
+  retryAfterSec: number;
+}
+
+export function listBuckets(): BucketSnapshot[] {
+  const now = Date.now();
+  const out: BucketSnapshot[] = [];
+  for (const [key, b] of buckets) {
+    const locked = b.unlockAt > 0 && now < b.unlockAt;
+    out.push({
+      key,
+      attempts: b.count,
+      firstAttemptAt: b.firstAttemptAt,
+      unlockAt: b.unlockAt,
+      locked,
+      retryAfterSec: locked ? Math.ceil((b.unlockAt - now) / 1000) : 0,
+    });
+  }
+  return out;
+}
+
+/** 全バケット消去（緊急時用） */
+export function clearAllBuckets(): number {
+  const n = buckets.size;
+  buckets.clear();
+  return n;
+}

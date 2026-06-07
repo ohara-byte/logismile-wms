@@ -16,7 +16,8 @@ import crypto from 'node:crypto';
 const COOKIE_NAME = 'wms_emp_session';
 const COOKIE_MAX_AGE_SEC = 60 * 60 * 8; // 8 時間
 
-export type EmployeeRole = 'admin' | 'manager' | 'staff';
+// Sprint Y-11: lead / parttime を追加
+export type EmployeeRole = 'admin' | 'manager' | 'lead' | 'staff' | 'parttime';
 
 export interface EmployeeSession {
   staffCode: string;
@@ -59,7 +60,11 @@ function verifyAndParse(token: string): EmployeeSession | null {
     if (!obj || typeof obj !== 'object') return null;
     if (typeof obj.exp !== 'number' || obj.exp < Math.floor(Date.now() / 1000)) return null;
     if (typeof obj.staffCode !== 'string' || typeof obj.empCode !== 'string') return null;
-    if (typeof obj.role !== 'string' || !['admin', 'manager', 'staff'].includes(obj.role)) {
+    // Sprint Y-11: 5 ロール対応（lead/parttime 追加後の Cookie を弾かないよう拡張）
+    if (
+      typeof obj.role !== 'string' ||
+      !['admin', 'manager', 'lead', 'staff', 'parttime'].includes(obj.role)
+    ) {
       return null;
     }
     return obj;

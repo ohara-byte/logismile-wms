@@ -14,7 +14,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireRole } from '@/lib/auth/permissions';
+import { requirePermission } from '@/lib/auth/permissions';
 
 const Body = z.object({
   reason: z.string().min(1, '却下理由は必須です').max(500),
@@ -24,7 +24,8 @@ export async function POST(
   req: Request,
   { params }: { params: { itemId: string } },
 ) {
-  const guard = await requireRole('admin', 'manager');
+  // Sprint Y-11: 強制OK 却下も force_approve 権限
+  const guard = await requirePermission('force_approve');
   if (!guard.ok) return guard.response;
 
   const id = parseInt(params.itemId, 10);

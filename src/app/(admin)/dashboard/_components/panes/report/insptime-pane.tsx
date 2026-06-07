@@ -52,7 +52,10 @@ export function InsptimePane() {
     );
   }
 
-  const maxBucket = Math.max(...data.buckets.map((b) => b.count), 1);
+  // I-1: API が想定外の形を返してもクラッシュしないようガード
+  const buckets = data.buckets ?? [];
+  const byItemCount = data.byItemCount ?? [];
+  const maxBucket = Math.max(...buckets.map((b) => b.count), 1);
 
   return (
     <div className="p-1 space-y-3">
@@ -75,11 +78,11 @@ export function InsptimePane() {
           <div
             className="grid gap-0.5 items-end"
             style={{
-              gridTemplateColumns: `repeat(${data.buckets.length}, minmax(0, 1fr))`,
+              gridTemplateColumns: `repeat(${buckets.length}, minmax(0, 1fr))`,
               height: 100,
             }}
           >
-            {data.buckets.map((b) => (
+            {buckets.map((b) => (
               <div key={b.sec} className="flex flex-col items-center gap-0.5 min-w-0">
                 <div
                   className="w-full bg-gradient-to-t from-cyan-700 to-cyan-300 rounded-t"
@@ -111,7 +114,7 @@ export function InsptimePane() {
               </tr>
             </thead>
             <tbody>
-              {data.byItemCount.map((g) => (
+              {byItemCount.map((g) => (
                 <tr key={g.label} className="border-t border-surface-border">
                   <td className="px-2 py-1">{g.label}</td>
                   <td className="px-2 py-1 text-right tabular-nums">{g.count.toLocaleString()}</td>

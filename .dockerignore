@@ -1,0 +1,27 @@
+# ビルドコンテキストから除外（イメージ肥大・秘密混入を防止）
+node_modules
+.next
+.git
+.gitignore
+
+# ローカル/秘密の env はイメージに入れない（本番は VPS 上の .env を env_file で注入）
+.env
+.env.local
+.env*.local
+.env.production.local
+
+# 開発用データ・ログ
+data
+*.log
+npm-debug.log*
+
+# ドキュメント・テスト果実（本番イメージに不要）
+docs/secrets
+coverage
+.vscode
+.idea
+*.md
+
+# OS
+.DS_Store
+Thumbs.db

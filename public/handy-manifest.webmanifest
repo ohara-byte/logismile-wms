@@ -1,0 +1,41 @@
+{
+  "name": "LogiSmile ハンディ検品",
+  "short_name": "LS ハンディ",
+  "description": "LogiSmile ハンディ検品アプリ（KEYENCE BT-A500 専用）",
+  "start_url": "/handy/login",
+  "scope": "/handy/",
+  "id": "/handy/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen"],
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#29A6F6",
+  "lang": "ja",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/icon-handy-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-handy-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-handy-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-handy.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    }
+  ]
+}

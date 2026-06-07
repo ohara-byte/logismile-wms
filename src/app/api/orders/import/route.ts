@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDefaultAdapter } from '@/lib/integration/adapter';
 import { detectFileType, parseCsv } from '@/lib/integration/csv-parser';
 import { requireRole } from '@/lib/auth/permissions';
+import { prisma } from '@/lib/db';
+import {
+  allocateOrder,
+  createDraftInstructionsFromShortages,
+} from '@/lib/allocation/allocate-order';
 
 /**
  * POST /api/orders/import
@@ -61,6 +66,50 @@ export async function POST(req: NextRequest) {
         },
         { status: 422 },
       );
+    }
+
+    // Sprint Z-1: 出荷指示取込完了後、自動引当を fire-and-forget で実行
+    //   - 取込結果に影響しないよう、try/catch で握り潰す
+    //   - 完了/未完了を問わず、対象の pkNo に対して allocateOrder を試行
+    //   - 不足は draft の ManufacturingInstruction として集約（人手レビュー後に送信）
+    if (fileType === 'orders') {
+      const importedPkNos = await prisma.shippingOrder
+        .findMany({
+          where: {
+            importId: (result as { importId?: number }).importId,
+            deletedAt: null,
+          },
+          select: { pkNo: true },
+        })
+        .catch(() => [] as Array<{ pkNo: string }>);
+
+      // 並列上限を抑えて順次処理（在庫競合の可能性を下げる）
+      const allShortages: Array<{ productCode: string; shortageQty: number }> = [];
+      for (const { pkNo } of importedPkNos) {
+        try {
+          const r = await allocateOrder(pkNo);
+          for (const s of r.shortages) {
+            const existing = allShortages.find((x) => x.productCode === s.productCode);
+            if (existing) existing.shortageQty += s.shortageQty;
+            else allShortages.push({ ...s });
+          }
+        } catch (e) {
+          console.warn(`[allocate-on-import] ${pkNo}:`, e);
+        }
+      }
+
+      if (allShortages.length > 0) {
+        try {
+          // Sprint Y-13: 取込時はアラートを生成しない（通過型運用で大量に出る不足は想定内のため）
+          //   業務終了レポート時または手動再引当時にアラート化する
+          await createDraftInstructionsFromShortages(allShortages, {
+            requestedBy: guard.auth.staffCode ?? null,
+            createAlerts: false,
+          });
+        } catch (e) {
+          console.warn('[allocate-on-import] draft instructions failed:', e);
+        }
+      }
     }
 
     return NextResponse.json({ data: result, message: 'OK' });

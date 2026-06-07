@@ -127,8 +127,8 @@ export function ForcePane() {
 
   if (pending === null) {
     return (
-      <div className="p-3 text-2xs text-ink-muted flex items-center gap-2">
-        <span className="w-1.5 h-1.5 bg-accent-amber rounded-full animate-pulse" />
+      <div className="p-3 text-xs text-ink-muted flex items-center gap-2">
+        <span className="w-2 h-2 bg-accent-amber rounded-full animate-pulse" />
         読み込み中…
       </div>
     );
@@ -136,27 +136,27 @@ export function ForcePane() {
 
   return (
     <div className="p-3">
-      {/* サマリ行 */}
-      <div className="text-2xs text-ink-subtle mb-2 leading-relaxed">
+      {/* サマリ行 — Sprint Y-1 でフォント拡大 */}
+      <div className="text-sm text-ink-subtle mb-3 leading-relaxed">
         ⚠ 未承認{' '}
-        <b className="text-status-error">{summary?.pending ?? 0}件</b> ／ 本日累計{' '}
-        {summary?.todayTotal ?? 0}件
-        <span className="ml-2 inline-block px-2 py-0.5 bg-surface-base border border-surface-border rounded-full text-[10px] text-ink-muted">
+        <b className="text-status-error text-base">{summary?.pending ?? 0}件</b> ／ 本日累計{' '}
+        <b>{summary?.todayTotal ?? 0}件</b>
+        <span className="ml-2 inline-block px-2 py-1 bg-surface-base border border-surface-border rounded-full text-xs text-ink-muted">
           ⛔ R01 セット品時間制約は<b className="text-ink">日常運用のため除外</b>（一覧 / レポート対象外）
         </span>
       </div>
 
       {error && (
-        <div className="mb-2 p-2 text-2xs bg-status-error-bg text-status-error border border-status-error rounded">
+        <div className="mb-2 p-2 text-xs bg-status-error-bg text-status-error border border-status-error rounded">
           {error}
         </div>
       )}
 
       {/* 未承認カード群 */}
       {pending.length === 0 ? (
-        <div className="text-center py-6">
-          <div className="text-3xl mb-2 opacity-50">✅</div>
-          <p className="text-2xs text-ink-muted">未承認の強制OK はありません</p>
+        <div className="text-center py-10">
+          <div className="text-4xl mb-2 opacity-50">✅</div>
+          <p className="text-sm text-ink-muted">未承認の強制OK はありません</p>
         </div>
       ) : (
         pending.map((it) => (
@@ -172,8 +172,10 @@ export function ForcePane() {
 
       {/* 承認済（本日）セクション */}
       {todayResolved.length > 0 && (
-        <div className="border-t border-surface-border mt-3 pt-2">
-          <div className="text-[10px] text-ink-muted mb-1.5">承認済 / 却下済（本日）</div>
+        <div className="border-t border-surface-border mt-3 pt-3">
+          <div className="text-xs text-ink-muted mb-2 font-bold uppercase tracking-wider">
+            承認済 / 却下済（本日）
+          </div>
           {todayResolved.map((it) => (
             <ResolvedCard key={it.itemId} item={it} />
           ))}
@@ -251,10 +253,13 @@ function ForceCard({
   onReject: () => void;
   onDetail: () => void;
 }) {
+  // Sprint Y-1 UI: 全要素を 1〜2 段階大きく。承認/却下/詳細ボタンを目立たせる
   return (
-    <div className="bg-surface-base border border-status-error rounded mb-1.5 px-2.5 py-2">
-      <div className="flex justify-between text-[10px] text-ink-muted mb-1">
-        <span className="font-mono font-bold text-accent-amber">{item.pkNo}</span>
+    <div className="bg-surface-base border border-status-error rounded-md mb-2 px-3 py-2.5">
+      <div className="flex justify-between text-xs text-ink-muted mb-1.5">
+        <span className="font-mono font-bold text-accent-amber text-sm">
+          {item.pkNo}
+        </span>
         <span>
           {formatTime(item.triggeredAt)} ／{' '}
           {item.carrier ? `${item.carrier.short ?? item.carrier.name}` : '—'}
@@ -262,16 +267,16 @@ function ForceCard({
           {item.triggerStaff ? item.triggerStaff.name : '—'}
         </span>
       </div>
-      <div className="text-xs text-ink-strong">
+      <div className="text-sm text-ink-strong font-bold">
         {item.productName}
-        <div className="text-[10px] text-ink-muted font-mono">
+        <div className="text-xs text-ink-muted font-mono font-normal mt-0.5">
           {item.productCode} ／ JAN: {item.jan ?? '—'} ／ 数量 {item.qty}
         </div>
       </div>
-      <div className="text-[10px] text-ink mt-1.5 flex items-center gap-1">
+      <div className="text-xs text-ink mt-2 flex items-center gap-1.5">
         {item.reasonCode && (
           <span
-            className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${reasonBadgeClass(item.reasonCode)}`}
+            className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${reasonBadgeClass(item.reasonCode)}`}
           >
             {item.reasonCode}
           </span>
@@ -285,25 +290,25 @@ function ForceCard({
           )}
         </span>
       </div>
-      <div className="flex gap-1 mt-2">
+      <div className="flex gap-2 mt-3">
         <button
           onClick={onApprove}
-          className="flex-1 text-xs font-bold py-1 rounded border border-status-ok bg-emerald-900 text-emerald-200 hover:bg-status-ok hover:text-white"
+          className="flex-1 text-sm font-bold py-2 rounded border-2 border-status-ok bg-emerald-900 text-emerald-100 hover:bg-status-ok hover:text-white transition-colors"
         >
           ✓ 承認
         </button>
         <button
           onClick={onReject}
-          className="flex-1 text-xs font-bold py-1 rounded border border-status-error bg-red-900 text-red-200 hover:bg-status-error hover:text-white"
+          className="flex-1 text-sm font-bold py-2 rounded border-2 border-status-error bg-red-900 text-red-100 hover:bg-status-error hover:text-white transition-colors"
         >
           ✗ 却下
         </button>
         <button
           onClick={onDetail}
-          className="text-xs font-bold py-1 px-3 rounded border border-surface-border bg-surface-panel text-ink hover:border-accent-amber"
+          className="text-sm font-bold py-2 px-4 rounded border-2 border-surface-border-strong bg-surface-panel text-ink hover:border-accent-amber transition-colors"
           title="伝票詳細モーダルを開く"
         >
-          詳細
+          📋 詳細
         </button>
       </div>
     </div>

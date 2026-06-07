@@ -29,6 +29,7 @@ import {
   reasonBadgeClass,
   type ForceReasonCode,
 } from '@/lib/force-ok';
+import { pkNoPrefix } from '@/lib/pk-no';
 
 interface OrderItem {
   id: number;
@@ -41,6 +42,15 @@ interface OrderItem {
   forceReasonCode: ForceReasonCode | null;
   forceApprovalStatus: 'approved' | 'rejected' | null;
   product: { jan: string | null; frozen: boolean; special: boolean };
+}
+
+// Sprint Z-1: 引当行
+interface AllocationRow {
+  productCode: string;
+  qty: number;
+  status: string;
+  source: string;
+  allocatedAt: string;
 }
 
 interface OrderDetail {
@@ -60,6 +70,8 @@ interface OrderDetail {
   deleteReason: string | null;
   carrier: { code: string; name: string; short: string | null; cool: boolean } | null;
   items: OrderItem[];
+  // Sprint Z-1: 引当行
+  allocations?: AllocationRow[];
   inspSession: {
     id: string;
     staffCode: string;
@@ -85,10 +97,24 @@ interface Props {
   onClose: () => void;
 }
 
-const MSG_TEMPLATES: { label: string; text: string }[] = [
-  { label: '保留指示', text: 'この伝票は保留し、後続に回してください。' },
+/**
+ * テンプレ定義
+ *  - action: 'hold' / 'cancel' を指定すると、テンプレ選択でメッセージ本文に反映するだけでなく
+ *           対応する処理アクション（保留 / キャンセル）のダイアログを開き、本文を理由欄に転記する。
+ *  - action 未指定はメッセージ送信用テンプレ（本文セットのみ）。
+ */
+const MSG_TEMPLATES: {
+  label: string;
+  text: string;
+  action?: 'hold' | 'cancel';
+}[] = [
+  { label: '保留指示', text: 'この伝票は保留し、後続に回してください。', action: 'hold' },
   { label: '再スキャン依頼', text: '内容を修正しました。再スキャンお願いします。' },
-  { label: '中止（キャンセル）', text: 'お客様都合によりキャンセルです。梱包中止してください。' },
+  {
+    label: '中止（キャンセル）',
+    text: 'お客様都合によりキャンセルです。梱包中止してください。',
+    action: 'cancel',
+  },
   { label: '前倒し', text: '前倒し処理です。本日分として扱ってください。' },
   { label: '繰越', text: '翌日繰越としました。対象から除外してください。' },
   { label: '優先対応', text: '冷凍便・特殊梱包です。優先対応お願いします。' },
@@ -100,6 +126,10 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [cancelDialog, setCancelDialog] = useState(false);
+  const [holdDialog, setHoldDialog] = useState(false);
+  const [unholdDialog, setUnholdDialog] = useState(false);
+  // テンプレ選択時に Cancel/Hold ダイアログの理由欄へ転記する初期値
+  const [actionPromptInitial, setActionPromptInitial] = useState('');
 
   // メッセージ送信フォーム
   const [msgTo, setMsgTo] = useState<'table' | 'group' | 'tablet' | 'all'>('table');
@@ -137,11 +167,12 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
   // Esc キーで閉じる
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busy && !cancelDialog) onClose();
+      if (e.key === 'Escape' && !busy && !cancelDialog && !holdDialog && !unholdDialog)
+        onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, busy, cancelDialog]);
+  }, [onClose, busy, cancelDialog, holdDialog, unholdDialog]);
 
   async function onReprint() {
     if (!order) return;
@@ -161,6 +192,52 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
       }
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onHold(reason: string) {
+    if (!order) return;
+    setBusy(true);
+    try {
+      const r = await fetch(
+        `/api/orders/${encodeURIComponent(order.pkNo)}/hold`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason }),
+        },
+      );
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        alert(j?.message ?? `エラー: HTTP ${r.status}`);
+      } else {
+        refreshBadges();
+        reload();
+      }
+    } finally {
+      setBusy(false);
+      setHoldDialog(false);
+    }
+  }
+
+  async function onUnhold() {
+    if (!order) return;
+    setBusy(true);
+    try {
+      const r = await fetch(
+        `/api/orders/${encodeURIComponent(order.pkNo)}/hold`,
+        { method: 'DELETE' },
+      );
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        alert(j?.message ?? `エラー: HTTP ${r.status}`);
+      } else {
+        refreshBadges();
+        reload();
+      }
+    } finally {
+      setBusy(false);
+      setUnholdDialog(false);
     }
   }
 
@@ -234,7 +311,7 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
         if (e.target === e.currentTarget && !busy && !cancelDialog) onClose();
       }}
     >
-      <div className="bg-surface-panel border border-surface-border rounded-2xl shadow-modal max-w-3xl w-full max-h-[92vh] overflow-auto">
+      <div className="bg-surface-panel border-2 border-accent-amber rounded-[10px] shadow-modal max-w-3xl w-full max-h-[92vh] overflow-auto">
         {/* ヘッダ */}
         <div className="sticky top-0 bg-surface-panel border-b border-surface-border px-5 py-3 flex justify-between items-center z-10">
           <div className="flex items-baseline gap-2">
@@ -389,7 +466,14 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
                           構成商品名
                         </th>
                         <th className="px-2 py-1.5 text-right text-3xs uppercase text-ink-subtle">
-                          数量
+                          需要数
+                        </th>
+                        {/* Sprint Z-1: 引当数列 */}
+                        <th className="px-2 py-1.5 text-right text-3xs uppercase text-ink-subtle">
+                          引当
+                        </th>
+                        <th className="px-2 py-1.5 text-right text-3xs uppercase text-ink-subtle">
+                          不足
                         </th>
                         <th className="px-2 py-1.5 text-left text-3xs uppercase text-ink-subtle">
                           状態
@@ -397,37 +481,69 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
                       </tr>
                     </thead>
                     <tbody>
-                      {order.items.map((it) => (
-                        <tr key={it.id} className="border-t border-surface-border">
-                          <td className="px-2 py-1.5 font-mono text-2xs text-ink">
-                            {it.productCode}
-                          </td>
-                          <td className="px-2 py-1.5">
-                            {it.productName}
-                            <div className="text-3xs text-ink-muted font-mono">
-                              JAN: {it.product.jan ?? '—'}
-                              {it.product.frozen && (
-                                <span className="ml-1.5 text-status-info">❄ 冷凍</span>
-                              )}
-                              {it.product.special && (
-                                <span className="ml-1.5 text-accent-amber">★ 特殊</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{it.qty}</td>
-                          <td className="px-2 py-1.5 text-2xs">
-                            <ItemStatus item={it} />
-                          </td>
-                        </tr>
-                      ))}
+                      {order.items.map((it) => {
+                        const allocSum = (order.allocations ?? [])
+                          .filter(
+                            (a) =>
+                              a.productCode === it.productCode &&
+                              a.status !== 'released',
+                          )
+                          .reduce((s, a) => s + a.qty, 0);
+                        const shortage = Math.max(it.qty - allocSum, 0);
+                        return (
+                          <tr key={it.id} className="border-t border-surface-border">
+                            <td className="px-2 py-1.5 font-mono text-2xs text-ink">
+                              {it.productCode}
+                            </td>
+                            <td className="px-2 py-1.5">
+                              {it.productName}
+                              <div className="text-3xs text-ink-muted font-mono">
+                                JAN: {it.product.jan ?? '—'}
+                                {it.product.frozen && (
+                                  <span className="ml-1.5 text-status-info">❄ 冷凍</span>
+                                )}
+                                {it.product.special && (
+                                  <span className="ml-1.5 text-accent-amber">★ 特殊</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums">
+                              {it.qty}
+                            </td>
+                            <td
+                              className={`px-2 py-1.5 text-right tabular-nums font-bold ${
+                                allocSum >= it.qty
+                                  ? 'text-status-ok'
+                                  : allocSum > 0
+                                    ? 'text-accent-amber'
+                                    : 'text-ink-muted'
+                              }`}
+                            >
+                              {allocSum}
+                            </td>
+                            <td
+                              className={`px-2 py-1.5 text-right tabular-nums ${
+                                shortage > 0
+                                  ? 'text-status-error font-bold'
+                                  : 'text-ink-muted'
+                              }`}
+                            >
+                              {shortage > 0 ? shortage : '—'}
+                            </td>
+                            <td className="px-2 py-1.5 text-2xs">
+                              <ItemStatus item={it} />
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               </Section>
 
-              {/* 処理アクション 5 種 */}
+              {/* 処理アクション 6 種（保留 を追加） */}
               <Section title="⚙ 処理アクション">
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-1.5">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-1.5">
                   <ActionButton
                     icon="✏"
                     label="内容修正"
@@ -452,15 +568,42 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
                     onClick={onReprint}
                     disabled={busy || !!order.deletedAt}
                   />
+                  {order.status === 'held' ? (
+                    <ActionButton
+                      icon="▶"
+                      label="保留解除"
+                      onClick={() => setUnholdDialog(true)}
+                      disabled={busy || !!order.deletedAt}
+                    />
+                  ) : (
+                    <ActionButton
+                      icon="⏸"
+                      label="保留"
+                      warn
+                      onClick={() => {
+                        setActionPromptInitial('');
+                        setHoldDialog(true);
+                      }}
+                      disabled={busy || !!order.deletedAt || order.status === 'packed'}
+                      title={
+                        order.status === 'packed'
+                          ? '梱包完了済の伝票は保留にできません'
+                          : ''
+                      }
+                    />
+                  )}
                   <ActionButton
                     icon="❌"
                     label="キャンセル"
                     danger
-                    onClick={() => setCancelDialog(true)}
+                    onClick={() => {
+                      setActionPromptInitial('');
+                      setCancelDialog(true);
+                    }}
                     disabled={busy || !!order.deletedAt || order.status === 'inspecting'}
                     title={
                       order.status === 'inspecting'
-                        ? '検品中は削除できません（先に保留にしてから）'
+                        ? '検品中はキャンセルできません（先に保留にしてから）'
                         : ''
                     }
                   />
@@ -491,11 +634,38 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
                       {MSG_TEMPLATES.map((t) => (
                         <button
                           key={t.label}
-                          onClick={() => setMsgBody(t.text)}
-                          className="text-2xs px-2 py-0.5 rounded border border-surface-border bg-surface-base text-ink-subtle hover:text-ink hover:border-accent-amber"
+                          onClick={() => {
+                            // メッセージ本文は常に反映
+                            setMsgBody(t.text);
+                            // アクション付きテンプレは対応する処理ダイアログを開く
+                            if (t.action === 'hold') {
+                              setActionPromptInitial(t.text);
+                              setHoldDialog(true);
+                            } else if (t.action === 'cancel') {
+                              setActionPromptInitial(t.text);
+                              setCancelDialog(true);
+                            }
+                          }}
+                          className={`text-2xs px-2 py-0.5 rounded border ${
+                            t.action === 'cancel'
+                              ? 'border-status-error/40 bg-red-950/30 text-red-200 hover:bg-red-900'
+                              : t.action === 'hold'
+                                ? 'border-status-warn/40 bg-amber-950/30 text-amber-100 hover:bg-amber-900'
+                                : 'border-surface-border bg-surface-base text-ink-subtle hover:text-ink hover:border-accent-amber'
+                          }`}
                           type="button"
+                          title={
+                            t.action === 'cancel'
+                              ? 'クリックでキャンセル確認へ（理由を編集可）'
+                              : t.action === 'hold'
+                                ? 'クリックで保留確認へ（理由を編集可）'
+                                : 'メッセージ本文に反映'
+                          }
                         >
                           {t.label}
+                          {t.action && (
+                            <span className="ml-1 text-[9px] opacity-70">→処理</span>
+                          )}
                         </button>
                       ))}
                     </div>
@@ -576,17 +746,63 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
                 PkNo: <span className="font-mono text-accent-amber">{order.pkNo}</span>
               </div>
               <div className="text-status-warn mt-1 text-2xs">
-                ⚠ 論理削除のため復活可能ですが、検品中の伝票は削除できません。
+                ⚠ 論理削除のため復活可能ですが、検品中の伝票はキャンセルできません。
               </div>
             </div>
           ) : null
         }
         promptLabel="キャンセル理由（必須）"
         promptPlaceholder="例: お客様都合によるキャンセル"
+        promptInitial={actionPromptInitial}
         confirmLabel="❌ キャンセル実行"
         variant="danger"
         onConfirm={onCancel}
         onCancel={() => setCancelDialog(false)}
+      />
+
+      <ConfirmDialog
+        open={holdDialog}
+        title="この伝票を保留にしますか？"
+        body={
+          order ? (
+            <div>
+              <div>
+                PkNo: <span className="font-mono text-accent-amber">{order.pkNo}</span>
+              </div>
+              <div className="text-status-warn mt-1 text-2xs">
+                ⏸ 保留中の伝票は一覧で「保留」ラベルが付き、当日処理から外れます。
+              </div>
+            </div>
+          ) : null
+        }
+        promptLabel="保留理由（必須）"
+        promptPlaceholder="例: 在庫不足のため出来高待ち / 連絡待ち"
+        promptInitial={actionPromptInitial}
+        confirmLabel="⏸ 保留にする"
+        variant="warn"
+        onConfirm={onHold}
+        onCancel={() => setHoldDialog(false)}
+      />
+
+      <ConfirmDialog
+        open={unholdDialog}
+        title="保留を解除しますか？"
+        body={
+          order ? (
+            <div>
+              <div>
+                PkNo: <span className="font-mono text-accent-amber">{order.pkNo}</span>
+              </div>
+              <div className="text-status-info mt-1 text-2xs">
+                ▶ 保留を解除して「未着手」に戻します。
+              </div>
+            </div>
+          ) : null
+        }
+        confirmLabel="▶ 解除する"
+        variant="primary"
+        onConfirm={() => onUnhold()}
+        onCancel={() => setUnholdDialog(false)}
       />
     </div>
   );
@@ -597,11 +813,10 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
 // ──────────────────────────────────────────────
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  // モック準拠：パネル内の二次カードは 1 段暗い surface-sunken で凹み感を出す
   return (
-    <div>
-      <h5 className="text-2xs font-bold text-accent-amber uppercase tracking-wider mb-1.5">
-        {title}
-      </h5>
+    <div className="bg-surface-sunken border border-surface-border rounded-md p-2.5">
+      <h5 className="text-2xs font-bold text-accent-amber mb-1.5">{title}</h5>
       {children}
     </div>
   );
@@ -622,6 +837,7 @@ function ActionButton({
   onClick,
   disabled,
   danger,
+  warn,
   title,
 }: {
   icon: string;
@@ -629,11 +845,14 @@ function ActionButton({
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
+  warn?: boolean;
   title?: string;
 }) {
   const cls = danger
     ? 'border-status-error/60 bg-red-950/30 text-red-200 hover:bg-red-900'
-    : 'border-surface-border bg-surface-base text-ink hover:bg-surface-raised hover:border-accent-amber';
+    : warn
+      ? 'border-status-warn/60 bg-amber-950/30 text-amber-100 hover:bg-amber-900'
+      : 'border-surface-border bg-surface-base text-ink hover:bg-surface-raised hover:border-accent-amber';
   return (
     <button
       type="button"
@@ -685,13 +904,6 @@ function ItemStatus({ item }: { item: OrderItem }) {
 // ──────────────────────────────────────────────
 // helpers
 // ──────────────────────────────────────────────
-
-function pkNoPrefix(pkNo: string): string | null {
-  // "STC-..." → "ST", "FRZ-..." → "FR" など先頭2文字
-  // ただし数字始まりや短すぎる場合は表示しない
-  const m = pkNo.match(/^([A-Z]{2,4})/);
-  return m ? m[1] : null;
-}
 
 function statusLabel(status: string): string {
   switch (status) {

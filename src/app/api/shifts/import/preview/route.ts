@@ -31,8 +31,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ data: preview, message: 'OK' });
   } catch (e) {
     console.error('[POST /api/shifts/import/preview]', e);
+    const msg = e instanceof Error ? e.message : String(e);
+    // 想定済みの検証エラー（必須列不足など）はメッセージをそのまま返す
+    if (msg.includes('必須列') || msg.includes('日付列')) {
+      return NextResponse.json({ error: 'VALIDATION', message: msg }, { status: 422 });
+    }
     return NextResponse.json(
-      { error: 'INTERNAL', message: 'GPシフトCSV のプレビュー処理に失敗しました' },
+      { error: 'INTERNAL', message: `GPシフトCSV のプレビュー処理に失敗しました: ${msg}` },
       { status: 500 },
     );
   }

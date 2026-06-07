@@ -7,6 +7,7 @@ interface Group extends Record<string, unknown> {
   tablesText?: string;
   category: string;
   needStaff: number;
+  sortOrder: number;
   note: string | null;
 }
 
@@ -17,8 +18,16 @@ export const groupConfig: MasterConfig<Group> = {
   endpoint: '/api/master/groups',
   primaryKey: 'id',
   searchPlaceholder: '🔍 ID／名称／カテゴリで検索',
-  hint: 'tables はカンマ区切りで複数指定（例: ABL, FJK）',
+  hint: '表示順は数字が小さい順に並びます（10 / 20 / 30 ... のように間隔を空けると後で挿入しやすい）',
   columns: [
+    // Sprint Y-10: 表示順を先頭に
+    {
+      key: 'sortOrder',
+      label: '表示順',
+      align: 'right',
+      mono: true,
+      width: 70,
+    },
     { key: 'id', label: 'ID', mono: true, width: 80 },
     { key: 'name', label: '名称' },
     { key: 'category', label: 'カテゴリ', width: 100 },
@@ -27,7 +36,11 @@ export const groupConfig: MasterConfig<Group> = {
       label: 'テーブル',
       truncate: true,
       width: 200,
-      render: (r) => (r.tablesText as string) ?? r.tables.join(', '),
+      render: (r) => {
+        if (typeof r.tablesText === 'string' && r.tablesText.length > 0) return r.tablesText;
+        if (Array.isArray(r.tables)) return (r.tables as string[]).join(', ');
+        return '—';
+      },
     },
     { key: 'needStaff', label: '必要人数', align: 'right', mono: true, width: 80 },
   ],
@@ -43,7 +56,18 @@ export const groupConfig: MasterConfig<Group> = {
       helpText: 'グループに紐付くテーブル ID をカンマ区切りで列挙',
     },
     { name: 'needStaff', label: '必要人数', type: 'number', min: 0 },
+    // Sprint Y-10: 表示順
+    {
+      name: 'sortOrder',
+      label: '表示順',
+      type: 'number',
+      min: 0,
+      max: 9999,
+      placeholder: '100',
+      helpText:
+        'ダッシュボード「テーブルグループ別 進捗」の表示順。小さい順に左上から並びます（例: 10, 20, 30, ...）。',
+    },
     { name: 'note', label: '備考', type: 'textarea' },
   ],
-  initialValues: { needStaff: 1 },
+  initialValues: { needStaff: 1, sortOrder: 100 },
 };

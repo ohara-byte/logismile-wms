@@ -18,7 +18,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireRole } from '@/lib/auth/permissions';
+import { requireRole, resolveActor } from '@/lib/auth/permissions';
 
 const Body = z.object({
   pkNo: z.string().min(1),
@@ -58,7 +58,16 @@ export async function POST(req: Request) {
     );
   }
 
-  const actor = guard.auth.staffCode ?? guard.auth.email ?? 'unknown';
+  // 2026-06-01 A-1: order_audit_logs.acted_by は staff.code FK(VarChar10)。
+  //   email/'unknown' を入れると FK 違反/桁あふれで 500 になるため、
+  //   有効な staffCode が無ければ 403 で弾く（PC ユーザーは staff リンク必須）。
+  const actor = resolveActor(guard.auth);
+  if (!actor) {
+    return NextResponse.json(
+      { error: 'FORBIDDEN', message: '監査ログ記録のため staff にリンクされたアカウントが必要です' },
+      { status: 403 },
+    );
+  }
   const now = new Date();
 
   const ops: Promise<unknown>[] = [

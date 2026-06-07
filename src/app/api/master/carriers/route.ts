@@ -6,7 +6,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireRole } from '@/lib/auth/permissions';
+import { requireRole, requirePermission } from '@/lib/auth/permissions';
 import { maskError } from '@/lib/api-errors';
 
 const Body = z.object({
@@ -24,7 +24,8 @@ const Body = z.object({
 });
 
 export async function GET() {
-  const guard = await requireRole('admin', 'manager');
+  // Sprint Y-15: lead もマスタ閲覧可
+  const guard = await requirePermission('master_view');
   if (!guard.ok) return guard.response;
   const items = await prisma.carrier.findMany({
     orderBy: [{ priority: 'asc' }, { code: 'asc' }],

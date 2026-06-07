@@ -5,7 +5,9 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useReportPeriod } from './report-period-context';
+import { KpiDrillModal, type DrillCell } from './kpi-drill-modal';
 
 interface ErrorData {
   total: number;
@@ -35,10 +37,27 @@ const RESULT_LABELS: Record<keyof ErrorData['counts'], { label: string; color: s
   other: { label: 'その他', color: 'text-ink-muted' },
 };
 
+type DrillKind = 'over_scan' | 'not_found' | 'already_done';
+
+interface DrillCtx {
+  kind: 'staff' | 'kind';
+  staffCode?: string;
+  staffName?: string;
+  errKind?: DrillKind;
+  kindLabel?: string;
+}
+
 export function ErrorPane() {
+  const router = useRouter();
   const period = useReportPeriod();
   const [data, setData] = useState<ErrorData | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // C-2: ドリルダウン
+  const [drill, setDrill] = useState<DrillCtx | null>(null);
+  const [drillRows, setDrillRows] = useState<DrillCell[][]>([]);
+  const [drillLoading, setDrillLoading] = useState(false);
+  const [drillErr, setDrillErr] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +73,53 @@ export function ErrorPane() {
       cancelled = true;
     };
   }, [period.from, period.to]);
+
+  // ドリル fetch
+  useEffect(() => {
+    if (!drill) return;
+    let cancelled = false;
+    setDrillLoading(true);
+    setDrillErr(null);
+    setDrillRows([]);
+    (async () => {
+      try {
+        const params = new URLSearchParams({ from: period.from, to: period.to });
+        if (drill.staffCode) params.set('staffCode', drill.staffCode);
+        if (drill.errKind) params.set('kind', drill.errKind);
+        const r = await fetch(`/api/report/drill/error-events?${params}`);
+        const j = await r.json();
+        if (cancelled) return;
+        if (!r.ok) throw new Error(j.message ?? `HTTP ${r.status}`);
+        const items: Array<{
+          occurredAt: string;
+          pkNo: string;
+          destName: string;
+          staffName: string;
+          kindLabel: string;
+          scanValue: string;
+          qty: number;
+        }> = j.data?.items ?? [];
+        setDrillRows(
+          items.map((it) => [
+            it.occurredAt,
+            it.pkNo,
+            it.destName,
+            it.staffName,
+            it.kindLabel,
+            it.scanValue,
+            it.qty,
+          ]),
+        );
+      } catch (e) {
+        if (!cancelled) setDrillErr(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setDrillLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [drill, period.from, period.to]);
 
   if (loading || !data) {
     return <div className="p-3 text-2xs text-ink-muted">読み込み中…</div>;
@@ -111,9 +177,30 @@ export function ErrorPane() {
                 const v = data.counts[k];
                 const def = RESULT_LABELS[k];
                 const pct = data.total > 0 ? v / data.total : 0;
+                const isError = k === 'over_scan' || k === 'not_found' || k === 'already_done';
+                const clickable = isError && v > 0;
                 return (
-                  <tr key={k} className="border-t border-surface-border">
-                    <td className={`px-1.5 py-1 font-bold ${def.color}`}>{def.label}</td>
+                  <tr
+                    key={k}
+                    onClick={
+                      clickable
+                        ? () =>
+                            setDrill({
+                              kind: 'kind',
+                              errKind: k as DrillKind,
+                              kindLabel: def.label,
+                            })
+                        : undefined
+                    }
+                    className={`border-t border-surface-border ${
+                      clickable ? 'cursor-pointer hover:bg-blue-950/30' : ''
+                    }`}
+                    title={clickable ? 'クリックで該当区分のエラー明細' : undefined}
+                  >
+                    <td className={`px-1.5 py-1 font-bold ${def.color}`}>
+                      {def.label}
+                      {clickable && <span className="ml-1 text-3xs opacity-70">🔍</span>}
+                    </td>
                     <td className="px-1.5 py-1 text-right tabular-nums">
                       {v.toLocaleString()}
                     </td>
@@ -164,30 +251,77 @@ export function ErrorPane() {
                 </tr>
               </thead>
               <tbody>
-                {data.byStaff.map((s) => (
-                  <tr key={s.staffCode} className="border-t border-surface-border">
-                    <td className="px-1.5 py-1 font-mono">{s.staffCode}</td>
-                    <td className="px-1.5 py-1 font-bold">{s.staffName}</td>
-                    <td className="px-1.5 py-1 text-right tabular-nums">
-                      {s.totalCount.toLocaleString()}
-                    </td>
-                    <td className="px-1.5 py-1 text-right tabular-nums text-status-error">
-                      {s.errorCount.toLocaleString()}
-                    </td>
-                    <td
-                      className={`px-1.5 py-1 text-right tabular-nums font-bold ${
-                        s.errorRate > 0.05 ? 'text-status-error' : 'text-status-warn'
+                {data.byStaff.map((s) => {
+                  const clickable = s.errorCount > 0;
+                  return (
+                    <tr
+                      key={s.staffCode}
+                      onClick={
+                        clickable
+                          ? () =>
+                              setDrill({
+                                kind: 'staff',
+                                staffCode: s.staffCode,
+                                staffName: s.staffName,
+                              })
+                          : undefined
+                      }
+                      className={`border-t border-surface-border ${
+                        clickable ? 'cursor-pointer hover:bg-blue-950/30' : ''
                       }`}
+                      title={clickable ? 'クリックで該当担当者のエラー明細' : undefined}
                     >
-                      {(s.errorRate * 100).toFixed(2)}%
-                    </td>
-                  </tr>
-                ))}
+                      <td className="px-1.5 py-1 font-mono">{s.staffCode}</td>
+                      <td className="px-1.5 py-1 font-bold">
+                        {s.staffName}
+                        {clickable && (
+                          <span className="ml-1 text-3xs opacity-70">🔍</span>
+                        )}
+                      </td>
+                      <td className="px-1.5 py-1 text-right tabular-nums">
+                        {s.totalCount.toLocaleString()}
+                      </td>
+                      <td className="px-1.5 py-1 text-right tabular-nums text-status-error">
+                        {s.errorCount.toLocaleString()}
+                      </td>
+                      <td
+                        className={`px-1.5 py-1 text-right tabular-nums font-bold ${
+                          s.errorRate > 0.05 ? 'text-status-error' : 'text-status-warn'
+                        }`}
+                      >
+                        {(s.errorRate * 100).toFixed(2)}%
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       )}
+
+      {/* C-2: ドリルダウン モーダル */}
+      <KpiDrillModal
+        open={drill !== null}
+        loading={drillLoading}
+        errorMsg={drillErr}
+        title={
+          drill?.kind === 'staff'
+            ? `${drill.staffName} — エラー明細`
+            : drill?.kind === 'kind'
+              ? `${drill.kindLabel} — 発生明細`
+              : ''
+        }
+        subtitle={`${period.from} 〜 ${period.to} 期間中。最大 200 件・新しい順。`}
+        cols={['発生日時', '伝票No', '配送先', '担当者', '区分', 'スキャン値', 'qty']}
+        rows={drillRows}
+        emptyHint="該当エラーはありません"
+        onClose={() => setDrill(null)}
+        onRowClick={(row) => {
+          const pkNo = String(row[1] ?? '');
+          if (pkNo && pkNo !== '—') router.push(`/orders?pkNo=${encodeURIComponent(pkNo)}`);
+        }}
+      />
     </div>
   );
 }

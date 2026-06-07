@@ -54,17 +54,16 @@ export function useHardwareKeys(handlers: HardwareKeyHandlers) {
 
     function onKey(e: KeyboardEvent) {
       const t = e.target as Element | null;
-      // input / textarea / contentEditable にフォーカス中は無視
-      if (
-        t &&
+      // input / textarea / contentEditable にフォーカス中か判定
+      // ※ハンディはスキャン入力に常時フォーカスがある運用のため、
+      //   F1-F4 / Escape / Tab は input フォーカス中でも常に発火させる。
+      const inEditable =
+        !!t &&
         (t.tagName === 'INPUT' ||
           t.tagName === 'TEXTAREA' ||
-          (t as HTMLElement).isContentEditable)
-      ) {
-        return;
-      }
+          (t as HTMLElement).isContentEditable);
 
-      // F1-F4
+      // F1-F4（input フォーカスに関わらず常に発火 — 物理ファンクションキー扱い）
       if (/^F[1-4]$/.test(e.key)) {
         const fn = (
           {
@@ -80,6 +79,25 @@ export function useHardwareKeys(handlers: HardwareKeyHandlers) {
         }
         return;
       }
+
+      // Escape / Tab は input フォーカス中でも発火（保留メニュー / 行ナビ用）
+      if (e.key === 'Escape') {
+        if (handlers.onEscape) {
+          e.preventDefault();
+          handlers.onEscape();
+        }
+        return;
+      }
+      if (e.key === 'Tab') {
+        if (handlers.onTab) {
+          e.preventDefault();
+          handlers.onTab();
+        }
+        return;
+      }
+
+      // 以下のキー（文字入力に重なるもの）は input フォーカス中はスルー
+      if (inEditable) return;
 
       // 矢印キー
       switch (e.key) {
@@ -111,18 +129,6 @@ export function useHardwareKeys(handlers: HardwareKeyHandlers) {
           if (handlers.onEnter) {
             e.preventDefault();
             handlers.onEnter();
-          }
-          return;
-        case 'Escape':
-          if (handlers.onEscape) {
-            e.preventDefault();
-            handlers.onEscape();
-          }
-          return;
-        case 'Tab':
-          if (handlers.onTab) {
-            e.preventDefault();
-            handlers.onTab();
           }
           return;
         case 'Backspace':
