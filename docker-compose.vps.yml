@@ -58,12 +58,19 @@ services:
       - '127.0.0.1:3001:3000'
     networks:
       - logismile_internal
+      # CraftSmile（製造）との同一VPS内コンテナ間連携（ADR-022／要：事前に docker network create oeno-integration）
+      - oeno-integration
     restart: always
     mem_limit: 2g
 
 networks:
   logismile_internal:
     name: logismile_internal
+  # CraftSmile と共有する外部ネット（ADR-022）。同一VPS内のコンテナ間直結。
+  # 事前に手動作成が必要：docker network create oeno-integration
+  #   WMS → CraftSmile: http://cs-mfg-app:3030 ／ CraftSmile → WMS: http://logismile_app:3000
+  oeno-integration:
+    external: true
 
 volumes:
   logismile_pgdata:
