@@ -15,9 +15,13 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/db';
 
 // 起動時の弱いシークレット検出（本番では起動を拒否する）
+// ※ next build（ページデータ収集）でも本モジュールが評価されるが、ビルド時は .env が
+//   読み込まれず NEXTAUTH_SECRET が空になりビルドが落ちる。実行時の起動チェックは維持しつつ
+//   ビルドフェーズ（NEXT_PHASE='phase-production-build'）のみ検証をスキップする。
 const _secret = process.env.NEXTAUTH_SECRET ?? '';
 if (
   process.env.NODE_ENV === 'production' &&
+  process.env.NEXT_PHASE !== 'phase-production-build' &&
   (_secret === '' || /change|please|dev/i.test(_secret))
 ) {
   // ロード時にスローしてサーバ起動を停止
