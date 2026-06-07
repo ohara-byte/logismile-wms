@@ -29,8 +29,10 @@ const Body = z.object({
   pkNo: z.string().min(1).optional(),
 });
 
-const DEFAULT_TEST_INVOICE = 'TEST-00000-001';
-const DEFAULT_TEST_PKNO = 'SX99999999999';
+// QR には納品書№が入る。QRバージョン固定（PRINTER_QR_VERSION=1）でも収まるよう、
+// 試刷の既定値は「数字10桁」（V1＋ECC=H の数字モード上限17桁内）に統一する。
+const DEFAULT_TEST_INVOICE = '9999999999';
+const DEFAULT_TEST_PKNO = '9999999999';
 
 export async function POST(req: Request) {
   const guard = await requireRole('admin', 'manager');
