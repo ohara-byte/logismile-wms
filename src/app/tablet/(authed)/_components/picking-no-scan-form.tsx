@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { HeldResumeModal } from '@/components/inspection/held-resume-modal';
 import { CompletedWarningModal } from '@/components/inspection/completed-warning-modal';
 import { CancelWarningModal } from '@/components/inspection/cancel-warning-modal';
 import { TakeoverConfirmModal } from '@/components/inspection/takeover-confirm-modal';
 import { ReprintModal } from '@/components/inspection/reprint-modal';
+import { NoticesModal } from '@/components/inspection/notices-modal';
 
 interface ScannedOrder {
   pkNo: string;
@@ -41,6 +42,37 @@ export function PickingNoScanForm({ currentStaffCode }: Props = {}) {
   /** 2026-05-31: 別担当者が検品中の伝票を引き継ぐ確認モーダル */
   const [takeoverOrder, setTakeoverOrder] = useState<ScannedOrder | null>(null);
   const [reprintOpen, setReprintOpen] = useState(false);
+  // 起動直後に「📢 本日の連絡事項」を自動表示（ハンディの idle 画面と同等。D-4）。
+  //   未読が無ければ NoticesModal 側で即 onClose されるため邪魔にならない。
+  //   タブレットはハードキー（F1）が無いため、再表示は画面右上のボタンで行う。
+  const [showNotices, setShowNotices] = useState(true);
+  const noticesAutoShownRef = useRef(true);
+
+  // モーダルが何かしら開いているか
+  const anyModalOpen =
+    showNotices ||
+    heldOrder !== null ||
+    completedOrder !== null ||
+    cancelOrder !== null ||
+    takeoverOrder !== null ||
+    reprintOpen;
+
+  // モーダルが全て閉じたら入力にフォーカス回復
+  useEffect(() => {
+    if (!anyModalOpen) {
+      const el = document.querySelector<HTMLInputElement>(
+        'input[placeholder="SA01208680006"]',
+      );
+      el?.focus();
+    }
+  }, [anyModalOpen]);
+
+  // 一度自動表示したらフラグを倒し、以降の自動再開はしない（明示再表示のみ）
+  useEffect(() => {
+    if (!showNotices && noticesAutoShownRef.current) {
+      noticesAutoShownRef.current = false;
+    }
+  }, [showNotices]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -156,6 +188,42 @@ export function PickingNoScanForm({ currentStaffCode }: Props = {}) {
 
   return (
     <>
+      {/* 起動時の連絡事項モーダル（管理 PC からの「連絡事項」を表示） */}
+      {showNotices && (
+        <NoticesModal
+          variant="tablet-launch"
+          onClose={() => setShowNotices(false)}
+        />
+      )}
+
+      {/* 📢 連絡 再表示ボタン（タブレットはハードキーが無いため画面ボタンで再表示） */}
+      <button
+        type="button"
+        onClick={() => setShowNotices(true)}
+        disabled={busy}
+        title="本日の連絡事項を再表示"
+        style={{
+          position: 'absolute',
+          top: 16,
+          right: 200,
+          background: '#475569',
+          color: '#fff',
+          padding: '10px 16px',
+          borderRadius: 8,
+          fontSize: 13,
+          fontWeight: 'bold',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          zIndex: 5,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+        }}
+        className="hover:brightness-110 disabled:opacity-50"
+      >
+        <span style={{ fontSize: 18 }}>📢</span>
+        連絡
+      </button>
+
       {/* V-2 修正: QR再発行ボタンを idle 領域の絶対右上に配置（親が position:relative） */}
       <button
         type="button"
