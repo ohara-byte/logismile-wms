@@ -65,5 +65,14 @@ export function isFactoryOutboundDryRun(): boolean {
   return (process.env.FACTORY_DRY_RUN ?? 'true').toLowerCase().trim() !== 'false';
 }
 
+/**
+ * 納品受信時に「受入＝検品OK（申告数=検品数・差分0）」の検品完了通知を自動送信するか。
+ * go-live 初期は true（受入検品工程なしで運用）。将来 WMS に受入検品工程を導入したら
+ * `FACTORY_AUTO_INSPECT_OK=false` にして自動通知を止め、実検品結果を送る運用に切り替える。
+ */
+export function isFactoryAutoInspectOk(): boolean {
+  return (process.env.FACTORY_AUTO_INSPECT_OK ?? 'true').toLowerCase().trim() !== 'false';
+}
+
 /** タイムスタンプ許容ズレ（秒）。リプレイ防御の窓 */
 export const FACTORY_TIMESTAMP_TOLERANCE_SEC = 300;

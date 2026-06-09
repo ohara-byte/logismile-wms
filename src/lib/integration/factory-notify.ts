@@ -168,12 +168,20 @@ export async function notifyInspectionComplete(
       };
     }
 
-    const additionalDeliveryRequired =
+    // 製造側は additionalDeliveryRequired を「不足明細の配列 [{productCode, shortageQty}]」で返す。
+    //   空配列＝不足なし。配列長で要否を判定（旧 Boolean 判定だと空配列も truthy で誤判定するため）。
+    const adrRaw =
       typeof json === 'object' &&
       json !== null &&
       'additionalDeliveryRequired' in json
-        ? Boolean((json as Record<string, unknown>).additionalDeliveryRequired)
+        ? (json as Record<string, unknown>).additionalDeliveryRequired
         : undefined;
+    const additionalDeliveryRequired =
+      adrRaw === undefined
+        ? undefined
+        : Array.isArray(adrRaw)
+          ? adrRaw.length > 0
+          : Boolean(adrRaw);
 
     return {
       ok: true,

@@ -20,6 +20,8 @@ import {
 } from '@/lib/integration/factory-auth';
 import { reallocateForProduct } from '@/lib/allocation/reallocate-pending';
 import { maskError } from '@/lib/api-errors';
+import { isFactoryAutoInspectOk } from '@/lib/integration/factory-mode';
+import { notifyInspectionComplete } from '@/lib/integration/factory-notify';
 
 const Body = z.object({
   deliveryNo: z.string().min(1).max(30),
@@ -35,8 +37,12 @@ const Body = z.object({
         // ── v0.2 拡張（2026-06-01 製造側依頼 B1 / doc 13 §2-5-2）──
         /** 納品区分: warehouse=入庫保管 / passthrough=通過（必須） */
         deliveryType: z.enum(['warehouse', 'passthrough']),
-        /** 賞味期限 YYYY-MM-DD（必須） */
-        expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expiryDate は YYYY-MM-DD 形式'),
+        /** 賞味期限 YYYY-MM-DD（任意・賞味期限なし商品は null）。製造側は未設定時 null を送るため nullable。 */
+        expiryDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, 'expiryDate は YYYY-MM-DD 形式')
+          .nullable()
+          .optional(),
         /** JAN コード（任意・突合は productCode で行う） */
         janCode: z.string().max(20).nullable().optional(),
       }),
@@ -149,7 +155,7 @@ export async function POST(req: Request) {
         //   例: "工場納品 D20260601-0001 (lot ...) [warehouse 期限2026-06-16 JAN4582000600001]"
         const metaParts = [
           it.deliveryType,
-          `期限${it.expiryDate}`,
+          it.expiryDate ? `期限${it.expiryDate}` : null,
           it.janCode ? `JAN${it.janCode}` : null,
         ].filter(Boolean);
         const baseNote =
@@ -225,6 +231,30 @@ export async function POST(req: Request) {
       },
       message: 'OK',
     };
+
+    // 受入＝検品OK（差分なし）：受信成立後、検品完了（申告=検品・差分0）を製造側へ自動通知。
+    //   将来 WMS 側に受入検品工程を導入する際は FACTORY_AUTO_INSPECT_OK=false で本処理を停止する。
+    //   DRY-RUN 中は notifyInspectionComplete 内で実送信せず log のみ。
+    //   コールバック失敗は受入成立（在庫加算）には影響させない（非致命・log のみ）。
+    if (isFactoryAutoInspectOk()) {
+      try {
+        await notifyInspectionComplete({
+          deliveryNo: parsed.data.deliveryNo,
+          inspectedAt: new Date().toISOString(),
+          inspectedBy: 'auto-receipt',
+          items: parsed.data.items.map((it) => ({
+            productCode: it.productCode,
+            qtyDeclared: it.qty,
+            qtyInspected: it.qty, // 受入＝検品OK：申告数＝検品数（差分0）
+            qtyDiff: 0,
+          })),
+        });
+      } catch (e) {
+        console.warn(
+          `[factory/delivery] 受入検品OK 自動通知に失敗（受入は成立）: ${parsed.data.deliveryNo}: ${String(e)}`,
+        );
+      }
+    }
 
     rememberIdempotency(auth.idempotencyKey, responseBody);
     return NextResponse.json(responseBody);
