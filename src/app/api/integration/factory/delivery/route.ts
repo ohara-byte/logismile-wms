@@ -45,6 +45,8 @@ const Body = z.object({
           .optional(),
         /** JAN コード（任意・突合は productCode で行う） */
         janCode: z.string().max(20).nullable().optional(),
+        /** 発送可能賞味期限（日数・任意）。在庫検品バナー「入庫日+日数-1」の算出源（A・2026-06-12） */
+        shippableExpiryDays: z.number().int().positive().nullable().optional(),
       }),
     )
     .min(1),
@@ -151,12 +153,22 @@ export async function POST(req: Request) {
           where: { productCode: it.productCode },
         });
 
+        // A：発送可能賞味期限（日数）を商品マスタへ保存（在庫検品バナーの算出源）。
+        //   毎回の納品で最新値に更新（null は更新しない＝既存値を温存）。
+        if (it.shippableExpiryDays != null) {
+          await tx.product.update({
+            where: { code: it.productCode },
+            data: { shippableExpiryDays: it.shippableExpiryDays },
+          });
+        }
+
         // v0.2 拡張フィールドをトレーサビリティとして note に集約（スキーマ移行なし）。
-        //   例: "工場納品 D20260601-0001 (lot ...) [warehouse 期限2026-06-16 JAN4582000600001]"
+        //   例: "工場納品 D20260601-0001 (lot ...) [warehouse 期限2026-06-16 JAN4582000600001 発送可能30日]"
         const metaParts = [
           it.deliveryType,
           it.expiryDate ? `期限${it.expiryDate}` : null,
           it.janCode ? `JAN${it.janCode}` : null,
+          it.shippableExpiryDays != null ? `発送可能${it.shippableExpiryDays}日` : null,
         ].filter(Boolean);
         const baseNote =
           it.note ??

@@ -25,6 +25,8 @@ interface RequiredData {
   productName: string;
   productJan: string | null;
   productType: string;
+  /** A：発送可能賞味期限（日数）。入庫検品完了後バナー（入庫日+日数-1）で使用。null ならバナー非表示。 */
+  shippableExpiryDays: number | null;
   targetDate: string;
   stock: { qty: number; allocatedQty: number; availableQty: number };
   requiredQty: number;
@@ -75,6 +77,17 @@ function shiftDate(iso: string, days: number): string {
   return `${y}-${m}-${dd}`;
 }
 
+/**
+ * A：発送可能賞味期限日を「入庫日（=本日）＋日数−1」で算出し「〇月〇日」表記で返す。
+ * 例）本日6/12・日数30 → 6/12 を1日目として 30日目＝7/11。
+ */
+function shippableExpiryLabel(days: number): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + days - 1);
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
 export function StockCountClient({ productCode }: Props) {
   const router = useRouter();
   const [targetDate, setTargetDate] = useState<string>(todayStr());
@@ -84,7 +97,13 @@ export function StockCountClient({ productCode }: Props) {
   const [countedQty, setCountedQty] = useState(0);
   const [buf, setBuf] = useState('');
   const [completed, setCompleted] = useState<CompleteState | null>(null);
+  // A：検品完了後、発送可能賞味期限バナーを☑するまで完了画面（と自動遷移）を保留
+  const [expiryConfirmed, setExpiryConfirmed] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // A：発送可能賞味期限の確認バナーを出すべきか（完了済 & 日数あり & 未確認）
+  const needsExpiryConfirm =
+    !!completed && data?.shippableExpiryDays != null && !expiryConfirmed;
 
   const load = useCallback(async () => {
     try {
@@ -107,12 +126,12 @@ export function StockCountClient({ productCode }: Props) {
     if (data && !completed) inputRef.current?.focus();
   }, [data, completed]);
 
-  // 完了画面の自動遷移
+  // 完了画面の自動遷移（A：賞味期限バナー確認待ちの間は遷移しない）
   useEffect(() => {
-    if (!completed) return;
+    if (!completed || needsExpiryConfirm) return;
     const id = setTimeout(() => router.push('/handy/stock'), AUTO_REDIRECT_MS);
     return () => clearTimeout(id);
-  }, [completed, router]);
+  }, [completed, needsExpiryConfirm, router]);
 
   function commitBuffer() {
     if (buf === '') return;
@@ -227,6 +246,11 @@ export function StockCountClient({ productCode }: Props) {
   // Sprint Z-7: Enter キーは input にフォーカスがある状態でも確実に動くよう
   //   入力欄の onKeyDown と useHardwareKeys 両方から呼ぶ共通ハンドラに切出し。
   function handleEnterKey() {
+    // A：賞味期限バナー表示中は Enter で☑（確認）→ 完了画面へ
+    if (needsExpiryConfirm) {
+      setExpiryConfirmed(true);
+      return;
+    }
     if (completed) {
       router.push('/handy/stock');
       return;
@@ -251,6 +275,11 @@ export function StockCountClient({ productCode }: Props) {
     },
     onEnter: handleEnterKey,
     onTrigger: () => {
+      // A：賞味期限バナー表示中はトリガーで☑（確認）→ 完了画面へ
+      if (needsExpiryConfirm) {
+        setExpiryConfirmed(true);
+        return;
+      }
       if (completed) {
         router.push('/handy/stock');
         return;
@@ -287,6 +316,51 @@ export function StockCountClient({ productCode }: Props) {
         >
           メニューに戻る (Esc)
         </button>
+      </main>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────
+  // A：発送可能賞味期限バナー（検品完了後・☑するまで完了画面へ進めない）
+  // ─────────────────────────────────────────────────────
+  if (needsExpiryConfirm && data && data.shippableExpiryDays != null) {
+    const days = data.shippableExpiryDays;
+    const label = shippableExpiryLabel(days);
+    return (
+      <main
+        className="min-h-screen flex flex-col items-center justify-center p-6 text-center"
+        style={{ background: 'linear-gradient(135deg, #b45309, #78350f)', color: '#fff', gap: 16 }}
+      >
+        <div style={{ fontSize: 96, lineHeight: 1 }}>📅</div>
+        <h1 className="text-lg font-bold" style={{ color: '#fde68a' }}>
+          発送可能賞味期限
+        </h1>
+        <div className="text-5xl font-bold tabular-nums" style={{ lineHeight: 1.1 }}>
+          {label}
+          <span className="text-2xl font-bold"> 以降</span>
+        </div>
+        <p className="text-xs" style={{ color: '#fde68a', opacity: 0.9 }}>
+          入庫日 + {days}日 − 1 で算出
+        </p>
+        <p className="text-sm font-mono mt-1" style={{ color: '#fde68a' }}>
+          {data.productCode}
+        </p>
+        <p className="text-xs" style={{ color: '#fde68a', opacity: 0.9 }}>
+          {data.productName}
+        </p>
+
+        <button
+          type="button"
+          onClick={() => setExpiryConfirmed(true)}
+          className="mt-4 w-full max-w-xs rounded-xl py-4 text-lg font-bold"
+          style={{ background: '#fff', color: '#78350f' }}
+          autoFocus
+        >
+          確認 ☑
+        </button>
+        <p className="text-3xs animate-pulse" style={{ color: '#fde68a', opacity: 0.8 }}>
+          Enter / トリガー で確認 → 検品完了
+        </p>
       </main>
     );
   }

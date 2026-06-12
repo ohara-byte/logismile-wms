@@ -54,12 +54,12 @@ export async function GET(req: Request) {
   // 商品とJANで検索
   let product = await prisma.product.findUnique({
     where: { code: productCode },
-    select: { code: true, name: true, jan: true, productType: true },
+    select: { code: true, name: true, jan: true, productType: true, shippableExpiryDays: true },
   });
   if (!product) {
     const byJan = await prisma.product.findFirst({
       where: { jan: productCode },
-      select: { code: true, name: true, jan: true, productType: true },
+      select: { code: true, name: true, jan: true, productType: true, shippableExpiryDays: true },
     });
     if (byJan) product = byJan;
   }
@@ -118,6 +118,8 @@ export async function GET(req: Request) {
       productName: product.name,
       productJan: product.jan,
       productType: product.productType,
+      // A：発送可能賞味期限（日数）。在庫検品完了後バナーの算出源（入庫日+日数-1）
+      shippableExpiryDays: product.shippableExpiryDays,
       targetDate: targetDate.toISOString().slice(0, 10),
       stock: {
         qty: stock.qty,
