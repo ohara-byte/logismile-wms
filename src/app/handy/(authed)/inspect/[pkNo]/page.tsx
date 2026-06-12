@@ -44,6 +44,7 @@ export default async function HandyInspectPage({
         qrPrintFlag: order.qrPrintFlag,
         invoiceNo: order.invoiceNo,
         customerCode: order.customerCode,
+        orderNo: order.orderNo,
         noshiName: noshiExcluded ? null : order.noshiName,
         destName: order.destName,
         destZip: order.destZip,

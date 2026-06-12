@@ -307,6 +307,7 @@ export class CsvAdapter implements IntegrationAdapter {
       destName?: string;
       invoiceNo?: string;
       customerCode?: string;
+      orderNo?: string;
     };
     const groups = new Map<
       string,
@@ -373,8 +374,9 @@ export class CsvAdapter implements IntegrationAdapter {
             destAddr: row[O.DEST_ADDR]?.trim() || undefined,
             destName: row[O.DEST_NAME]?.trim() || undefined,
             invoiceNo: row[O.INVOICE_NO]?.trim() || undefined,
-            // B・2026-06-12：基幹CSVの顧客コードを取込（本部連絡の識別子に使用）
+            // B・2026-06-12：基幹CSVの顧客コード(M列)・注文番号(N列)を取込（本部連絡の識別子）
             customerCode: row[O.CUSTOMER_CODE]?.trim() || undefined,
+            orderNo: row[O.ORDER_NO]?.trim() || undefined,
           },
           items: [],
         };
@@ -466,6 +468,7 @@ export class CsvAdapter implements IntegrationAdapter {
             destName: group.header.destName,
             invoiceNo: group.header.invoiceNo,
             customerCode: group.header.customerCode,
+            orderNo: group.header.orderNo,
             items: {
               create: group.items.map((it) => ({
                 productCode: it.productCode,

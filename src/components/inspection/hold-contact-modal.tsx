@@ -27,9 +27,9 @@ interface Props {
   open: boolean;
   /** 連絡対象の伝票 PkNo（フォールバック・他の識別子が空のときのみタイトルに使用） */
   pkNo: string;
-  /** 納品書№（B・2026-06-12：本部連絡の主識別子） */
-  invoiceNo?: string | null;
-  /** 顧客コード（B：WMS受注に列が無ければ未指定。出所確定後に渡す） */
+  /** 注文番号（B・2026-06-12：基幹CSV N列。本部連絡の主識別子） */
+  orderNo?: string | null;
+  /** 顧客コード（B：基幹CSV M列） */
   customerCode?: string | null;
   /** 顧客名（B：届け先名 destName） */
   customerName?: string | null;
@@ -40,17 +40,17 @@ interface Props {
 }
 
 /**
- * B・2026-06-12：本部連絡の対象識別子を「納品書№ ＋ 顧客コード ＋ 顧客名」で組み立てる。
+ * B・2026-06-12：本部連絡の対象識別子を「注文番号 ＋ 顧客コード ＋ 顧客名」で組み立てる。
  * すべて空のときのみ pkNo にフォールバック（本部側が必ず対象を特定できるように）。
  */
 function buildOrderLabel(args: {
   pkNo: string;
-  invoiceNo?: string | null;
+  orderNo?: string | null;
   customerCode?: string | null;
   customerName?: string | null;
 }): string {
   const parts = [
-    args.invoiceNo ? `納品書${args.invoiceNo}` : null,
+    args.orderNo ? `注文${args.orderNo}` : null,
     args.customerCode || null,
     args.customerName || null,
   ].filter(Boolean);
@@ -60,14 +60,14 @@ function buildOrderLabel(args: {
 export function HoldContactModal({
   open,
   pkNo,
-  invoiceNo,
+  orderNo,
   customerCode,
   customerName,
   staffCode,
   onSent,
   onCancel,
 }: Props) {
-  const orderLabel = buildOrderLabel({ pkNo, invoiceNo, customerCode, customerName });
+  const orderLabel = buildOrderLabel({ pkNo, orderNo, customerCode, customerName });
   const [category, setCategory] = useState<Category | null>(null);
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
