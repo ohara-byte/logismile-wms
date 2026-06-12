@@ -52,6 +52,7 @@ export interface InspectionOrder {
   status: string;
   qrPrintFlag: boolean;
   invoiceNo: string | null;
+  customerCode: string | null;
   noshiName: string | null;
   destName: string | null;
   destZip: string | null;
@@ -648,6 +649,7 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
         open={holdContactOpen}
         pkNo={order.pkNo}
         invoiceNo={order.invoiceNo}
+        customerCode={order.customerCode}
         customerName={order.destName}
         staffCode={employee?.staffCode}
         onSent={() => setHoldContactOpen(false)}

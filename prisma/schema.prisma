@@ -568,6 +568,8 @@ model ShippingOrder {
   destAddr     String?   @map("dest_addr") @db.VarChar(200)
   destName     String?   @map("dest_name") @db.VarChar(100)
   invoiceNo    String?   @map("invoice_no") @db.VarChar(30)
+  /// 顧客コード（2026-06-12・基幹CSV「顧客コード」）。本部連絡の識別子に使用（B）。
+  customerCode String?   @map("customer_code") @db.VarChar(30)
   holdReason   String?   @map("hold_reason") @db.Text
   deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
   deletedBy    String?   @map("deleted_by") @db.VarChar(10)

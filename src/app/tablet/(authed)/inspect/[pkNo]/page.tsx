@@ -43,6 +43,7 @@ export default async function InspectPage({
         status: order.status,
         qrPrintFlag: order.qrPrintFlag,
         invoiceNo: order.invoiceNo,
+        customerCode: order.customerCode,
         noshiName: noshiExcluded ? null : order.noshiName,
         destName: order.destName,
         destZip: order.destZip,
