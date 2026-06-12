@@ -805,6 +805,8 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
       <HoldContactModal
         open={holdContactOpen}
         pkNo={order.pkNo}
+        invoiceNo={order.invoiceNo}
+        customerName={order.destName}
         staffCode={employee?.staffCode}
         onSent={() => setHoldContactOpen(false)}
         onCancel={() => setHoldContactOpen(false)}

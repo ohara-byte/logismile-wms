@@ -25,15 +25,49 @@ const CATEGORIES: { code: Category; icon: string; label: string }[] = [
 
 interface Props {
   open: boolean;
-  /** 連絡対象の伝票 PkNo（タイトルに含める） */
+  /** 連絡対象の伝票 PkNo（フォールバック・他の識別子が空のときのみタイトルに使用） */
   pkNo: string;
+  /** 納品書№（B・2026-06-12：本部連絡の主識別子） */
+  invoiceNo?: string | null;
+  /** 顧客コード（B：WMS受注に列が無ければ未指定。出所確定後に渡す） */
+  customerCode?: string | null;
+  /** 顧客名（B：届け先名 destName） */
+  customerName?: string | null;
   /** 起票者の社員番号（無くても POST は通る） */
   staffCode?: string | null;
   onSent: () => void;
   onCancel: () => void;
 }
 
-export function HoldContactModal({ open, pkNo, staffCode, onSent, onCancel }: Props) {
+/**
+ * B・2026-06-12：本部連絡の対象識別子を「納品書№ ＋ 顧客コード ＋ 顧客名」で組み立てる。
+ * すべて空のときのみ pkNo にフォールバック（本部側が必ず対象を特定できるように）。
+ */
+function buildOrderLabel(args: {
+  pkNo: string;
+  invoiceNo?: string | null;
+  customerCode?: string | null;
+  customerName?: string | null;
+}): string {
+  const parts = [
+    args.invoiceNo ? `納品書${args.invoiceNo}` : null,
+    args.customerCode || null,
+    args.customerName || null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' ') : args.pkNo;
+}
+
+export function HoldContactModal({
+  open,
+  pkNo,
+  invoiceNo,
+  customerCode,
+  customerName,
+  staffCode,
+  onSent,
+  onCancel,
+}: Props) {
+  const orderLabel = buildOrderLabel({ pkNo, invoiceNo, customerCode, customerName });
   const [category, setCategory] = useState<Category | null>(null);
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
@@ -72,7 +106,8 @@ export function HoldContactModal({ open, pkNo, staffCode, onSent, onCancel }: Pr
           date: new Date().toISOString().slice(0, 10),
           targetType: 'all',
           category,
-          title: `📥 ${categoryLabel(category)}: ${pkNo}`,
+          // B：本部連絡の対象識別子を 納品書№＋顧客コード＋顧客名 に変更（旧: ピッキング№）
+          title: `📥 ${categoryLabel(category)}: ${orderLabel}`,
           body: body.trim() || null,
           senderCode: staffCode ?? null,
           priority: category === 'product' ? 70 : 50,
@@ -99,10 +134,15 @@ export function HoldContactModal({ open, pkNo, staffCode, onSent, onCancel }: Pr
     >
       <div className="bg-surface-panel border border-surface-border rounded-2xl shadow-modal max-w-lg w-full p-5">
         <h2 className="text-lg font-bold text-ink-strong mb-1">📢 本部連絡</h2>
-        <p className="text-2xs text-ink-subtle mb-3 leading-snug">
+        <p className="text-2xs text-ink-subtle mb-2 leading-snug">
           連絡分類を 1 つ選び、必要に応じて補足を入力してください。
           送信先は管理 PC「連絡」タブ。
         </p>
+        {/* B：連絡対象（納品書№＋顧客名）を明示。本部側もこの表記で受信する。 */}
+        <div className="bg-surface-base border border-surface-border rounded px-3 py-1.5 text-2xs text-ink mb-3">
+          <span className="text-ink-muted">対象：</span>
+          <b className="text-ink-strong">{orderLabel}</b>
+        </div>
 
         <div className="text-3xs text-ink-muted mb-1 tracking-wider">▼ 分類（必須）</div>
         <div className="grid grid-cols-4 gap-2 mb-3">
