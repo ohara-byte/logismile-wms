@@ -419,6 +419,8 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
   }
 
   async function onTogglePrintFlag() {
+    // ②（2026-06-14）：QRフラグは検品中いつでも☑可・保持。トグル後にスキャン入力へ
+    //   フォーカスを戻さないと、スキャン入力が宙に浮き「検品が進まない」不具合になる。
     setBusy(true);
     try {
       const res = await fetch(`/api/orders/${encodeURIComponent(order.pkNo)}/print-flag`, {
@@ -430,6 +432,8 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
       else setErrorMsg((await res.json()).message ?? 'フラグ切替失敗');
     } finally {
       setBusy(false);
+      // 検品継続のためスキャン入力へフォーカス復帰（②バグ修正）
+      scanInputRef.current?.focus();
     }
   }
 

@@ -24,6 +24,10 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
+  // ⑤ 計測（2026-06-14）：1スキャンのサーバ処理時間を Server-Timing ヘッダで返す。
+  //   ブラウザ devtools の Network → 当該 /api/inspect/scan → Timing で「サーバ時間 vs 総時間」を比較でき、
+  //   遅延がサーバ側かネットワーク/クライアント側かを切り分けられる。
+  const t0 = Date.now();
   const guard = await requireRole('admin', 'manager', 'staff');
   if (!guard.ok) return guard.response;
 
@@ -66,32 +70,40 @@ export async function POST(req: Request) {
 
   const judge = judgeScan(session.order.items, parsed.data.scanValue, parsed.data.qty);
 
-  // ログは必ず残す（matched / over / not_found / already_done すべて）
-  await prisma.inspLog.create({
-    data: {
-      sessionId: session.id,
-      type: 'scan',
-      itemCode: parsed.data.scanValue,
-      qty: parsed.data.qty,
-      note: judge.result,
-    },
-  });
-
+  // 書き込みを並列化（⑤ 微最適化）：ログ作成と明細更新は独立のため Promise.all で1往復に集約。
+  //   ログは必ず残す（matched / over / not_found / already_done すべて）。
+  const writes: Promise<unknown>[] = [
+    prisma.inspLog.create({
+      data: {
+        sessionId: session.id,
+        type: 'scan',
+        itemCode: parsed.data.scanValue,
+        qty: parsed.data.qty,
+        note: judge.result,
+      },
+    }),
+  ];
   if (judge.result === 'matched' && judge.itemId) {
-    await prisma.shippingOrderItem.update({
-      where: { id: judge.itemId },
-      data: { scannedQty: judge.nextScannedQty! },
-    });
+    writes.push(
+      prisma.shippingOrderItem.update({
+        where: { id: judge.itemId },
+        data: { scannedQty: judge.nextScannedQty! },
+      }),
+    );
   }
+  await Promise.all(writes);
 
-  return NextResponse.json({
-    data: {
-      result: judge.result,
-      itemId: judge.itemId ?? null,
-      // 2026-06-03 ④軽量化: matched 時の確定スキャン数を返し、クライアントは
-      //   伝票全体の再取得(refreshOrder)なしでローカル更新できるようにする。
-      scannedQty: judge.nextScannedQty ?? null,
+  return NextResponse.json(
+    {
+      data: {
+        result: judge.result,
+        itemId: judge.itemId ?? null,
+        // 2026-06-03 ④軽量化: matched 時の確定スキャン数を返し、クライアントは
+        //   伝票全体の再取得(refreshOrder)なしでローカル更新できるようにする。
+        scannedQty: judge.nextScannedQty ?? null,
+      },
+      message: 'OK',
     },
-    message: 'OK',
-  });
+    { headers: { 'Server-Timing': `scan;dur=${Date.now() - t0}` } },
+  );
 }
