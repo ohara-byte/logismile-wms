@@ -7,7 +7,7 @@
   "id": "/tablet/",
   "display": "standalone",
   "display_override": ["fullscreen", "standalone"],
-  "orientation": "any",
+  "orientation": "portrait",
   "background_color": "#0f172a",
   "theme_color": "#29A6F6",
   "lang": "ja",

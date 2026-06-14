@@ -528,6 +528,27 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     }
   }
 
+  // 検品中断（破棄）：途中検品を破棄して未検品に戻す（保留とは別・2026-06-14）
+  async function submitInspectionRelease() {
+    if (!sessionId) {
+      setHoldMenuOpen(false);
+      return;
+    }
+    setBusy(true);
+    setHoldMenuOpen(false);
+    try {
+      const res = await fetch('/api/inspect/release', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      });
+      if (res.ok) router.push('/handy');
+      else setErrorMsg((await res.json()).message ?? '中断（破棄）失敗');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // 選択行を上下に移動（sortInspectionItems の並びで巡回）
   function moveSelectedRow(delta: 1 | -1) {
     const itemsArr = sortInspectionItems(order.items);
@@ -798,6 +819,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
       <HoldMenuModal
         open={holdMenuOpen}
         onSelectInspectionHold={() => submitInspectionHold()}
+        onSelectRelease={() => submitInspectionRelease()}
         onSelectContact={() => {
           setHoldMenuOpen(false);
           setHoldContactOpen(true);

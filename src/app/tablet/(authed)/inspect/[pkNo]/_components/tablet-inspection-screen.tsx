@@ -560,6 +560,27 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
     }
   }
 
+  // 検品中断（破棄）：途中検品を破棄して未検品に戻す（保留とは別・2026-06-14）
+  async function submitInspectionRelease() {
+    if (!sessionId) {
+      setHoldMenuOpen(false);
+      return;
+    }
+    setBusy(true);
+    setHoldMenuOpen(false);
+    try {
+      const res = await fetch('/api/inspect/release', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      });
+      if (res.ok) router.push('/tablet');
+      else setErrorMsg((await res.json()).message ?? '中断（破棄）失敗');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // === 完了画面（モック L577-590 .complete-screen 準拠 — 緑グラデ全面） ===
   if (completed) {
     return <CompleteScreen order={order} completionInfo={completionInfo} />;
@@ -640,6 +661,7 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
       <HoldMenuModal
         open={holdMenuOpen}
         onSelectInspectionHold={() => submitInspectionHold()}
+        onSelectRelease={() => submitInspectionRelease()}
         onSelectContact={() => {
           setHoldMenuOpen(false);
           setHoldContactOpen(true);
