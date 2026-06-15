@@ -128,6 +128,22 @@ export function FinalCheckModal({
     accompaniesArr.filter((a) => checkedIds.has(a.id)).length;
   const allChecked = totalChecks === 0 || checkedCount >= totalChecks;
 
+  // のし・同梱物の確認が全て済んだら、納品書 input へ自動でフォーカスし続ける。
+  //   → 「納品書をスキャン」ボタンを毎回タップする手間を無くす（2026-06-15・現場要望①）。
+  //   全確認後は他に操作対象が無いため、HID スキャナを直接受けられるよう input にフォーカスを維持する。
+  useEffect(() => {
+    if (!open || !allChecked || busy) return;
+    const focus = () => invoiceInputRef.current?.focus();
+    const t = setTimeout(focus, 60);
+    const interval = setInterval(() => {
+      if (document.activeElement !== invoiceInputRef.current) focus();
+    }, 500);
+    return () => {
+      clearTimeout(t);
+      clearInterval(interval);
+    };
+  }, [open, allChecked, busy]);
+
   const submit = useCallback(
     async (invoiceNo: string) => {
       if (!allChecked || busy) return;
