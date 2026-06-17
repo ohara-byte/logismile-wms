@@ -118,6 +118,10 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
   // Sprint Y-14: ハンディの数字キーで keypad を開いた時の初期入力値（0-9 のいずれか）
   const [qtyInitialDigit, setQtyInitialDigit] = useState<number | null>(null);
 
+  // ⑤（2026-06-17）保留数量：数字キーで数量を打つと「次のスキャンに適用する数量」として保持。
+  //   Enter不要で、続けてJANをスキャンするとこの数量が確定する（スキャンで消費しクリア）。
+  const [pendingQty, setPendingQty] = useState<number | null>(null);
+
   // Sticky 強制検品モード（A-15）
   const sticky = useStickyForceOk();
 
@@ -230,6 +234,10 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     const value = scanInput.trim();
     if (!value || !sessionId) return;
 
+    // ⑤：保留数量があれば、このスキャンで消費して適用数量にする（Enter不要・数量→スキャンで確定）。
+    const pendQ = pendingQty != null && pendingQty > 0 ? pendingQty : null;
+    if (pendingQty != null) setPendingQty(null);
+
     // 数量プレフィックス機能は **ピッキング中（商品検品中）のみ** 有効化。
     //   - 全件完了後（allInspected=true）は納品書スキャンなので、qty-prefix は適用しない。
     //   - 納品書スキャンは最終チェックモーダル内のハンドラで処理される。
@@ -299,7 +307,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
         setScanInput('');
         setErrorMsg(null);
         try {
-          await applyManualQty(matchedItem, prefixQty);
+          await applyManualQty(matchedItem, pendQ ?? prefixQty);
         } catch {
           /* applyManualQty 内で setErrorMsg 済 */
         } finally {
@@ -321,7 +329,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
       const res = await fetch('/api/inspect/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, scanValue: value, qty: 1 }),
+        body: JSON.stringify({ sessionId, scanValue: value, qty: pendQ ?? 1 }),
       });
       const j = await res.json();
       if (!res.ok) {
@@ -570,6 +578,9 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
   // ハードキー Enter / Trigger: 選択行を +1 スキャン or 次の未完了をスキャン
   async function onTriggerScan() {
     if (!sessionId) return;
+    // ⑤：保留数量があればトリガー確定にも適用（数量→トリガーでも確定可）。
+    const pendQ = pendingQty != null && pendingQty > 0 ? pendingQty : null;
+    if (pendingQty != null) setPendingQty(null);
     const sorted = sortInspectionItems(order.items);
     const it =
       selectedRow >= 0 && sorted[selectedRow]
@@ -585,7 +596,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
         body: JSON.stringify({
           sessionId,
           scanValue: it.productCode,
-          qty: 1,
+          qty: pendQ ?? 1,
         }),
       });
       const j = await res.json();
@@ -697,18 +708,14 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     onTrigger: () => onTriggerScan(),
     onEscape: () => setHoldMenuOpen(true),
     onDigit: (d: number) => {
-      // モック準拠: 数字キー押下 → 選択行（または先頭未完了行）の数量キーパッドをオープン
-      // Sprint Y-14: トリガーとなった数字を初期値として keypad に渡す（初手入力消失バグ修正）
-      const sorted = sortInspectionItems(order.items);
-      const target =
-        selectedRow >= 0 &&
-        sorted[selectedRow] &&
-        sorted[selectedRow].scannedQty < sorted[selectedRow].qty
-          ? sorted[selectedRow]
-          : sorted.find((it) => !it.forceOk && it.scannedQty < it.qty);
-      if (!target) return;
-      setQtyInitialDigit(d);
-      setQtyTarget(target);
+      // ⑤（2026-06-17）数字キー押下 → 数量を「保留」して画面表示（キーパッドは開かない）。
+      //   Enter不要で、続けてJANをスキャンすると保留数量が適用される。連続入力で桁を積む（最大3桁）。
+      //   ※全件完了後（納品書スキャン中）は数量入力しない。
+      if (allInspected) return;
+      setPendingQty((prev) => {
+        const n = (prev ?? 0) * 10 + d;
+        return n > 999 ? d : n; // 桁あふれは打ち直し
+      });
     },
   });
 
@@ -939,6 +946,22 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
         <div className="px-2 py-1 border-t border-surface-border bg-surface-panel shrink-0">
           {errorMsg && <div className="text-2xs text-status-error">⚠ {errorMsg}</div>}
           {!errorMsg && lastResult && <ScanResultBanner result={lastResult.result} />}
+        </div>
+      )}
+
+      {/* ⑤ 保留数量バナー：数量を打つと表示。次のスキャン/トリガーで適用（Enter不要）。 */}
+      {pendingQty != null && !allInspected && (
+        <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-t border-amber-400 bg-amber-500/15 shrink-0">
+          <div className="text-xs font-bold text-amber-300">
+            次のスキャンに <span className="text-base tabular-nums">×{pendingQty}</span> 個（保留中）
+          </div>
+          <button
+            type="button"
+            onClick={() => setPendingQty(null)}
+            className="rounded border border-amber-500/60 px-2 py-0.5 text-2xs text-amber-200"
+          >
+            取消
+          </button>
         </div>
       )}
 
