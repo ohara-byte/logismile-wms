@@ -24,6 +24,7 @@ import { ReprintModal } from '@/components/inspection/reprint-modal';
 import { useStickyForceOk } from '@/lib/use-sticky-force-ok';
 import { useHardwareKeys } from '@/lib/use-hardware-keys';
 import { useScanSound } from '@/lib/use-scan-sound';
+import { usePerfDisplay } from '@/lib/use-perf-display';
 import { SoundToggle } from '@/components/inspection/sound-toggle';
 
 export interface InspectionItem {
@@ -133,6 +134,17 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     enabled: soundEnabled,
     setEnabled: setSoundEnabled,
   } = useScanSound();
+
+  // ⑤計測表示（2026-06-17）：検品開始画面でONにすると、前回スキャンの所要時間を画面に表示。
+  const { enabled: perfEnabled } = usePerfDisplay();
+  const [lastTiming, setLastTiming] = useState<{ total: number; server: number | null } | null>(null);
+  // fetch のレスポンスから Server-Timing(scan;dur) と総時間を記録する。
+  const recordTiming = (t0: number, res: Response) => {
+    const total = Date.now() - t0;
+    const st = res.headers.get('Server-Timing');
+    const m = st?.match(/scan;dur=([\d.]+)/);
+    setLastTiming({ total, server: m ? Math.round(Number(m[1])) : null });
+  };
 
   const scanInputRef = useRef<HTMLInputElement>(null);
   // 自動展開の二重発火防止（D-1, モック L2167 と同等）
@@ -326,11 +338,13 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     setErrorMsg(null);
 
     try {
+      const t0 = Date.now();
       const res = await fetch('/api/inspect/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, scanValue: value, qty: pendQ ?? 1 }),
       });
+      recordTiming(t0, res);
       const j = await res.json();
       if (!res.ok) {
         setErrorMsg(j.message ?? `エラー: HTTP ${res.status}`);
@@ -590,6 +604,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     if (it.forceOk || it.scannedQty >= it.qty) return;
     setBusy(true);
     try {
+      const t0 = Date.now();
       const res = await fetch('/api/inspect/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -599,6 +614,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
           qty: pendQ ?? 1,
         }),
       });
+      recordTiming(t0, res);
       const j = await res.json();
       if (!res.ok) {
         setErrorMsg(j.message ?? `エラー: HTTP ${res.status}`);
@@ -962,6 +978,22 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
           >
             取消
           </button>
+        </div>
+      )}
+
+      {/* ⑤ スキャン速度の計測表示（検品開始画面でON時）。総時間＝サーバ＋通信。 */}
+      {perfEnabled && lastTiming && (
+        <div className="flex items-center justify-center gap-3 px-2 py-1 border-t border-sky-700 bg-sky-950/40 text-2xs text-sky-200 shrink-0 tabular-nums">
+          <span>前回スキャン</span>
+          <span>総 <b className="text-sky-100">{lastTiming.total}</b>ms</span>
+          <span>サーバ <b className="text-sky-100">{lastTiming.server ?? '—'}</b>ms</span>
+          <span>
+            通信{' '}
+            <b className="text-sky-100">
+              {lastTiming.server != null ? Math.max(0, lastTiming.total - lastTiming.server) : '—'}
+            </b>
+            ms
+          </span>
         </div>
       )}
 

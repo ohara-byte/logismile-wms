@@ -9,6 +9,7 @@ import { TakeoverConfirmModal } from '@/components/inspection/takeover-confirm-m
 import { ReprintModal } from '@/components/inspection/reprint-modal';
 import { NoticesModal } from '@/components/inspection/notices-modal';
 import { useHardwareKeys } from '@/lib/use-hardware-keys';
+import { usePerfDisplay } from '@/lib/use-perf-display';
 
 /**
  * ハンディ用ピッキング№入力フォーム
@@ -61,6 +62,8 @@ export function PickingNoScanForm({ currentStaffCode }: Props = {}) {
   // 同一セッション内では showNotices で開閉のみ管理（明示的に「再表示」した場合に開く）
   const [showNotices, setShowNotices] = useState(true);
   const noticesAutoShownRef = useRef(true);
+  // ⑤計測表示の切替（端末ごと・localStorage 保持）。ONにすると検品画面でスキャン所要時間を表示。
+  const { enabled: perfEnabled, setEnabled: setPerfEnabled } = usePerfDisplay();
 
   // モーダルが何かしら開いているか
   const anyModalOpen =
@@ -241,6 +244,19 @@ export function PickingNoScanForm({ currentStaffCode }: Props = {}) {
           ⌨ <b className="text-accent-amber">F2</b> = QR ラベル再発行 ／{' '}
           <b className="text-accent-amber">F3</b> = 在庫検品へ
         </p>
+        {/* ⑤ スキャン速度の計測表示 ON/OFF（検品画面で前回スキャンの所要時間を表示） */}
+        <button
+          type="button"
+          onClick={() => setPerfEnabled(!perfEnabled)}
+          className={
+            'w-full rounded-lg py-2 text-2xs font-bold border ' +
+            (perfEnabled
+              ? 'bg-sky-700 text-white border-sky-500'
+              : 'bg-surface-raised text-ink-muted border-surface-border')
+          }
+        >
+          ⏱ スキャン速度表示：{perfEnabled ? 'ON' : 'OFF'}
+        </button>
       </form>
 
       <HeldResumeModal
