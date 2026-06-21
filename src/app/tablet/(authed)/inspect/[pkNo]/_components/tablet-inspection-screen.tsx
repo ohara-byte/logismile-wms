@@ -181,6 +181,24 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
 
   const allInspected = order.items.every((it) => it.forceOk || it.scannedQty >= it.qty);
 
+  // ③ 検品所要時間（2026-06-21）：セッション開始〜全件完了(緑背景)の経過秒。終了ボタンに ●分●秒 表示。
+  const inspectStartRef = useRef<number | null>(null);
+  const [inspectCompletedMs, setInspectCompletedMs] = useState<number | null>(null);
+  useEffect(() => {
+    if (sessionId && inspectStartRef.current == null) inspectStartRef.current = Date.now();
+  }, [sessionId]);
+  useEffect(() => {
+    if (allInspected && inspectStartRef.current != null) {
+      setInspectCompletedMs((prev) => prev ?? Date.now());
+    } else if (!allInspected) {
+      setInspectCompletedMs(null); // 完了が崩れたら計測リセット
+    }
+  }, [allInspected]);
+  const inspectDurationSec =
+    inspectCompletedMs != null && inspectStartRef.current != null
+      ? Math.max(0, Math.round((inspectCompletedMs - inspectStartRef.current) / 1000))
+      : null;
+
   const triggerFlash = useCallback((color: FlashColor) => {
     setFlash(color);
     setTimeout(() => setFlash(null), 500);
@@ -738,6 +756,7 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
           onExit={() => router.push('/tablet')}
           soundEnabled={soundEnabled}
           onToggleSound={() => setSoundEnabled(!soundEnabled)}
+          durationSec={inspectDurationSec}
         />
 
         {/* 本体: 横は 3 ペイン flex / 縦は縦積み */}
@@ -807,6 +826,7 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
           onBulkComplete={onBulkComplete}
           busy={busy}
           portrait={portrait}
+          durationSec={inspectDurationSec}
         />
       </div>
     </main>
@@ -1109,6 +1129,7 @@ function Header({
   onExit,
   soundEnabled,
   onToggleSound,
+  durationSec,
 }: {
   order: InspectionOrder;
   employee: Props['employee'];
@@ -1117,6 +1138,8 @@ function Header({
   onExit: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
+  /** ③ 検品所要時間（秒・全件完了時のみ）。終了ボタンに ●分●秒 表示。 */
+  durationSec?: number | null;
 }) {
   const [now, setNow] = useState<string>(() =>
     new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
@@ -1221,8 +1244,17 @@ function Header({
       <button
         onClick={onExit}
         title="検品を中断"
+        className="flex items-center gap-1.5"
         style={{ color: '#cbd5e1', fontSize: 18 }}
       >
+        {durationSec != null && (
+          <span
+            style={{ fontSize: 12, color: '#34d399', fontVariantNumeric: 'tabular-nums' }}
+            title="検品所要時間"
+          >
+            ⏱{Math.floor(durationSec / 60)}分{durationSec % 60}秒
+          </span>
+        )}
         ⏻
       </button>
     </header>
@@ -2101,6 +2133,7 @@ function Footer({
   onBulkComplete,
   busy,
   portrait,
+  durationSec,
 }: {
   allInspected: boolean;
   onHold: () => void;
@@ -2109,6 +2142,8 @@ function Footer({
   onBulkComplete: () => void;
   busy: boolean;
   portrait: boolean;
+  /** ③ 検品所要時間（秒・全件完了時のみ）。中断（終了）ボタンに ●分●秒 表示。 */
+  durationSec?: number | null;
 }) {
   // U-4: 縦向きでも 1 行 6 ボタン構成にして上部の商品リストを広く確保
   return (
@@ -2172,7 +2207,7 @@ function Footer({
         onClick={onHold}
         disabled={busy}
       />
-      {/* ESC 中断 (グレー) */}
+      {/* ESC 中断（終了） (グレー)。③ 全件完了(緑背景)時のみ検品所要時間 ●分●秒 を表示 */}
       <FooterButton
         Icon={ArrowLeftIcon}
         label="中断"
@@ -2181,6 +2216,11 @@ function Footer({
         portrait={portrait}
         onClick={onExit}
         disabled={busy}
+        badge={
+          durationSec != null
+            ? `⏱${Math.floor(durationSec / 60)}分${durationSec % 60}秒`
+            : undefined
+        }
       />
     </footer>
   );
@@ -2201,6 +2241,7 @@ function FooterButton({
   onClick,
   disabled,
   highlight,
+  badge,
 }: {
   Icon: React.ComponentType<FooterIconProps>;
   label: string;
@@ -2210,6 +2251,8 @@ function FooterButton({
   onClick?: () => void;
   disabled?: boolean;
   highlight?: boolean;
+  /** ③ 補助表示（検品所要時間など）。指定時は kb 行の代わりに緑文字で表示 */
+  badge?: string;
 }) {
   return (
     <button
@@ -2240,17 +2283,31 @@ function FooterButton({
         <Icon size={portrait ? 16 : 22} />
       </span>
       <span style={{ fontSize: portrait ? 10 : 14 }}>{label}</span>
-      {!portrait && (
+      {badge ? (
         <span
           style={{
-            fontSize: 9,
-            color: 'rgba(255,255,255,0.8)',
-            fontWeight: 'normal',
-            letterSpacing: 1,
+            fontSize: portrait ? 9 : 11,
+            color: '#6ee7b7',
+            fontWeight: 'bold',
+            fontVariantNumeric: 'tabular-nums',
+            letterSpacing: 0,
           }}
         >
-          {kb}
+          {badge}
         </span>
+      ) : (
+        !portrait && (
+          <span
+            style={{
+              fontSize: 9,
+              color: 'rgba(255,255,255,0.8)',
+              fontWeight: 'normal',
+              letterSpacing: 1,
+            }}
+          >
+            {kb}
+          </span>
+        )
       )}
     </button>
   );
