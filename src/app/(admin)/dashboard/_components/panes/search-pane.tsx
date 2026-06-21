@@ -187,7 +187,9 @@ export function SearchPane() {
   }
 
   return (
-    <div className="p-3">
+    // ① 見出し固定: 絞り込みバー（範囲ピル/ミックス検索/フラグ/件数）は上部固定し、結果リストだけをスクロール。
+    <div className="flex flex-col h-full min-h-0">
+    <div className="p-3 pb-2 shrink-0 border-b border-surface-border">
       {/* 検索範囲ピル — ユーザー要望（2026-05-18）：日付ピル +2px */}
       <div className="flex flex-wrap gap-1.5 items-center mb-2 p-2 bg-surface-base border border-surface-border rounded">
         <span className="text-xs text-ink-subtle mr-1">📅 検索範囲:</span>
@@ -294,25 +296,28 @@ export function SearchPane() {
       </div>
 
       {error && (
-        <div className="mb-2 p-2 text-2xs bg-status-error-bg text-status-error border border-status-error rounded">
+        <div className="mt-2 p-2 text-2xs bg-status-error-bg text-status-error border border-status-error rounded">
           {error}
         </div>
       )}
+    </div>
 
-      {/* 結果リスト */}
-      {!hasSearched ? (
-        <div className="text-center py-8 text-2xs text-ink-muted">
-          条件を入力して検索してください
-        </div>
-      ) : results.length === 0 ? (
-        <div className="text-center py-6 text-2xs text-ink-muted">
-          該当する伝票がありません
-        </div>
-      ) : (
-        results.map((r) => (
-          <SearchCard key={r.pkNo} item={r} onClick={() => openDetail(r.pkNo)} />
-        ))
-      )}
+      {/* 結果リスト — ① ここだけがスクロールする */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 pt-2">
+        {!hasSearched ? (
+          <div className="text-center py-8 text-2xs text-ink-muted">
+            条件を入力して検索してください
+          </div>
+        ) : results.length === 0 ? (
+          <div className="text-center py-6 text-2xs text-ink-muted">
+            該当する伝票がありません
+          </div>
+        ) : (
+          results.map((r) => (
+            <SearchCard key={r.pkNo} item={r} onClick={() => openDetail(r.pkNo)} />
+          ))
+        )}
+      </div>
     </div>
   );
 }

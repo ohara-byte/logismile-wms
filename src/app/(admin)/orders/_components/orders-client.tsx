@@ -194,7 +194,8 @@ export function OrdersClient() {
       {/* 一覧 */}
       <Panel>
         <PanelHeader title="伝票一覧" meta={`${total} 件`} />
-        <Table>
+        {/* ① 見出し固定: 一覧だけがスクロールし、列ヘッダ（出荷日/PkNo…）は最上部に固定 */}
+        <Table stickyHead maxHeight="62vh">
           <THead>
             <TH>出荷日</TH>
             <TH>PkNo</TH>

@@ -19,29 +19,59 @@
  *   </Table>
  */
 
+import { createContext, useContext } from 'react';
 import { cn } from '@/lib/cn';
+
+/**
+ * 見出し固定（sticky header）用コンテキスト。
+ * Table が stickyHead 指定のとき配下の THead に伝播し、見出しをスクロール領域の最上部へ固定する。
+ * 既存の呼び出し側（<THead>）は変更不要。
+ */
+const StickyHeadContext = createContext(false);
 
 interface TableProps {
   children: React.ReactNode;
   className?: string;
+  /**
+   * 見出し固定。一覧だけがスクロールし、見出し（列ヘッダ）は最上部に固定される。
+   * maxHeight でスクロール領域の高さ上限を指定（既定 60vh）。
+   */
+  stickyHead?: boolean;
+  /** stickyHead 時のスクロール領域の高さ上限（CSS 値）。既定 '60vh' */
+  maxHeight?: string;
 }
 
-export function Table({ children, className }: TableProps) {
+export function Table({ children, className, stickyHead = false, maxHeight = '60vh' }: TableProps) {
   return (
-    <div
-      className={cn(
-        'border border-surface-border rounded-lg overflow-hidden bg-surface-panel',
-        className,
-      )}
-    >
-      <table className="w-full text-sm">{children}</table>
-    </div>
+    <StickyHeadContext.Provider value={stickyHead}>
+      <div
+        className={cn(
+          'border border-surface-border rounded-lg overflow-hidden bg-surface-panel',
+          className,
+        )}
+      >
+        {stickyHead ? (
+          <div className="overflow-y-auto" style={{ maxHeight }}>
+            <table className="w-full text-sm">{children}</table>
+          </div>
+        ) : (
+          <table className="w-full text-sm">{children}</table>
+        )}
+      </div>
+    </StickyHeadContext.Provider>
   );
 }
 
 export function THead({ children }: { children: React.ReactNode }) {
+  const sticky = useContext(StickyHeadContext);
   return (
-    <thead className="bg-surface-base border-b border-surface-border">
+    <thead
+      className={cn(
+        'bg-surface-base border-b border-surface-border',
+        // 見出し固定: スクロール領域の最上部に貼り付ける。bg-surface-base が不透明なので行は透けない。
+        sticky && 'sticky top-0 z-10',
+      )}
+    >
       <tr>{children}</tr>
     </thead>
   );
