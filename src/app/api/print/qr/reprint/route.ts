@@ -21,6 +21,7 @@ import { requireRole } from '@/lib/auth/permissions';
 import { runPrintJob } from '@/lib/print-job';
 
 const Body = z.object({
+  // ピッキング№ または 納品書№ のどちらでも受ける（④ 2026-06-21）。
   pkNo: z.string().min(1),
   deviceCode: z.string().min(1).optional(),
   // reason は監査用。UI からは未送信のケースもあるため optional とし、
@@ -51,13 +52,15 @@ export async function POST(req: Request) {
     );
   }
 
+  // ④：ピッキング№でも納品書№でも対象を引けるようにする（どちらかに完全一致）。
+  const idValue = parsed.data.pkNo.trim();
   const order = await prisma.shippingOrder.findFirst({
-    where: { pkNo: parsed.data.pkNo, deletedAt: null },
+    where: { OR: [{ pkNo: idValue }, { invoiceNo: idValue }], deletedAt: null },
     select: { id: true, pkNo: true, qrPrintFlag: true, invoiceNo: true },
   });
   if (!order) {
     return NextResponse.json(
-      { error: 'NOT_FOUND', message: 'ピッキング№が見つかりません' },
+      { error: 'NOT_FOUND', message: 'ピッキング№／納品書№が見つかりません' },
       { status: 404 },
     );
   }

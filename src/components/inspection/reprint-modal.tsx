@@ -69,19 +69,21 @@ export function ReprintModal({ open, onClose }: Props) {
         });
         return;
       }
-      // 404 の場合は納品書 No 検索（部分一致）
-      const sr = await fetch(`/api/orders?q=${encodeURIComponent(v)}&limit=2`);
+      // 404 の場合は納品書№で検索（部分一致）。④：納品書№/ピッキング№の完全一致を優先し、
+      //   無ければ候補が1件のみのとき採用（バーコード表記差にも耐性）。候補数も増やす。
+      const sr = await fetch(`/api/orders?q=${encodeURIComponent(v)}&limit=10`);
       if (sr.ok) {
         const sj = await sr.json();
-        const exact = (sj.data?.items ?? []).find(
-          (it: { invoiceNo: string | null }) => it.invoiceNo === v,
-        );
-        if (exact) {
+        const items: OrderInfo[] = sj.data?.items ?? [];
+        const hit =
+          items.find((it) => it.invoiceNo === v || it.pkNo === v) ??
+          (items.length === 1 ? items[0] : null);
+        if (hit) {
           setOrder({
-            pkNo: exact.pkNo,
-            invoiceNo: exact.invoiceNo,
-            destName: exact.destName,
-            qrPrintFlag: exact.qrPrintFlag,
+            pkNo: hit.pkNo,
+            invoiceNo: hit.invoiceNo,
+            destName: hit.destName,
+            qrPrintFlag: hit.qrPrintFlag,
           });
           return;
         }
