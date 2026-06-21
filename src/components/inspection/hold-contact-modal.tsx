@@ -6,22 +6,31 @@
  * モック準拠（タブレット検品モック_v0.18.html L1325-1361）。
  *
  * 仕様:
- *   - 4 分類ボタン（のし / 商品 / 入力内容 / WEB）から1つ選択（必須）
+ *   - 4 分類ボタン（のし / 商品 / 伝票 / WEB）から1つ選択（必須）
+ *   - ②（2026-06-21）: 分類ごとのサブ選択肢ボタン（マスタ管理）。タップで補足へ挿入。
  *   - 補足 textarea（任意）
- *   - 送信は POST /api/notices に kind=inbox で投稿
+ *   - 送信は POST /api/notices に kind=inbox で投稿（本部へはテキスト）
  *   - 管理 PC 側「📢 連絡」タブの 📥 着信 サブタブに表示される
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
+// 分類コードは従来通り（'input' は表示上「伝票」へ変更。連絡パイプラインの互換維持のためコードは据え置き）。
 type Category = 'noshi' | 'product' | 'input' | 'web';
 
 const CATEGORIES: { code: Category; icon: string; label: string }[] = [
   { code: 'noshi', icon: '🎁', label: 'のし' },
   { code: 'product', icon: '📦', label: '商品' },
-  { code: 'input', icon: '✏', label: '入力内容' },
+  { code: 'input', icon: '📋', label: '伝票' },
   { code: 'web', icon: '🌐', label: 'WEB' },
 ];
+
+interface SubOption {
+  id: number;
+  category: string;
+  label: string;
+  sortOrder: number;
+}
 
 interface Props {
   open: boolean;
@@ -72,6 +81,9 @@ export function HoldContactModal({
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // ②: 分類別サブ選択肢（マスタ）。選択した文言は本部へテキストで送る。
+  const [subOptions, setSubOptions] = useState<SubOption[]>([]);
+  const [selectedSubs, setSelectedSubs] = useState<string[]>([]);
 
   useEffect(() => {
     if (open) {
@@ -79,8 +91,44 @@ export function HoldContactModal({
       setBody('');
       setError(null);
       setBusy(false);
+      setSelectedSubs([]);
     }
   }, [open]);
+
+  // ②: サブ選択肢マスタを取得（有効分のみ）。失敗しても従来通り送信は可能。
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetch('/api/contact-sub-options')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((j) => {
+        if (!cancelled) setSubOptions(j.data?.items ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setSubOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  // 選択中の分類に紐づくサブ選択肢（表示順）
+  const categorySubs = useMemo(
+    () => (category ? subOptions.filter((s) => s.category === category) : []),
+    [category, subOptions],
+  );
+
+  // 分類を切り替えたらサブ選択は一旦クリア（分類ごとに選択肢が異なるため）
+  function selectCategory(code: Category) {
+    setCategory(code);
+    setSelectedSubs([]);
+  }
+
+  function toggleSub(label: string) {
+    setSelectedSubs((prev) =>
+      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label],
+    );
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -98,6 +146,9 @@ export function HoldContactModal({
     setBusy(true);
     setError(null);
     try {
+      // ②: 選択したサブ選択肢の文言を先頭に、続けて自由補足。本部へはテキストで送信。
+      const subText = selectedSubs.join('、');
+      const finalBody = [subText, body.trim()].filter(Boolean).join('\n') || null;
       const r = await fetch('/api/notices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -107,8 +158,11 @@ export function HoldContactModal({
           targetType: 'all',
           category,
           // B：本部連絡の対象識別子を 納品書№＋顧客コード＋顧客名 に変更（旧: ピッキング№）
-          title: `📥 ${categoryLabel(category)}: ${orderLabel}`,
-          body: body.trim() || null,
+          // ②: サブ選択肢が選ばれていればタイトルにも併記（本部の一覧で要件が一目で分かるように）
+          title: subText
+            ? `📥 ${categoryLabel(category)}（${subText}）: ${orderLabel}`
+            : `📥 ${categoryLabel(category)}: ${orderLabel}`,
+          body: finalBody,
           senderCode: staffCode ?? null,
           priority: category === 'product' ? 70 : 50,
         }),
@@ -150,7 +204,7 @@ export function HoldContactModal({
             <button
               key={c.code}
               type="button"
-              onClick={() => setCategory(c.code)}
+              onClick={() => selectCategory(c.code)}
               className={`p-2 rounded border ${
                 category === c.code
                   ? 'border-accent-amber bg-amber-900 text-amber-100 font-bold'
@@ -169,6 +223,36 @@ export function HoldContactModal({
             {category ? categoryLabel(category) : '未選択'}
           </b>
         </div>
+
+        {/* ②: 分類別サブ選択肢（マスタ管理）。タップで本部へ送るテキストに加わる。 */}
+        {category && categorySubs.length > 0 && (
+          <div className="mb-3">
+            <div className="text-3xs text-ink-muted mb-1 tracking-wider">
+              ▼ 内容（任意・複数選択可）
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {categorySubs.map((s) => {
+                const on = selectedSubs.includes(s.label);
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => toggleSub(s.label)}
+                    disabled={busy}
+                    className={`px-3 py-1.5 rounded-full border text-xs transition-colors disabled:opacity-50 ${
+                      on
+                        ? 'border-accent-amber bg-amber-900 text-amber-100 font-bold'
+                        : 'border-surface-border bg-surface-base text-ink-subtle hover:border-accent-amber/60'
+                    }`}
+                  >
+                    {on ? '✓ ' : ''}
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="text-3xs text-ink-muted mb-1 tracking-wider">
           ▼ 補足（任意・写真添付は将来対応）

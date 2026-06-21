@@ -310,6 +310,27 @@ model QrForceKeyword {
   @@map("qr_force_keywords")
 }
 
+/// 6-5. 本部連絡 サブ選択肢マスタ（②・2026-06-21）
+///   タブレット／ハンディの本部連絡モーダルで、分類（のし／商品／伝票／WEB）ごとに
+///   表示するサブ選択肢ボタン。タップするとラベル文言が補足テキストへ挿入される。
+///   本部へは現仕様通りテキストで送信。マスタ画面から自由に追加・編集できる。
+model ContactSubOption {
+  id        Int      @id @default(autoincrement())
+  /// 連絡分類コード（noshi / product / input(=伝票) / web）。本部連絡モーダルの分類と一致。
+  category  String   @db.VarChar(20)
+  /// ボタン文言（例: 再印刷）。補足テキストへ挿入される。
+  label     String   @db.VarChar(100)
+  /// 表示順（小さいほど先頭）
+  sortOrder Int      @default(0) @map("sort_order")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([category, label])
+  @@index([category, active, sortOrder])
+  @@map("contact_sub_options")
+}
+
 /// 7. 担当者マスタ
 model Staff {
   code                String    @id @db.VarChar(10)

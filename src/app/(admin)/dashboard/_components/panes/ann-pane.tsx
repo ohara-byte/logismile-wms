@@ -69,7 +69,7 @@ const INC_FILTER_LABEL: Record<IncFilter, string> = {
   unread: '🔴 未読',
   noshi: '🎁 のし',
   product: '📦 商品',
-  input: '✏ 入力',
+  input: '📋 伝票',
   web: '🌐 WEB',
 };
 
@@ -580,7 +580,7 @@ function categoryIcon(cat: string | null): string {
     case 'product':
       return '📦';
     case 'input':
-      return '✏';
+      return '📋';
     case 'web':
       return '🌐';
     default:

@@ -14,6 +14,7 @@ export type MasterSubTabId =
   | 'carrierAlias'
   | 'noshiExclusion'
   | 'qrForceKeyword'
+  | 'contactSubOption'
   | 'group'
   | 'stdtime'
   | 'skill'
@@ -45,6 +46,8 @@ export const MASTER_SUBTABS: MasterSubTabDef[] = [
   // 2026-06-02: のし確認 除外 / QR印刷 強制 マスタ
   { id: 'noshiExclusion', icon: '🚫', label: 'のし除外' },
   { id: 'qrForceKeyword', icon: '🖨', label: 'QR印刷強制' },
+  // ②（2026-06-21）: 本部連絡の分類別サブ選択肢ボタンを管理
+  { id: 'contactSubOption', icon: '📢', label: '本部連絡サブ選択肢' },
   { id: 'group', icon: '🏷', label: 'グループ構成' },
   { id: 'stdtime', icon: '⏱', label: '標準時間' },
   { id: 'skill', icon: '📊', label: '担当者スキル' },
