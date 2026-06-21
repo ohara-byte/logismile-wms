@@ -69,6 +69,15 @@ type ScanResult = 'matched' | 'over_scan' | 'not_found' | 'already_done';
 type FlashColor = 'green' | 'red' | 'blue' | null;
 
 /**
+ * ⑤（2026-06-21）手打ち数量の自動保留しきい値（ms）。
+ *   スキャン入力に短い数字（1〜3桁）だけが残り、この時間タイプが止まったら
+ *   「次スキャン用の保留数量」に変換する（Enter不要・数量→スキャンで確定）。
+ *   - スキャナのJANは末尾Enterで一瞬で確定するため、この「止まった状態」にならず誤変換しない。
+ *   - 値が小さいほど早く保留化／大きいほど多桁を打ちやすい。現場の打鍵速度に合わせ調整可。
+ */
+const QTY_IDLE_MS = 400;
+
+/**
  * 検品済（強制OK / 数量到達）行を末尾に並べ替えて返す。
  *   - ユーザー要望（2026-05-20）: 点数多い伝票で未検品の見切れを防ぐため
  *   - 安定ソート（同状態内は元の id 順を保持）
@@ -188,6 +197,29 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
       scanInputRef.current?.focus();
     }
   }, [showNotices, showFinalCheck]);
+
+  // ⑤（2026-06-21）手打ち数量 → 自動で「保留数量」へ。
+  //   スキャン入力に短い数字（1〜3桁）だけが残り QTY_IDLE_MS 止まったら、それを次スキャン用の
+  //   数量として保留し、入力枠を空にする（Enter不要・数量→そのままJANスキャンで確定）。
+  //   - 各キー入力でタイマーを張り直すため、続けて打った桁（例 12）は1つの数量にまとまる。
+  //   - スキャナのJANは末尾Enterで即 onScan され入力がクリアされるので、この変換は発火しない。
+  //   - 4桁以上・非数字は対象外（JAN等を数量化しない）。連続スキャンは従来どおり。
+  useEffect(() => {
+    if (allInspected || !sessionId) return;
+    if (!/^\d{1,3}$/.test(scanInput)) return;
+    const digits = scanInput;
+    const timer = setTimeout(() => {
+      setPendingQty((prev) => {
+        const n = parseInt(digits, 10);
+        // 通常は prev=null（打った数字がそのまま数量）。しきい値より遅い打鍵で分割された場合は桁を継ぐ。
+        const combined = prev != null ? prev * 10 ** digits.length + n : n;
+        return combined > 999 ? n : combined; // 上限999・あふれは打ち直し
+      });
+      setScanInput('');
+      scanInputRef.current?.focus();
+    }, QTY_IDLE_MS);
+    return () => clearTimeout(timer);
+  }, [scanInput, allInspected, sessionId]);
 
   // D-1: 商品検品完了で最終チェックモーダルを自動展開
   useEffect(() => {
