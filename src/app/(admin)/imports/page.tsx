@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { StatCard } from '@/components/ui/stat-card';
 import { Table, THead, TBody, TR, TH, TD, EmptyRow } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
+import { MasterImportPanel } from './_components/master-import-panel';
 
 interface ImportRecord {
   id: number;
@@ -199,6 +200,9 @@ export default function ImportsPage() {
           Thomas（基幹）出力 商品マスタCSV / 出荷指示CSV をアップロード（種別自動判定）
         </p>
       </header>
+
+      {/* 基幹マスタ取込（箱・構成・標準時間・のし/エアパック設定の素地）— 2026-06-22 */}
+      <MasterImportPanel />
 
       {/* K-2: ドラッグ＆ドロップ ゾーン */}
       <Panel>

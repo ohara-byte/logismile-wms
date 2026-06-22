@@ -15,6 +15,7 @@ export type MasterSubTabId =
   | 'noshiExclusion'
   | 'qrForceKeyword'
   | 'contactSubOption'
+  | 'appSetting'
   | 'group'
   | 'stdtime'
   | 'skill'
@@ -48,6 +49,8 @@ export const MASTER_SUBTABS: MasterSubTabDef[] = [
   { id: 'qrForceKeyword', icon: '🖨', label: 'QR印刷強制' },
   // ②（2026-06-21）: 本部連絡の分類別サブ選択肢ボタンを管理
   { id: 'contactSubOption', icon: '📢', label: '本部連絡サブ選択肢' },
+  // 2026-06-22: 梱包時間の全体設定（のし/エアパック加算秒・判定語）
+  { id: 'appSetting', icon: '⚙', label: '梱包時間設定' },
   { id: 'group', icon: '🏷', label: 'グループ構成' },
   { id: 'stdtime', icon: '⏱', label: '標準時間' },
   { id: 'skill', icon: '📊', label: '担当者スキル' },

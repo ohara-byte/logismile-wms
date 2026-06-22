@@ -13,6 +13,7 @@ import { carrierAliasConfig } from './carrier-alias-config';
 import { noshiExclusionConfig } from './noshi-exclusion-config';
 import { qrForceKeywordConfig } from './qr-force-keyword-config';
 import { contactSubOptionConfig } from './contact-sub-option-config';
+import { appSettingConfig } from './app-setting-config';
 import { boxConfig } from './box-config';
 import { deviceConfig } from './device-config';
 import { productConfig } from './product-config';
@@ -35,6 +36,7 @@ const REGISTRY: Partial<Record<MasterSubTabId, MasterConfig<Record<string, unkno
   noshiExclusion: noshiExclusionConfig as unknown as MasterConfig<Record<string, unknown>>,
   qrForceKeyword: qrForceKeywordConfig as unknown as MasterConfig<Record<string, unknown>>,
   contactSubOption: contactSubOptionConfig as unknown as MasterConfig<Record<string, unknown>>,
+  appSetting: appSettingConfig as unknown as MasterConfig<Record<string, unknown>>,
   group: groupConfig as unknown as MasterConfig<Record<string, unknown>>,
   stdtime: stdTimeConfig as unknown as MasterConfig<Record<string, unknown>>,
   skill: skillConfig as unknown as MasterConfig<Record<string, unknown>>,

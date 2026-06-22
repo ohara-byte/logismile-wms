@@ -30,12 +30,22 @@ interface SetComp extends Record<string, unknown> {
   fixedBoxCode: string | null;
   fixedBoxName: string | null;
   packingNote: string | null;
+  stdSec: number | null;
+  setKind: string | null;
+  stdSecSource: string | null;
   childCount: number;
   children: SetCompChildSummary[];
   childrenSummary: string;
   totalStdSec: number;
   note: string | null;
   updatedAt: string;
+}
+
+/** 秒 → 「m分s秒」 */
+function fmtMmss(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? `${m}分${s}秒` : `${s}秒`;
 }
 
 const config: MasterConfig<SetComp> = {
@@ -112,11 +122,22 @@ const config: MasterConfig<SetComp> = {
       width: 60,
     },
     {
-      key: 'totalStdSec',
-      label: '標準時間',
+      key: 'stdSec',
+      label: 'セット標準時間',
       align: 'right',
       mono: true,
-      width: 90,
+      width: 110,
+      render: (r) =>
+        typeof r.stdSec === 'number' && r.stdSec > 0
+          ? `${fmtMmss(r.stdSec)}${r.stdSecSource === 'manual' ? ' ✋' : ''}`
+          : '—',
+    },
+    {
+      key: 'totalStdSec',
+      label: '子合算',
+      align: 'right',
+      mono: true,
+      width: 80,
       render: (r) =>
         typeof r.totalStdSec === 'number' && r.totalStdSec > 0
           ? `${r.totalStdSec}s`
@@ -141,6 +162,23 @@ const config: MasterConfig<SetComp> = {
       ],
     },
     { name: 'fixedBoxCode', label: '推奨箱コード', type: 'text', helpText: '箱マスタの code を指定' },
+    {
+      name: 'stdSec',
+      label: 'セット標準時間(秒)',
+      type: 'number',
+      min: 0,
+      helpText: '終了予測の主軸。手入力すると取込で上書きされません（✋表示）',
+    },
+    {
+      name: 'setKind',
+      label: 'セット種別',
+      type: 'select',
+      options: [
+        { value: 'bokujo', label: '牧場セット' },
+        { value: 'hanpukai', label: '頒布会' },
+        { value: 'other', label: 'その他' },
+      ],
+    },
     { name: 'packingNote', label: '梱包メモ', type: 'textarea' },
     { name: 'note', label: '備考', type: 'textarea' },
   ],

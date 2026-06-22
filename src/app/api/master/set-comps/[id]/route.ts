@@ -10,6 +10,9 @@ const Body = z.object({
   type: z.enum(['set', 'koudoku', 'noshi', 'other']).default('set'),
   fixedBoxCode: z.string().max(30).nullable().optional(),
   packingNote: z.string().nullable().optional(),
+  // セット梱包標準時間（秒）。UI更新時は手動値として保護（2026-06-22）
+  stdSec: z.coerce.number().int().min(0).nullable().optional(),
+  setKind: z.enum(['bokujo', 'hanpukai', 'other']).nullable().optional(),
   note: z.string().nullable().optional(),
 });
 
@@ -29,7 +32,12 @@ export async function PUT(
   }
   const id = decodeURIComponent(params.id);
   try {
-    const updated = await prisma.setComp.update({ where: { id }, data: parsed.data });
+    const data = {
+      ...parsed.data,
+      // 標準時間をUIで更新したら手動値として保護（取込で上書きさせない）
+      stdSecSource: parsed.data.stdSec != null ? 'manual' : undefined,
+    };
+    const updated = await prisma.setComp.update({ where: { id }, data });
     return NextResponse.json({ data: updated, message: 'OK' });
   } catch {
     return NextResponse.json(

@@ -16,6 +16,9 @@ const Body = z.object({
   type: z.enum(['set', 'koudoku', 'noshi', 'other']).default('set'),
   fixedBoxCode: z.string().max(30).nullable().optional(),
   packingNote: z.string().nullable().optional(),
+  // セット梱包標準時間（秒）。UIで設定すると stdSecSource='manual' とし取込上書きから保護（2026-06-22）
+  stdSec: z.coerce.number().int().min(0).nullable().optional(),
+  setKind: z.enum(['bokujo', 'hanpukai', 'other']).nullable().optional(),
   note: z.string().nullable().optional(),
 });
 
@@ -60,6 +63,10 @@ export async function GET() {
         fixedBoxCode: s.fixedBoxCode,
         fixedBoxName: s.fixedBox?.name ?? null,
         packingNote: s.packingNote,
+        // セット標準時間（秒）＋種別＋出所（2026-06-22）
+        stdSec: s.stdSec,
+        setKind: s.setKind,
+        stdSecSource: s.stdSecSource,
         note: s.note,
         childCount: s._count.children,
         // 子商品（構成商品）情報サマリ
@@ -101,7 +108,12 @@ export async function POST(req: Request) {
     );
   }
   try {
-    const created = await prisma.setComp.create({ data: parsed.data });
+    const data = {
+      ...parsed.data,
+      // UI から標準時間を入れたら手動値として保護（取込で上書きさせない）
+      stdSecSource: parsed.data.stdSec != null ? 'manual' : undefined,
+    };
+    const created = await prisma.setComp.create({ data });
     return NextResponse.json({ data: created, message: 'OK' });
   } catch (e) {
     return maskError(
