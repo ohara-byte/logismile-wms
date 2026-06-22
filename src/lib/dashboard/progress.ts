@@ -12,6 +12,7 @@
  */
 
 import { prisma } from '../db';
+import { loadPackTimeCtx, orderExpectedSec } from './order-pack-time';
 
 export interface OverallProgress {
   date: string;
@@ -264,9 +265,28 @@ export async function getGroupProgresses(date: Date): Promise<GroupProgress[]> {
   //   どの群にも属さない文字は「未分類」群として別カードで可視化。
   const orders = await prisma.shippingOrder.findMany({
     where: { shipDate: { gte: from, lte: to }, deletedAt: null },
-    select: { pkNo: true, status: true },
+    select: {
+      pkNo: true,
+      status: true,
+      // ETA主軸化（2026-06-22）：セット標準時間＋のし/エアパック加算の算出に使う
+      noshiName: true,
+      items: { select: { productCode: true } },
+    },
   });
   const totalOrders = orders.length;
+
+  // 梱包時間コンテキスト（AppSetting + セット標準時間署名）を1回ロード
+  const packCtx = await loadPackTimeCtx();
+  // グループ平均stdMin（フォールバック用）を先に確定
+  const stdMinByGroup = new Map<string, number>();
+  for (const g of groups) {
+    stdMinByGroup.set(
+      g.id,
+      g.stdTimes.length > 0
+        ? g.stdTimes.reduce((s, st) => s + Number(st.stdMin), 0) / g.stdTimes.length
+        : 2.0,
+    );
+  }
 
   // テーブル文字 → groupId のマップ（groups は sortOrder, id 昇順）。
   //   同一文字が複数群にある場合は先勝ち（id 昇順なので単品群 'K' が 'SAS' より先に確定）。
@@ -284,13 +304,24 @@ export async function getGroupProgresses(date: Date): Promise<GroupProgress[]> {
   };
 
   // plan = 群に属する伝票数、done = うち packed|shipped 数（伝票自体のグループで集計）
+  // remainingExpectedSec = 未完了伝票の「セット標準時間＋のし/エアパック加算」合計（ETA主軸）
   const planByGroup = new Map<string, number>();
   const doneByGroup = new Map<string, number>();
+  const remainingExpectedSecByGroup = new Map<string, number>();
   for (const o of orders) {
     const gid = groupOfOrder(o.pkNo);
     planByGroup.set(gid, (planByGroup.get(gid) ?? 0) + 1);
     if (o.status === 'packed' || o.status === 'shipped') {
       doneByGroup.set(gid, (doneByGroup.get(gid) ?? 0) + 1);
+    } else {
+      const fallbackSec = (stdMinByGroup.get(gid) ?? 2.0) * 60;
+      const sec = orderExpectedSec(
+        packCtx,
+        o.items.map((it) => it.productCode),
+        o.noshiName,
+        fallbackSec,
+      );
+      remainingExpectedSecByGroup.set(gid, (remainingExpectedSecByGroup.get(gid) ?? 0) + sec);
     }
   }
   void totalOrders;
@@ -302,12 +333,7 @@ export async function getGroupProgresses(date: Date): Promise<GroupProgress[]> {
     const assignedStaff = a.count;
     const skillCoef = assignedStaff > 0 ? a.skillCoefSum / assignedStaff : 1.0;
 
-    const stdMin =
-      g.stdTimes.length > 0
-        ? g.stdTimes.reduce((s, st) => s + Number(st.stdMin), 0) / g.stdTimes.length
-        : 2.0;
-    const hourlyCapacityPerStaff = stdMin > 0 ? (60 / stdMin) * skillCoef : 0;
-    const hourlyCapacity = Math.round(assignedStaff * hourlyCapacityPerStaff);
+    const groupStdMin = stdMinByGroup.get(g.id) ?? 2.0;
 
     const plan = planByGroup.get(g.id) ?? 0;
     const doneRaw = doneByGroup.get(g.id) ?? 0;
@@ -315,14 +341,25 @@ export async function getGroupProgresses(date: Date): Promise<GroupProgress[]> {
     const remaining = Math.max(0, plan - done);
     const progressRate = plan > 0 ? Math.round((done / plan) * 100) : 0;
 
+    // 残作業の予定分 = Σ(セット標準時間＋のし/エアパック加算)。
+    //   データが無ければ従来どおり 残件数×グループstdMin にフォールバック（回帰なし）。
+    const remainingExpectedSec = remainingExpectedSecByGroup.get(g.id) ?? 0;
+    const remainingExpectedMin =
+      remainingExpectedSec > 0 ? remainingExpectedSec / 60 : remaining * groupStdMin;
+    // 表示用 stdMin = 1件あたり平均予定分（ツールチップ）。残ゼロ時はグループstdMin。
+    const stdMin =
+      remaining > 0 ? Math.round((remainingExpectedMin / remaining) * 100) / 100 : groupStdMin;
+    const hourlyCapacityPerStaff = stdMin > 0 ? (60 / stdMin) * skillCoef : 0;
+    const hourlyCapacity = Math.round(assignedStaff * hourlyCapacityPerStaff);
+
     let etaTime: string | null = null;
     let etaRemainingMin: number | null = null;
     let etaStatus: GroupProgress['etaStatus'] = null;
 
     if (remaining === 0) {
       etaStatus = 'done';
-    } else if (assignedStaff > 0 && stdMin > 0 && skillCoef > 0) {
-      const needMin = Math.ceil((remaining * stdMin) / (assignedStaff * skillCoef));
+    } else if (assignedStaff > 0 && skillCoef > 0) {
+      const needMin = Math.ceil(remainingExpectedMin / (assignedStaff * skillCoef));
       etaRemainingMin = needMin;
       const eta = new Date(now.getTime() + needMin * 60 * 1000);
       etaTime = fmtTime(eta);

@@ -44,6 +44,8 @@ model Product {
   /// 発送可能賞味期限（日数）。工場(/delivery)からの shippableExpiryDays を保存。
   /// 在庫検品の完了後バナーで「入庫日 + 日数 - 1」の発送可能日を算出（A・2026-06-12）。
   shippableExpiryDays Int? @map("shippable_expiry_days")
+  /// カタログ商品番号（例 700-01）。構成商品サイズ一覧との突合キー（JAN軸ファイルで紐付け・2026-06-22）
+  catalogNo String? @map("catalog_no") @db.VarChar(30)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -55,6 +57,7 @@ model Product {
   @@index([jan])
   @@index([cat])
   @@index([productType])
+  @@index([catalogNo])
   @@map("products")
 }
 
@@ -192,6 +195,12 @@ model SetComp {
   type         String   @db.VarChar(20)
   fixedBoxCode String?  @map("fixed_box_code") @db.VarChar(30)
   packingNote  String?  @map("packing_note") @db.Text
+  /// セット梱包標準時間（秒）。ダッシュボード終了予測(ETA)の主ドライバ。null=フォールバック（2026-06-22）
+  stdSec       Int?     @map("std_sec")
+  /// セット種別：bokujo（牧場セット）/ hanpukai（頒布会）/ other
+  setKind      String?  @map("set_kind") @db.VarChar(20)
+  /// stdSec の出所：imported（取込）/ manual（UI手入力）。再取込で手動値を保護
+  stdSecSource String?  @map("std_sec_source") @db.VarChar(10)
   note         String?  @db.Text
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
@@ -199,6 +208,7 @@ model SetComp {
   fixedBox Box?           @relation(fields: [fixedBoxCode], references: [code])
   children SetCompChild[]
 
+  @@index([parentCode])
   @@map("set_comps")
 }
 
@@ -232,11 +242,14 @@ model Box {
   noshi          Boolean  @default(false)
   targetProducts String[] @default([]) @map("target_products")
   priority       Int      @default(50)
+  /// 箱自身の田舎主義(Thomas)商品コード。BOMの子Codeと突合してセットの固定箱を判定（2026-06-22）
+  thomasCode     String?  @map("thomas_code") @db.VarChar(20)
   note           String?  @db.Text
 
   setComps     SetComp[]
   inspSessions InspSession[]
 
+  @@index([thomasCode])
   @@map("boxes")
 }
 
@@ -329,6 +342,20 @@ model ContactSubOption {
   @@unique([category, label])
   @@index([category, active, sortOrder])
   @@map("contact_sub_options")
+}
+
+/// 6-6. アプリ設定（key-value）。梱包時間の全体設定など（2026-06-22）。
+///   pack.noshi_add_sec / pack.airpack_add_sec（秒）, pack.airpack_keyword（熨斗名称内の判定語）
+model AppSetting {
+  key       String   @id @db.VarChar(50)
+  value     String   @db.VarChar(200)
+  valueType String   @default("string") @map("value_type") @db.VarChar(10)
+  label     String?  @db.VarChar(100)
+  note      String?  @db.Text
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  updatedBy String?  @map("updated_by") @db.VarChar(10)
+
+  @@map("app_settings")
 }
 
 /// 7. 担当者マスタ
