@@ -144,6 +144,9 @@ const config: MasterConfig<SetComp> = {
           : '—',
     },
     { key: 'updatedAt', label: '更新', mono: true, width: 90 },
+    // 2026-06-23: 子商品コード＋商品名をまとめた文字列を hidden 列にして、
+    //   検索（商品名検索）の対象に含める（表示はしない）。
+    { key: 'childrenSummary', label: '構成', hidden: true },
   ],
   formFields: [
     { name: 'id', label: 'ID', type: 'text', required: true, readonlyOnEdit: true, helpText: 'ユニーク (例: SET-OE-2024)' },

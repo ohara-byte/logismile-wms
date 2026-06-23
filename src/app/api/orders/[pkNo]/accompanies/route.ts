@@ -69,11 +69,15 @@ export async function GET(
   scored.sort((a, b) => Number(b.exact) - Number(a.exact) || b.overlap - a.overlap);
   const best = scored[0]?.setComp ?? null;
 
-  // 同梱物（noshi / pamphlet / addon タイプの set_comps）
-  // 簡易: best に紐づく noshi 等を別途取得（type=noshi/pamphlet/addon に絞った検索）
+  // 同梱物チェックリスト（最終チェックモーダルの ☑ 対象）。
+  //   2026-06-23: 親商品セット本体（type='set'）は「確認すべき同梱物」ではないため除外する。
+  //   基幹マスタ統合で全セットが set_comps に載った結果、検品完了時に
+  //   セット本体が同梱物チェックとして毎回出て余分な工数になっていた不具合の解消。
+  //   ※固定箱・梱包メモは下の setComp で別途返すため、表示自体は失われない。
+  //   genuine な同梱物（のし/パンフ等の非set）が best になった場合のみチェック対象に含める。
   const accompanies: Array<{ id: string; type: string; name: string; packingNote: string | null }> =
     [];
-  if (best) {
+  if (best && best.type !== 'set') {
     accompanies.push({
       id: best.id,
       type: best.type,
