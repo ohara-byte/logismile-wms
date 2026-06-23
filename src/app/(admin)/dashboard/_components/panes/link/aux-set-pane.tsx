@@ -11,8 +11,10 @@
  *   - 子商品コード（カンマ区切り）／子商品名／子点数／標準時間（合計秒）
  */
 
+import { useMemo, useState } from 'react';
 import { MasterTable } from '../master/master-table';
 import type { MasterConfig } from '../master/master-types';
+import { SetChildrenModal } from './set-children-modal';
 
 interface SetCompChildSummary {
   id: number;
@@ -48,7 +50,8 @@ function fmtMmss(sec: number): string {
   return m > 0 ? `${m}分${s}秒` : `${s}秒`;
 }
 
-const config: MasterConfig<SetComp> = {
+function buildConfig(onEditChildren: (row: SetComp) => void): MasterConfig<SetComp> {
+  return {
   name: 'aux-set',
   title: '🎁 親商品（構成＋同梱品）',
   icon: '🎁',
@@ -143,6 +146,20 @@ const config: MasterConfig<SetComp> = {
           ? `${r.totalStdSec}s`
           : '—',
     },
+    {
+      key: '__editChildren',
+      label: '構成品',
+      width: 80,
+      render: (r) => (
+        <button
+          type="button"
+          onClick={() => onEditChildren(r)}
+          className="text-xs text-status-info hover:underline font-bold"
+        >
+          ✎ 編集
+        </button>
+      ),
+    },
     { key: 'updatedAt', label: '更新', mono: true, width: 90 },
     // 2026-06-23: 子商品コード＋商品名をまとめた文字列を hidden 列にして、
     //   検索（商品名検索）の対象に含める（表示はしない）。
@@ -186,8 +203,39 @@ const config: MasterConfig<SetComp> = {
     { name: 'note', label: '備考', type: 'textarea' },
   ],
   initialValues: { type: 'set' },
-};
+  };
+}
 
 export function AuxSetPane() {
-  return <MasterTable config={config as unknown as MasterConfig<Record<string, unknown>>} />;
+  // ✎構成品 編集対象（モーダル）と、保存後にMasterTableを再読込するためのkey
+  const [editTarget, setEditTarget] = useState<SetComp | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const config = useMemo(() => buildConfig((row) => setEditTarget(row)), []);
+
+  return (
+    <>
+      <MasterTable
+        key={reloadKey}
+        config={config as unknown as MasterConfig<Record<string, unknown>>}
+      />
+      {editTarget && (
+        <SetChildrenModal
+          setCompId={editTarget.id}
+          parentCode={editTarget.parentCode}
+          parentName={editTarget.parentName}
+          initialChildren={editTarget.children.map((c) => ({
+            childCode: c.childCode,
+            childName: c.childName,
+            qty: c.qty,
+          }))}
+          onClose={() => setEditTarget(null)}
+          onSaved={() => {
+            setEditTarget(null);
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      )}
+    </>
+  );
 }
