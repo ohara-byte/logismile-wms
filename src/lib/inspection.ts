@@ -18,14 +18,55 @@
  *   ※ 商品コードの完全一致スキャンは従来どおり「その単一明細」を対象とする。
  */
 
-export type ScanResult = 'matched' | 'over_scan' | 'not_found' | 'already_done';
+export type ScanResult =
+  | 'matched'
+  | 'over_scan'
+  | 'not_found'
+  | 'already_done'
+  // ラッピング代替バーコード関連（2026-06-23）
+  | 'wrap_none' // 代替バーコードは現在伝票に一致したが、ラッピング明細が無い
+  | 'wrong_order'; // 数字バーコードが別伝票のコアに一致（取り違え）
 
 export interface OrderItem {
   id: number;
   productCode: string;
   product: { jan: string | null };
+  /** 商品名（ラッピング判定に使用。2026-06-23） */
+  productName?: string;
   qty: number;
   scannedQty: number;
+}
+
+/** ピッキング№から先頭の作業テーブル英字（SA/SO等）を除いた「コア」を返す。 */
+export function stripPkPrefix(pkNo: string): string {
+  return pkNo.replace(/^[A-Za-z]+/, '');
+}
+
+/** 既定のラッピング商品 判定プレフィックス（商品名の先頭）。 */
+export const DEFAULT_WRAPPING_PREFIX = 'ラッピング';
+
+/** 商品名の先頭が prefix か（NFKC正規化＋大小無視で前方一致）。 */
+function isWrappingName(name: string | undefined, prefix: string): boolean {
+  if (!name) return false;
+  const norm = (s: string) => s.normalize('NFKC').trim().toUpperCase();
+  return norm(name).startsWith(norm(prefix));
+}
+
+/** JAN 昇順（数値的）。null は最後。 */
+function compareJanAsc(a: OrderItem, b: OrderItem): number {
+  const ja = a.product.jan;
+  const jb = b.product.jan;
+  if (ja == null && jb == null) return 0;
+  if (ja == null) return 1;
+  if (jb == null) return -1;
+  return ja.localeCompare(jb, undefined, { numeric: true });
+}
+
+export interface JudgeOptions {
+  /** 現在開いている伝票のコア（pkNoから先頭英字を除いた値）。数字バーコード照合に使う。 */
+  orderCore?: string;
+  /** ラッピング商品 判定プレフィックス（商品名の先頭）。 */
+  wrappingPrefix?: string;
 }
 
 /** 単一明細に対する加算判定（商品コード一致・JANプール内の対象明細で共用）。 */
@@ -44,14 +85,32 @@ function judgeForItem(
   return { result: 'matched', itemId: item.id, nextScannedQty: next };
 }
 
-/** スキャン値（JAN または 商品コード）に該当する明細を見つけて結果区分を返す。 */
+/** スキャン値（JAN／商品コード／ラッピング代替バーコード）に該当する明細を判定する。 */
 export function judgeScan(
   items: OrderItem[],
   scanValue: string,
   qty: number,
+  opts: JudgeOptions = {},
 ): { result: ScanResult; itemId?: number; nextScannedQty?: number } {
   const v = scanValue.trim();
   if (!v) return { result: 'not_found' };
+
+  // ⓪ ラッピング代替バーコード（2026-06-23）：
+  //   ピッキング№は先頭に作業テーブル英字（SA/SO等）が付く。ラッピング商品に貼った
+  //   代替バーコードはその英字を除いた「数字コア」。数字始まり かつ 現在伝票のコアと一致なら、
+  //   未完了のラッピング明細（商品名が prefix で始まる）へ JAN 昇順で 1 個割当てる。
+  //   ※同梱のため厳密な商品特定はしない（ユーザー方針）。英字始まり=ピッキング№は対象外。
+  if (opts.orderCore && /^[0-9]/.test(v) && v === opts.orderCore) {
+    const prefix = opts.wrappingPrefix ?? DEFAULT_WRAPPING_PREFIX;
+    const wraps = items.filter((i) => isWrappingName(i.productName, prefix));
+    if (wraps.length === 0) return { result: 'wrap_none' };
+    const remaining = wraps.filter((i) => i.scannedQty < i.qty).sort(compareJanAsc);
+    if (remaining.length === 0) {
+      // ラッピング明細はあるが全完了
+      return { result: 'already_done', itemId: wraps[0].id };
+    }
+    return judgeForItem(remaining[0], qty);
+  }
 
   // ① 商品コードの完全一致を優先 → その単一明細を対象（数量手入力等で使用）
   const byCode = items.find((i) => i.productCode === v);

@@ -72,7 +72,7 @@ interface Props {
   } | null;
 }
 
-type ScanResult = 'matched' | 'over_scan' | 'not_found' | 'already_done';
+type ScanResult = 'matched' | 'over_scan' | 'not_found' | 'already_done' | 'wrap_none' | 'wrong_order';
 type FlashColor = 'green' | 'red' | 'blue' | null;
 
 const FLOW_STEPS = ['ピッキング№', '商品検品', '納品書№'] as const;
@@ -317,6 +317,12 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
           triggerFlash('blue');
           playError();
         } else {
+          // ラッピング代替バーコード（2026-06-23）の専用メッセージ
+          if (j.data.result === 'wrong_order') {
+            setErrorMsg('⚠ 別伝票のラッピング商品です（この伝票には入れないでください）');
+          } else if (j.data.result === 'wrap_none') {
+            setErrorMsg('この伝票にラッピング商品はありません');
+          }
           triggerFlash('red');
           playError();
         }
@@ -1771,6 +1777,8 @@ function ScanResultBanner({ result }: { result: ScanResult }) {
     over_scan: { text: '⚠ OVER SCAN（数量超過）', color: '#ef4444' },
     not_found: { text: '✗ NOT FOUND（マスタ未登録）', color: '#ef4444' },
     already_done: { text: 'ℹ ALREADY DONE', color: '#3b82f6' },
+    wrap_none: { text: '✗ ラッピング商品なし', color: '#ef4444' },
+    wrong_order: { text: '⚠ 別伝票のラッピング商品', color: '#ef4444' },
   };
   const m = map[result];
   return (

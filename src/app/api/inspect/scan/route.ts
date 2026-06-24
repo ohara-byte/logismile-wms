@@ -15,7 +15,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole, ownsSession } from '@/lib/auth/permissions';
-import { judgeScan } from '@/lib/inspection';
+import { judgeScan, stripPkPrefix } from '@/lib/inspection';
 
 const Body = z.object({
   sessionId: z.string().min(1),
@@ -45,6 +45,7 @@ export async function POST(req: Request) {
     include: {
       order: {
         include: {
+          // productName（item側スナップショット）でラッピング判定（2026-06-23）
           items: {
             include: { product: { select: { jan: true } } },
           },
@@ -68,15 +69,41 @@ export async function POST(req: Request) {
     );
   }
 
-  const judge = judgeScan(session.order.items, parsed.data.scanValue, parsed.data.qty);
+  // ラッピング代替バーコード（2026-06-23）：ピッキング№コア（pkNoの先頭英字除去）と数字バーコードを照合。
+  const sv = parsed.data.scanValue.trim();
+  const orderCore = stripPkPrefix(session.order.pkNo);
+  const isWrapTrigger = /^[0-9]/.test(sv) && sv === orderCore;
+  // ラッピング判定語は既定「ラッピング」。設定があれば上書き（ラッピング経路のときだけ参照＝通常スキャンに負荷を足さない）。
+  let wrappingPrefix: string | undefined;
+  if (isWrapTrigger) {
+    const setting = await prisma.appSetting.findUnique({
+      where: { key: 'pack.wrapping_prefix' },
+      select: { value: true },
+    });
+    wrappingPrefix = setting?.value?.trim() || undefined;
+  }
+
+  let judge = judgeScan(session.order.items, sv, parsed.data.qty, { orderCore, wrappingPrefix });
+
+  // 取り違え検知：数字始まりで該当なし → 別伝票のコアに一致するか（=他注文のラッピング商品）。
+  if (judge.result === 'not_found' && /^[0-9]/.test(sv) && sv !== orderCore) {
+    const other = await prisma.shippingOrder.findFirst({
+      where: { pkNo: { endsWith: sv }, deletedAt: null },
+      select: { pkNo: true },
+    });
+    if (other && stripPkPrefix(other.pkNo) === sv && other.pkNo !== session.order.pkNo) {
+      judge = { result: 'wrong_order' };
+    }
+  }
 
   // 書き込みを並列化（⑤ 微最適化）：ログ作成と明細更新は独立のため Promise.all で1往復に集約。
-  //   ログは必ず残す（matched / over / not_found / already_done すべて）。
+  //   ログは必ず残す。ラッピング代替バーコードでの割当は type=wrap_pkno で区別（監査）。
+  const logType = isWrapTrigger && judge.result === 'matched' ? 'wrap_pkno' : 'scan';
   const writes: Promise<unknown>[] = [
     prisma.inspLog.create({
       data: {
         sessionId: session.id,
-        type: 'scan',
+        type: logType,
         itemCode: parsed.data.scanValue,
         qty: parsed.data.qty,
         note: judge.result,

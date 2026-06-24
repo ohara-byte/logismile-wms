@@ -65,7 +65,7 @@ interface Props {
   } | null;
 }
 
-type ScanResult = 'matched' | 'over_scan' | 'not_found' | 'already_done';
+type ScanResult = 'matched' | 'over_scan' | 'not_found' | 'already_done' | 'wrap_none' | 'wrong_order';
 type FlashColor = 'green' | 'red' | 'blue' | null;
 
 /**
@@ -393,6 +393,12 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
           triggerFlash('blue');
           playError();
         } else {
+          // ラッピング代替バーコード（2026-06-23）の専用メッセージ
+          if (j.data.result === 'wrong_order') {
+            setErrorMsg('⚠ 別伝票のラッピング商品です（この伝票に入れないこと）');
+          } else if (j.data.result === 'wrap_none') {
+            setErrorMsg('この伝票にラッピング商品はありません');
+          }
           triggerFlash('red');
           playError();
         }
@@ -1306,6 +1312,8 @@ function ScanResultBanner({ result }: { result: ScanResult }) {
     over_scan: { text: '⚠ OVER SCAN', cls: 'text-status-error' },
     not_found: { text: '✗ NOT FOUND', cls: 'text-status-error' },
     already_done: { text: 'ℹ ALREADY DONE', cls: 'text-status-info' },
+    wrap_none: { text: '✗ ラッピング無し', cls: 'text-status-error' },
+    wrong_order: { text: '⚠ 別伝票の商品', cls: 'text-status-error' },
   };
   const m = map[result];
   return <div className={cn('text-2xs font-bold', m.cls)}>{m.text}</div>;

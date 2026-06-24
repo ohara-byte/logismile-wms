@@ -85,3 +85,70 @@ test('JANプール: 片方が既に満杯なら残数のある明細へ', () => 
   assert.equal(r.itemId, 2);
   assert.equal(r.nextScannedQty, 2);
 });
+
+// ── ラッピング代替バーコード（2026-06-23）──
+const mkw = (
+  id: number,
+  productCode: string,
+  jan: string | null,
+  qty: number,
+  scannedQty: number,
+  productName: string,
+): OrderItem => ({ id, productCode, product: { jan }, productName, qty, scannedQty });
+
+const CORE = '01208680006'; // pkNo 'SA01208680006' の先頭英字を除いたコア
+
+test('ラッピング: 数字コア一致 → ラッピング明細をJAN昇順で割当', () => {
+  const items = [
+    mkw(1, 'P-1', '49002', 1, 0, 'ラッピング 黒毛和牛'),
+    mkw(2, 'P-2', '49001', 1, 0, 'ラッピング 天美卵'),
+    mkw(3, 'P-3', '49003', 1, 0, '通常商品'),
+  ];
+  const r = judgeScan(items, CORE, 1, { orderCore: CORE });
+  assert.equal(r.result, 'matched');
+  assert.equal(r.itemId, 2, 'JAN昇順=49001(id2)が先頭');
+  assert.equal(r.nextScannedQty, 1);
+});
+
+test('ラッピング: 2個目はJAN昇順で次の未完了明細', () => {
+  const items = [
+    mkw(1, 'P-1', '49002', 1, 0, 'ラッピングA'),
+    mkw(2, 'P-2', '49001', 1, 1, 'ラッピングB'), // 49001は完了済
+  ];
+  const r = judgeScan(items, CORE, 1, { orderCore: CORE });
+  assert.equal(r.itemId, 1, '49001完了→次は49002(id1)');
+});
+
+test('ラッピング: 明細が無ければ wrap_none', () => {
+  const items = [mkw(1, 'P-1', '49001', 1, 0, '通常商品')];
+  assert.equal(judgeScan(items, CORE, 1, { orderCore: CORE }).result, 'wrap_none');
+});
+
+test('ラッピング: 全完了後は already_done', () => {
+  const items = [mkw(1, 'P-1', '49001', 1, 1, 'ラッピングA')];
+  assert.equal(judgeScan(items, CORE, 1, { orderCore: CORE }).result, 'already_done');
+});
+
+test('ラッピング: 英字始まり(全pkNo)は発火せず通常照合(=not_found)', () => {
+  const items = [mkw(1, 'P-1', '49001', 1, 0, 'ラッピングA')];
+  const r = judgeScan(items, 'SA01208680006', 1, { orderCore: CORE });
+  assert.equal(r.result, 'not_found');
+});
+
+test('ラッピング: コア不一致の数字は通常JAN照合に流れる', () => {
+  const items = [mkw(1, 'P-1', '49001', 1, 0, 'ラッピングA')];
+  const r = judgeScan(items, '49001', 1, { orderCore: CORE });
+  assert.equal(r.result, 'matched');
+  assert.equal(r.itemId, 1);
+});
+
+test('ラッピング: 半角カナの商品名でも前方一致(NFKC正規化)', () => {
+  const items = [mkw(1, 'P-1', '49001', 1, 0, 'ﾗｯﾋﾟﾝｸﾞ半角')];
+  assert.equal(judgeScan(items, CORE, 1, { orderCore: CORE }).result, 'matched');
+});
+
+test('ラッピング: orderCore 未指定なら従来動作（数字はJAN照合のみ）', () => {
+  const items = [mkw(1, 'P-1', '49001', 1, 0, 'ラッピングA')];
+  // orderCore を渡さない＝既存呼び出し互換。CORE はJANでないので not_found。
+  assert.equal(judgeScan(items, CORE, 1).result, 'not_found');
+});
