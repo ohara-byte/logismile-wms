@@ -96,6 +96,11 @@ export async function POST(req: Request) {
     try {
       await createDraftInstructionsFromShortages(aggregateShortages, {
         requestedBy: guard.auth.staffCode ?? null,
+        // 在庫検品(ハンディ)から自動で高頻度に叩かれる経路のため、アラートは出さない。
+        //   Sprint Y-13 で import 経路は createAlerts:false 化したが run 経路は対策漏れで
+        //   既定 true のまま→在庫検品のたびに「在庫不足」アラートが量産されていた（本対応で停止）。
+        //   不足は検品照合タブ・業務終了レポートで把握。手動「再引当」(realloc)のみアラート化。
+        createAlerts: false,
       });
       draftInstructions = aggregateShortages.length;
     } catch (e) {
