@@ -155,6 +155,65 @@ export function StockMatchPane() {
     return () => clearInterval(id);
   }, [reload]);
 
+  // ✅ 検品締め（当日締め専用）：受入検品で確定した実在庫を基準に、当日の出荷指示を
+  //    業務優先度で確定引当し、引当できなかった伝票を翌日へ繰越す一連の操作を 1 ボタンに集約。
+  //    （差分はサイレントに出荷残として残っているため、ここで初めて優先度順に確定配分される）
+  //    余剰在庫の処理は別操作（「📋 業務終了レポート」で確認）に委ねる。
+  async function runInspectionClose() {
+    if (
+      !confirm(
+        `${date} の検品を締めます。\n\n` +
+          `① 実在庫（受入検品で確定した数量）で、出荷指示を業務優先度（出荷日・運送会社cutoff・冷凍便）で再引当します（pending / held のみ・検品中は対象外）。\n` +
+          `② 引当できなかった伝票を翌日へ繰越します。\n\n` +
+          `※ 余った在庫（余剰）は別途「📋 業務終了レポート」で確認してください。\n` +
+          `この操作は元に戻せません。よろしいですか？`,
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      // ① 実在庫で優先度順に確定再引当（pending / held のみ＝検品中セッションは温存）
+      const rr = await fetch(
+        `/api/allocation/realloc?date=${date}&includeInspecting=false`,
+        { method: 'POST' },
+      );
+      const rj = await rr.json();
+      if (!rr.ok) {
+        alert(`検品締め（再引当）に失敗しました: ${rj.message ?? rr.status}`);
+        return;
+      }
+      const rd = rj.data ?? {};
+
+      // ② 引当できなかった伝票を翌日へ繰越
+      const cr = await fetch(`/api/allocation/auto-carryover?date=${date}`, {
+        method: 'POST',
+      });
+      const cj = await cr.json();
+      if (!cr.ok) {
+        alert(
+          `再引当は完了しましたが、翌日繰越に失敗しました: ${cj.message ?? cr.status}\n` +
+            `（再引当: 対象 ${rd.orderCount} 件 / 引当成功 ${rd.allocatedCount} 件 / 不足 SKU ${rd.shortageSkus} 件）`,
+        );
+        reload();
+        return;
+      }
+      const cd = cj.data ?? {};
+
+      alert(
+        `✅ 検品締め 完了（${date}）\n\n` +
+          `① 再引当：対象 ${rd.orderCount} 件 / 引当成功 ${rd.allocatedCount} 件\n` +
+          `　不足 SKU ${rd.shortageSkus} 件 → 製造指示 draft ${rd.draftInstructions} 件（追納）\n\n` +
+          `② 翌日繰越：${cd.orderCount} 件（${cd.targetDate} → ${cd.nextDate}）\n\n` +
+          `※ 余剰在庫は「📋 業務終了レポート」で確認してください。`,
+      );
+      reload();
+    } catch (e) {
+      alert(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runRealloc() {
     if (
       !confirm(
@@ -278,6 +337,15 @@ export function StockMatchPane() {
           今日
         </button>
         <div className="flex-1" />
+        <button
+          type="button"
+          onClick={runInspectionClose}
+          disabled={busy}
+          className="text-xs px-3 py-1.5 rounded border border-emerald-500 bg-emerald-900 text-emerald-100 hover:bg-emerald-800 font-bold disabled:opacity-50"
+          title="当日の検品を締める：実在庫で優先度順に確定再引当し、引当できなかった伝票を翌日へ繰越します"
+        >
+          ✅ 検品締め
+        </button>
         <button
           type="button"
           onClick={runPullback}
@@ -530,6 +598,7 @@ export function StockMatchPane() {
         ※ 15 秒ごと自動更新。 ハンディで在庫検品を実施すると即座にここへ反映されます。
         通過型 SKU は出来高反映後に自動再引当。出荷照合で残検出時は「↩ 引き戻し」で reserved を解放できます。
         不足のある SKU は「🏭 製造指示」タブで draft が自動生成されています。受注生産品は伝票引当せず、検品開始（FIFO）でプールから引当します。
+        当日の検品が完了したら「✅ 検品締め」で、実在庫を業務優先度で確定引当し、引当できなかった伝票を翌日へ繰越します（余剰在庫は「📋 業務終了レポート」で確認）。
       </p>
 
       {diffOpen && diffReport && (
