@@ -426,7 +426,7 @@ export function StockMatchPane() {
           onClick={jumpToMfg}
           className="text-xs px-3 py-1.5 rounded border border-violet-500 bg-violet-900 text-violet-100 hover:bg-violet-800 font-bold"
         >
-          🏭 製造指示タブへ
+          🏭 製造連絡タブへ
         </button>
         <button
           type="button"
@@ -674,7 +674,7 @@ export function StockMatchPane() {
       <p className="mt-2 text-3xs text-ink-muted">
         ※ 15 秒ごと自動更新。 ハンディで在庫検品を実施すると即座にここへ反映されます。
         通過型 SKU は出来高反映後に自動再引当。出荷照合で残検出時は「↩ 引き戻し」で reserved を解放できます。
-        不足のある SKU は「🏭 製造指示」タブで draft が自動生成されています。受注生産品は伝票引当せず、検品開始（FIFO）でプールから引当します。
+        不足のある SKU は「🏭 製造連絡」タブで draft が自動生成されています。受注生産品は伝票引当せず、検品開始（FIFO）でプールから引当します。
         当日の検品が完了したら「✅ 検品締め」で、実在庫を業務優先度で確定引当し、引当できなかった伝票を翌日へ繰越します（余剰在庫は「📋 業務終了レポート」で確認）。
       </p>
 

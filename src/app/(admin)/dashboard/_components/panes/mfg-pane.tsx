@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * 🏭 製造指示タブ（Sprint Z-3 → Z-4）
+ * 🏭 製造連絡タブ（Sprint Z-3 → Z-4／旧称: 製造指示）
  *
  * 仕様（Z-4）:
  *  - 状態は「検品前 / 検品中（不足）/ 検品済 / 送信済 / 完成 / 取消」（draft の派生表示）
@@ -476,7 +476,7 @@ export function MfgPane() {
                   colSpan={8}
                   className="text-center py-8 text-sm text-ink-muted"
                 >
-                  該当する製造指示はありません
+                  該当する製造連絡はありません
                 </td>
               </tr>
             )}
@@ -786,7 +786,7 @@ function EditModal({
     >
       <div className="bg-surface-panel border-2 border-accent-amber rounded-[10px] shadow-modal max-w-md w-full p-5">
         <h3 className="text-sm font-bold text-accent-amber mb-1">
-          🏭 製造指示 編集
+          🏭 製造連絡 編集
         </h3>
         <p className="text-2xs text-ink-muted mb-4">{item.instructionNo}</p>
 

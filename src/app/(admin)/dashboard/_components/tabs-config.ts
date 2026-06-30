@@ -45,7 +45,9 @@ export const TABS: TabDef[] = [
   // Sprint Z-3: 在庫引当業務の運用タブ
   // Sprint Z-4: 用語整理 — 商品検品照合 → 「検品照合」, 旧 検品照合 → 「出荷照合」
   { id: 'stockmatch', icon: '📦', label: '検品照合', badgeVariant: 'warn' },
-  { id: 'mfg', icon: '🏭', label: '製造指示', badgeVariant: 'error' },
+  // Sprint Z-9: 用語整理 — WMSは倉庫であり製造へ「指示」する立場ではないため
+  //   「製造指示」→「製造連絡」へ改称（不足を製造へ伝える＝連絡。表示ラベルのみ・内部名は mfg のまま）。
+  { id: 'mfg', icon: '🏭', label: '製造連絡', badgeVariant: 'error' },
   // Sprint Z-7: 「設定」はヘッダー（プリンタ試刷の隣）に移動。タブからは削除。
 ];
 
