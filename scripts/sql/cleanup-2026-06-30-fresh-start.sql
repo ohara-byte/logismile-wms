@@ -16,6 +16,7 @@
 --          かつ status IN ('pending','inspecting','held') かつ deleted_at IS NULL
 --
 -- 実行（本番 WMS DB / ohara 様）:
+--   ※ deleted_by / resolved_by は VARCHAR(10) 制限のため、マーカーは 'cln0630'（≤10文字）を使う。
 --   1) まず「Step 0 件数確認」だけを実行して件数を目視
 --   2) 問題なければ「Step A」「Step B」を実行
 --   ※ Step B はトランザクション。COMMIT 前に件数を確認できる。
@@ -42,7 +43,7 @@ WHERE ship_date <= DATE '2026-06-29'
 UPDATE alerts
 SET resolved = true,
     resolved_at = now(),
-    resolved_by = 'cleanup20260630'
+    resolved_by = 'cln0630'
 WHERE type = 'stock_shortage' AND resolved = false;
 
 
@@ -65,7 +66,7 @@ WHERE status = 'reserved'
 -- 2) 対象注文をソフト削除（deleted_by で後段の特定に使う）
 UPDATE shipping_orders
 SET deleted_at = now(),
-    deleted_by = 'cleanup20260630',
+    deleted_by = 'cln0630',
     delete_reason = '本格稼働前の旧出荷残クリア（6/29以前）'
 WHERE ship_date <= DATE '2026-06-29'
   AND status IN ('pending', 'inspecting', 'held')
@@ -82,13 +83,13 @@ WHERE s.product_code IN (
   SELECT DISTINCT a.product_code
   FROM allocations a
   JOIN shipping_orders o ON o.id = a.order_id
-  WHERE o.deleted_by = 'cleanup20260630'
+  WHERE o.deleted_by = 'cln0630'
 );
 
 -- 結果確認（件数が想定どおりか目視 → 問題なければ COMMIT、おかしければ ROLLBACK）
 SELECT count(*) AS cleared_orders
 FROM shipping_orders
-WHERE deleted_by = 'cleanup20260630';
+WHERE deleted_by = 'cln0630';
 
 COMMIT;
 -- ROLLBACK;  -- ← 想定外なら COMMIT の代わりにこちら
