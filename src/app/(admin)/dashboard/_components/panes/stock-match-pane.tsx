@@ -290,6 +290,49 @@ export function StockMatchPane() {
     }
   }
 
+  // ② 余剰処理（当初プラン未着手分）：業務終了レポートの「余剰在庫」から、繰越なし品の
+  //    余った在庫を在庫から除外（廃棄／戻し）。Stock.qty を減算し disposal で監査記録。
+  async function disposeSurplus(
+    productCode: string,
+    productName: string,
+    availableQty: number,
+  ) {
+    if (
+      !confirm(
+        `余剰処理：${productName}（${productCode}）\n` +
+          `利用可 ${availableQty} 個を在庫から除外します（廃棄／戻し）。\n` +
+          `この操作は元に戻せません。よろしいですか？`,
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      const r = await fetch('/api/stocks/surplus-dispose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productCode,
+          qty: availableQty,
+          reason: '業務終了レポート 余剰処理',
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        alert(`余剰処理に失敗しました: ${j.message ?? r.status}`);
+        return;
+      }
+      alert(
+        `✓ 余剰処理 完了：${productName} −${availableQty} 個（残在庫 ${j.data?.qtyAfter ?? '?'}）`,
+      );
+      await loadDiffReport();
+      reload();
+    } catch (e) {
+      alert(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function jumpToMfg() {
     const sp = new URLSearchParams(params.toString());
     sp.set('tab', 'mfg');
@@ -317,6 +360,12 @@ export function StockMatchPane() {
     warehouse: items.filter((i) => i.productType === 'warehouse').length,
     made_to_order: items.filter((i) => i.productType === 'made_to_order').length,
   };
+
+  // ① サイレント不足（出荷残）：引当が不足のまま「黙って許容」された数量の合計。
+  //    引当不足はエラーで止めず黙って出荷残にしている。その数量を当日リアルタイムで
+  //    必ず確認できるよう、合計を明示する（締め前のチェック用）。
+  const silentShortageQty = items.reduce((s, r) => s + r.shortageQty, 0);
+  const silentShortageSkus = items.filter((r) => r.shortageQty > 0).length;
 
   return (
     <div className="p-3">
@@ -387,6 +436,34 @@ export function StockMatchPane() {
         >
           🔄 更新
         </button>
+      </div>
+
+      {/* ① サイレント不足（出荷残）の可視化：黙って許容した不足の合計を当日リアルタイムで確認 */}
+      <div
+        className={`mb-2 flex items-center gap-2 rounded border px-3 py-1.5 ${
+          silentShortageQty > 0
+            ? 'border-amber-600/70 bg-amber-950/30'
+            : 'border-surface-border bg-surface-base'
+        }`}
+      >
+        <span
+          className={`text-2xs font-bold ${
+            silentShortageQty > 0 ? 'text-amber-200' : 'text-ink-subtle'
+          }`}
+        >
+          サイレント不足（出荷残）
+        </span>
+        <span
+          className={`font-mono text-lg font-bold tabular-nums leading-none ${
+            silentShortageQty > 0 ? 'text-amber-100' : 'text-ink-muted'
+          }`}
+        >
+          {silentShortageQty.toLocaleString()}
+        </span>
+        <span className="text-2xs text-ink-subtle">個 / {silentShortageSkus} SKU</span>
+        <span className="ml-2 text-3xs text-ink-muted">
+          ※ 引当不足はエラーにせず黙って出荷残にしています。検品締め前にここで数量を確認してください。
+        </span>
       </div>
 
       {/* フィルタバー */}
@@ -605,6 +682,8 @@ export function StockMatchPane() {
         <DiffReportModal
           report={diffReport}
           onClose={() => setDiffOpen(false)}
+          onDispose={disposeSurplus}
+          busy={busy}
         />
       )}
     </div>
@@ -614,9 +693,17 @@ export function StockMatchPane() {
 function DiffReportModal({
   report,
   onClose,
+  onDispose,
+  busy,
 }: {
   report: DiffReport;
   onClose: () => void;
+  onDispose: (
+    productCode: string,
+    productName: string,
+    availableQty: number,
+  ) => void;
+  busy: boolean;
 }) {
   return (
     <div
@@ -652,7 +739,7 @@ function DiffReportModal({
               tone="amber"
             />
             <SumCell
-              label="在庫だぶつき(通過型)"
+              label="余剰在庫"
               value={report.summary.surplusSkuCount}
               tone="cyan"
             />
@@ -764,10 +851,10 @@ function DiffReportModal({
             )}
           </ReportSection>
 
-          {/* (3) 在庫だぶつき */}
+          {/* (3) 余剰在庫（繰越なし品） + 余剰処理 */}
           <ReportSection
-            title={`③ 在庫だぶつき（${report.surplus.length} SKU）`}
-            description="通過型で当日加算したが消費されずに残っている在庫"
+            title={`③ 余剰在庫（${report.surplus.length} SKU）`}
+            description="繰越なし品（通過型・受注生産）で当日入庫したが消費されず残っている在庫。「余剰処理」で在庫から除外（廃棄／戻し）できます。"
           >
             {report.surplus.length === 0 ? (
               <Empty />
@@ -776,9 +863,11 @@ function DiffReportModal({
                 <thead className="bg-surface-base">
                   <tr>
                     <th className="px-2 py-1 text-left">商品</th>
-                    <th className="px-2 py-1 text-right">当日加算</th>
+                    <th className="px-2 py-1 text-center">種別</th>
+                    <th className="px-2 py-1 text-right">当日入庫</th>
                     <th className="px-2 py-1 text-right">残在庫</th>
                     <th className="px-2 py-1 text-right">利用可</th>
+                    <th className="px-2 py-1 text-center">処理</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -793,14 +882,34 @@ function DiffReportModal({
                           {s.productCode}
                         </div>
                       </td>
+                      <td className="px-2 py-1 text-center text-3xs text-ink-subtle">
+                        {s.productType === 'made_to_order'
+                          ? '受注生産'
+                          : s.productType === 'pass_through'
+                            ? '通過型'
+                            : s.productType}
+                      </td>
                       <td className="px-2 py-1 text-right tabular-nums">
-                        +{s.addedToday}
+                        {s.addedToday >= 0 ? `+${s.addedToday}` : s.addedToday}
                       </td>
                       <td className="px-2 py-1 text-right tabular-nums">
                         {s.remainingQty}
                       </td>
                       <td className="px-2 py-1 text-right tabular-nums text-cyan-300 font-bold">
                         {s.availableQty}
+                      </td>
+                      <td className="px-2 py-1 text-center">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onDispose(s.productCode, s.productName, s.availableQty)
+                          }
+                          disabled={busy}
+                          className="text-3xs px-2 py-0.5 rounded border border-rose-500 bg-rose-950 text-rose-100 hover:bg-rose-900 font-bold disabled:opacity-50"
+                          title="この余剰在庫を在庫から除外（廃棄／戻し）"
+                        >
+                          🗑 余剰処理
+                        </button>
                       </td>
                     </tr>
                   ))}

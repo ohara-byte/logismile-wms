@@ -6,7 +6,7 @@
  * 出力カテゴリ：
  *  1. 伝票未引当：必要数 > 引当数 の伝票一覧（出荷予定があるのに引当不足）
  *  2. 出荷後過不足：packed/shipped かつ scannedQty != qty の品目（強制OK 含む）
- *  3. 在庫だぶつき：当日 inspection_count で増えたが消費されなかった通過型 SKU
+ *  3. 余剰在庫：当日入庫（納品/在庫検品）があり消費されず残った繰越なし品（通過型・受注生産）
  *  4. 検品済 reserved：packed なのに Allocation が reserved のまま残っている異常
  *
  * 認証: admin/manager
@@ -158,23 +158,25 @@ export async function GET(req: Request) {
     }
   }
 
-  // (3) 在庫だぶつき：当日 inspection_count で増えたが、消費されなかった通過型
+  // (3) 余剰在庫：当日 入庫（工場納品 inbound / 在庫検品 inspection_count）があり、
+  //     消費されずに残っている「繰越なし品（通過型・受注生産）」。
+  //     在庫型（warehouse）は翌日繰越が前提なので余剰処理の対象外。
   const movements = await prisma.stockMovement.findMany({
     where: {
-      type: 'inspection_count',
+      type: { in: ['inbound', 'inspection_count'] },
       createdAt: { gte: targetDate, lt: nextDate },
     },
     select: { productCode: true, qtyDelta: true },
   });
-  const inspByCode = new Map<string, number>();
+  const addedByCode = new Map<string, number>();
   for (const m of movements) {
-    inspByCode.set(
+    addedByCode.set(
       m.productCode,
-      (inspByCode.get(m.productCode) ?? 0) + m.qtyDelta,
+      (addedByCode.get(m.productCode) ?? 0) + m.qtyDelta,
     );
   }
-  // 該当 SKU について Stock 残（qty - allocatedQty）が当日加算分以上残っているか
-  const codes = Array.from(inspByCode.keys());
+  // 該当 SKU について Stock 残（qty - allocatedQty）が残っているか
+  const codes = Array.from(addedByCode.keys());
   let surplus: Array<{
     productCode: string;
     productName: string;
@@ -195,14 +197,15 @@ export async function GET(req: Request) {
     surplus = stocks
       .map((s) => {
         const p = productByCode.get(s.productCode);
-        if (p?.productType !== 'pass_through') return null;
-        const addedToday = inspByCode.get(s.productCode) ?? 0;
+        // 繰越なし品（通過型・受注生産）のみ。在庫型は翌日繰越のため除外。
+        if (!p || p.productType === 'warehouse') return null;
+        const addedToday = addedByCode.get(s.productCode) ?? 0;
         const available = Math.max(s.qty - s.allocatedQty, 0);
         if (available <= 0) return null;
         return {
           productCode: s.productCode,
-          productName: p?.name ?? s.productCode,
-          productType: p?.productType ?? 'pass_through',
+          productName: p.name ?? s.productCode,
+          productType: p.productType,
           addedToday,
           remainingQty: s.qty,
           availableQty: available,
