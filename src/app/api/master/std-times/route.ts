@@ -15,7 +15,8 @@ const Body = z.object({
   tableId: z.string().min(1).max(5),
   stdMin: z.number().min(0).max(999.99).default(2),
   source: z.enum(['manual', 'auto', 'imported']).default('manual'),
-  note: z.string().nullable().optional(),
+  // 注: StdTime モデルに note 列は無い。誤って渡すと Prisma が例外を投げ、
+  //   新規作成が「登録失敗」になるため Body から除外（旧バグ修正）。
 });
 
 export async function GET() {

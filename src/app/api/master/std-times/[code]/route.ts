@@ -9,7 +9,7 @@ const Body = z.object({
   tableId: z.string().min(1).max(5),
   stdMin: z.number().min(0).max(999.99).default(2),
   source: z.enum(['manual', 'auto', 'imported']).default('manual'),
-  note: z.string().nullable().optional(),
+  // 注: StdTime モデルに note 列は無い（旧バグ修正・create/update の例外回避）。
 });
 
 export async function PUT(
