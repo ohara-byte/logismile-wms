@@ -11,7 +11,8 @@ import { maskError } from '@/lib/api-errors';
 
 const Body = z.object({
   code: z.string().min(1).max(20),
-  groupId: z.string().min(1).max(10),
+  // グループは可変ラベル（任意・FKなし）。標準時間の基軸は tableId（2026-06-30）。
+  groupId: z.string().max(10).nullable().optional(),
   tableId: z.string().min(1).max(5),
   stdMin: z.number().min(0).max(999.99).default(2),
   source: z.enum(['manual', 'auto', 'imported']).default('manual'),

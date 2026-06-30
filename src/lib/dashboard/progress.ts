@@ -224,7 +224,6 @@ export async function getGroupProgresses(date: Date): Promise<GroupProgress[]> {
       id: true,
       name: true,
       tables: true,
-      stdTimes: { select: { stdMin: true } },
     },
     // 2026-05-18: '独立作業'（ライン/仕分）はダッシュボード上で
     //   別カード「独立作業エリア」に表示するため、テーブルグループ別進捗からは除外。
@@ -277,14 +276,39 @@ export async function getGroupProgresses(date: Date): Promise<GroupProgress[]> {
 
   // 梱包時間コンテキスト（AppSetting + セット標準時間署名）を1回ロード
   const packCtx = await loadPackTimeCtx();
-  // グループ平均stdMin（フォールバック用）を先に確定
+
+  // #4（2026-06-30）標準時間は「テーブル単位」を基軸にする（グループは可変ラベルのため平均しない）。
+  //   全 StdTime を tableId 単位で平均し、伝票のテーブル文字(pkNo[1])でフォールバック秒を引く。
+  const stdTimeRows = await prisma.stdTime.findMany({
+    select: { tableId: true, stdMin: true },
+  });
+  const tableAgg = new Map<string, { sum: number; n: number }>();
+  for (const st of stdTimeRows) {
+    const key = (st.tableId ?? '').trim().toUpperCase();
+    if (!key) continue;
+    const cur = tableAgg.get(key) ?? { sum: 0, n: 0 };
+    cur.sum += Number(st.stdMin);
+    cur.n += 1;
+    tableAgg.set(key, cur);
+  }
+  const stdMinByTable = new Map<string, number>();
+  for (const [k, v] of tableAgg) stdMinByTable.set(k, v.n > 0 ? v.sum / v.n : 2.0);
+
+  const tableLetterOf = (pkNo: string) =>
+    pkNo.length >= 2 ? pkNo[1].toUpperCase() : '';
+  // 1注文のフォールバック秒 = その伝票のテーブルの標準時間（無ければ 2.0 分）
+  const fallbackSecOf = (pkNo: string) =>
+    (stdMinByTable.get(tableLetterOf(pkNo)) ?? 2.0) * 60;
+
+  // グループ代表 stdMin（ツールチップ/残ゼロ時の表示用）= そのグループの tables の標準時間平均
   const stdMinByGroup = new Map<string, number>();
   for (const g of groups) {
+    const vals = g.tables
+      .map((t) => stdMinByTable.get((t ?? '').trim().toUpperCase()))
+      .filter((x): x is number => x != null);
     stdMinByGroup.set(
       g.id,
-      g.stdTimes.length > 0
-        ? g.stdTimes.reduce((s, st) => s + Number(st.stdMin), 0) / g.stdTimes.length
-        : 2.0,
+      vals.length > 0 ? vals.reduce((s, x) => s + x, 0) / vals.length : 2.0,
     );
   }
 
@@ -314,7 +338,7 @@ export async function getGroupProgresses(date: Date): Promise<GroupProgress[]> {
     if (o.status === 'packed' || o.status === 'shipped') {
       doneByGroup.set(gid, (doneByGroup.get(gid) ?? 0) + 1);
     } else {
-      const fallbackSec = (stdMinByGroup.get(gid) ?? 2.0) * 60;
+      const fallbackSec = fallbackSecOf(o.pkNo);
       const sec = orderExpectedSec(
         packCtx,
         o.items.map((it) => it.productCode),

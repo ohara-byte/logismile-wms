@@ -2,7 +2,7 @@ import type { MasterConfig } from '../master-types';
 
 interface StdTime extends Record<string, unknown> {
   code: string;
-  groupId: string;
+  groupId: string | null;
   tableId: string;
   stdMin: number;
   source: string;
@@ -17,7 +17,7 @@ export const stdTimeConfig: MasterConfig<StdTime> = {
   endpoint: '/api/master/std-times',
   primaryKey: 'code',
   searchPlaceholder: '🔍 コード／グループ／テーブルで検索',
-  hint: 'グループ × テーブル単位の 1 件あたり標準処理時間（分）',
+  hint: 'テーブル単位の 1 件あたり標準処理時間（分）。グループIDは任意ラベル（可変）',
   filterField: 'source',
   filterPlaceholder: '─ ソース ─',
   filterOptions: [
@@ -50,8 +50,23 @@ export const stdTimeConfig: MasterConfig<StdTime> = {
   ],
   formFields: [
     { name: 'code', label: 'コード', type: 'text', required: true, readonlyOnEdit: true, helpText: '一意 (例: ABL-A)' },
-    { name: 'groupId', label: 'グループ ID', type: 'text', required: true, placeholder: '例: ABL' },
-    { name: 'tableId', label: 'テーブル ID', type: 'text', required: true, placeholder: '例: A' },
+    {
+      name: 'tableId',
+      label: 'テーブル ID',
+      type: 'select',
+      required: true,
+      optionsEndpoint: '/api/master/tables',
+      optionsValueField: 'code',
+      optionsLabelField: 'name',
+      helpText: '検品テーブルから選択。完了予測はこのテーブル単位で算出',
+    },
+    {
+      name: 'groupId',
+      label: 'グループ ID（任意）',
+      type: 'text',
+      placeholder: '例: ABL',
+      helpText: '可変ラベル（任意）。空でも登録可',
+    },
     {
       name: 'stdMin',
       label: '標準時間（分）',

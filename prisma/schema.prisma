@@ -445,7 +445,6 @@ model InspectionGroup {
   note      String?  @db.Text
 
   staff             Staff[]
-  stdTimes          StdTime[]
   memberAssignments MemberAssignment[]
 
   @@map("inspection_groups")
@@ -454,14 +453,14 @@ model InspectionGroup {
 /// 10. 標準梱包時間マスタ
 model StdTime {
   code      String   @id @db.VarChar(20)
-  groupId   String   @map("group_id") @db.VarChar(10)
+  /// グループは可変ラベル（2026-06-30）。inspection_groups への FK は外し、任意の文字列タグとする。
+  ///   標準時間の基軸は tableId（伝票のテーブル文字で完了予測フォールバックを引く）。
+  groupId   String?  @map("group_id") @db.VarChar(10)
   tableId   String   @map("table_id") @db.VarChar(5)
   stdMin    Decimal  @default(2.00) @map("std_min") @db.Decimal(5, 2)
   source    String   @default("manual") @db.VarChar(10)
   updatedAt DateTime @map("updated_at") @db.Date
   note      String?  @db.Text
-
-  group InspectionGroup @relation(fields: [groupId], references: [id])
 
   @@map("std_times")
 }
