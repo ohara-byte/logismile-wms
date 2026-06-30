@@ -210,19 +210,31 @@ export async function POST(req: Request) {
       return out;
     });
 
-    // トランザクション後、該当 SKU の自動再引当を実行
+    // トランザクション後、該当 SKU の自動再引当を実行。
+    //
+    // AUTO_INSPECT_OK=true（受入＝検品OK・申告数＝実数で運用）のときのみ自動再引当する。
+    //   この運用では「納品申告数＝在庫の真値」なので、納品直後に引き当てて問題ない。
+    //
+    // AUTO_INSPECT_OK=false（受入検品工程あり＝実検品モード）では、ここで申告数のまま
+    //   先行引当すると、後続の受入検品（stocks/count）で実数が申告を下回ったとき
+    //   「引当済を下回る数量には変更できません」(409) で止まり、業務がブロックする。
+    //   そのため実検品モードでは自動再引当をスキップし、受入検品で実数 Stock を確定した後の
+    //   手動「検品締め」(POST /api/allocation/realloc) に引当を委ねる（差分はサイレントに
+    //   出荷残として残り、検品締めで優先度順に再配分＋追納/翌日繰越される）。
     const allocResults: Array<{
       productCode: string;
       allocated: number;
       shortage: number;
     }> = [];
-    for (const r of stockResults) {
-      const ar = await reallocateForProduct(r.productCode);
-      allocResults.push({
-        productCode: r.productCode,
-        allocated: ar.allocated,
-        shortage: ar.shortage,
-      });
+    if (isFactoryAutoInspectOk()) {
+      for (const r of stockResults) {
+        const ar = await reallocateForProduct(r.productCode);
+        allocResults.push({
+          productCode: r.productCode,
+          allocated: ar.allocated,
+          shortage: ar.shortage,
+        });
+      }
     }
 
     const responseBody = {
