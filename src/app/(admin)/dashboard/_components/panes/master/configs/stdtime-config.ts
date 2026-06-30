@@ -7,6 +7,7 @@ interface StdTime extends Record<string, unknown> {
   stdMin: number;
   source: string;
   updatedAt: string;
+  note: string | null;
 }
 
 export const stdTimeConfig: MasterConfig<StdTime> = {
@@ -70,6 +71,7 @@ export const stdTimeConfig: MasterConfig<StdTime> = {
         { value: 'imported', label: '取込' },
       ],
     },
+    { name: 'note', label: '備考', type: 'textarea' },
   ],
   initialValues: { stdMin: 2.0, source: 'manual' },
 };
