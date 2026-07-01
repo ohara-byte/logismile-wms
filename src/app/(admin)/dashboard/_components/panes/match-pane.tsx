@@ -57,6 +57,9 @@ interface Stats {
 
 type AllocFilterKey = 'all' | 'diff' | 'full' | 'partial' | 'none';
 
+// Sprint Z-10: 検品状態フィルタ（未検品の抽出用）
+type InspectFilterKey = 'all' | 'done' | 'pending';
+
 type ActionKind = 'complete' | 'carry' | 'cancel' | 'reprint' | 'note';
 
 const ACTION_DEFS: { kind: ActionKind; icon: string; title: string; desc: string; variant: 'success' | 'warn' | 'danger' | 'primary' }[] = [
@@ -81,6 +84,8 @@ export function MatchPane() {
     null,
   );
   const [allocFilter, setAllocFilter] = useState<AllocFilterKey>('all');
+  // 検品状態フィルタ（未検品の抽出用）。既定は全て。カードのクリックでも切替。
+  const [inspectFilter, setInspectFilter] = useState<InspectFilterKey>('all');
 
   const { refresh: refreshBadges } = useBadges();
   const { open: openOrderDetail } = useOrderDetailModal();
@@ -293,11 +298,48 @@ export function MatchPane() {
       {/* 統計カード */}
       {data && (
         <div className="grid grid-cols-5 gap-1 mb-2">
-          <StatBox label="総件数" value={data.stats.total} tone="blue" />
-          <StatBox label="検品済" value={data.stats.done} tone="green" />
-          <StatBox label="未検品" value={data.stats.pending} tone="orange" />
+          <StatBox
+            label="総件数"
+            value={data.stats.total}
+            tone="blue"
+            onClick={() => setInspectFilter('all')}
+            active={inspectFilter === 'all'}
+          />
+          <StatBox
+            label="検品済"
+            value={data.stats.done}
+            tone="green"
+            onClick={() => setInspectFilter('done')}
+            active={inspectFilter === 'done'}
+          />
+          <StatBox
+            label="未検品"
+            value={data.stats.pending}
+            tone="orange"
+            onClick={() => setInspectFilter('pending')}
+            active={inspectFilter === 'pending'}
+          />
           <StatBox label="照合済" value={data.stats.matched} tone="violet" />
           <StatBox label="繰越候補" value={data.stats.carryCandidate} tone="red" />
+        </div>
+      )}
+
+      {/* Sprint Z-10: 検品状態フィルタ（未検品を抽出できるように）。カードのクリックとも連動。 */}
+      {data && (
+        <div className="flex items-center gap-2 mb-2 text-2xs flex-wrap">
+          <span className="text-ink-subtle">検品状態:</span>
+          <FilterPills
+            value={inspectFilter}
+            onChange={(v) => setInspectFilter(v as InspectFilterKey)}
+            options={[
+              { value: 'all', label: `全て (${data.stats.total})` },
+              { value: 'done', label: `検品済 (${data.stats.done})`, tone: 'emerald' },
+              { value: 'pending', label: `未検品 (${data.stats.pending})`, tone: 'amber' },
+            ]}
+          />
+          <span className="ml-2 text-3xs text-ink-muted">
+            ※ 未検品を選ぶと、その日の未検品伝票だけを抽出します（上の件数カードのクリックでも切替可）
+          </span>
         </div>
       )}
 
@@ -376,14 +418,23 @@ export function MatchPane() {
       {/* 一覧テーブル */}
       {data && (() => {
         const filteredItems = data.items.filter((it) => {
-          if (allocFilter === 'all') return true;
-          if (allocFilter === 'diff') return it.allocStatus !== 'full';
-          return it.allocStatus === allocFilter;
+          // 引当差分フィルタ
+          const allocOk =
+            allocFilter === 'all'
+              ? true
+              : allocFilter === 'diff'
+                ? it.allocStatus !== 'full'
+                : it.allocStatus === allocFilter;
+          if (!allocOk) return false;
+          // 検品状態フィルタ（未検品の抽出）
+          if (inspectFilter === 'done') return it.inspected;
+          if (inspectFilter === 'pending') return !it.inspected;
+          return true;
         });
         return (
-          <div className="border border-surface-border rounded overflow-hidden">
+          <div className="border border-surface-border rounded">
             <table className="w-full text-[10px]">
-              <thead className="bg-surface-base border-b border-surface-border">
+              <thead className="bg-surface-base border-b border-surface-border sticky top-0 z-10">
                 <tr>
                   <th className="px-1.5 py-1 text-center w-[80px] uppercase text-ink-subtle font-bold">📷</th>
                   <th className="px-1.5 py-1 text-center w-[44px] uppercase text-ink-subtle font-bold">👁</th>
@@ -650,10 +701,14 @@ function StatBox({
   label,
   value,
   tone,
+  onClick,
+  active,
 }: {
   label: string;
   value: number;
   tone: 'blue' | 'green' | 'orange' | 'violet' | 'red';
+  onClick?: () => void;
+  active?: boolean;
 }) {
   // Sprint Z-2: 数値を大きく + 値ゼロ非ゼロでアクセントを変える
   const map: Record<typeof tone, { border: string; accent: string; valueColor: string }> = {
@@ -666,11 +721,29 @@ function StatBox({
   const tones = map[tone];
   // 0 件はやや控えめに、>0 は強調
   const isZero = value === 0;
+  const clickable = !!onClick;
   return (
     <div
-      className={`rounded-md border border-surface-border bg-surface-panel border-l-4 ${tones.border} px-2.5 py-2 text-center transition-all ${
+      onClick={onClick}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick?.();
+              }
+            }
+          : undefined
+      }
+      className={`rounded-md border bg-surface-panel border-l-4 ${tones.border} px-2.5 py-2 text-center transition-all ${
         isZero ? 'opacity-60' : 'opacity-100'
-      }`}
+      } ${
+        clickable
+          ? 'cursor-pointer hover:bg-surface-base focus:outline-none focus:ring-2 focus:ring-accent-amber'
+          : ''
+      } ${active ? 'ring-2 ring-accent-amber border-accent-amber' : 'border-surface-border'}`}
     >
       <div className={`text-2xs font-bold ${tones.accent}`}>{label}</div>
       <div

@@ -90,18 +90,6 @@ export async function GET(req: Request) {
     }
   }
 
-  // ① 検品済/未検品サマリ（伝票単位）：対象日の出荷指示を状態別に集計
-  const orderStatusById = new Map<string, string>();
-  for (const it of items) orderStatusById.set(it.orderId, it.order.status);
-  const orderSummary = { total: 0, done: 0, inspecting: 0, pending: 0, held: 0 };
-  for (const st of orderStatusById.values()) {
-    orderSummary.total++;
-    if (st === 'packed' || st === 'shipped') orderSummary.done++;
-    else if (st === 'inspecting') orderSummary.inspecting++;
-    else if (st === 'held') orderSummary.held++;
-    else orderSummary.pending++;
-  }
-
   // 各 SKU の引当・在庫を集計
   const productCodes = Array.from(map.keys());
   if (productCodes.length === 0) {
@@ -245,7 +233,6 @@ export async function GET(req: Request) {
   return NextResponse.json({
     data: {
       items: out,
-      orderSummary,
       summary: {
         skuCount: out.length,
         fullCount,
