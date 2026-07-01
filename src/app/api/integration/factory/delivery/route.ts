@@ -47,6 +47,13 @@ const Body = z.object({
         janCode: z.string().max(20).nullable().optional(),
         /** 発送可能賞味期限（日数・任意）。在庫検品バナー「入庫日+日数-1」の算出源（A・2026-06-12） */
         shippableExpiryDays: z.number().int().positive().nullable().optional(),
+        /** 発送日（出荷日）YYYY-MM-DD（③ Phase 1・2026-07-01）。CraftSmileが商品に紐づけた
+         *  発送予定日。在庫を発送日で色分け表示するため inbound 在庫ログに記録する。任意（後方互換）。 */
+        shipDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, 'shipDate は YYYY-MM-DD 形式')
+          .nullable()
+          .optional(),
       }),
     )
     .min(1),
@@ -181,6 +188,8 @@ export async function POST(req: Request) {
             refType: 'factory_delivery',
             refId: parsed.data.deliveryNo,
             note: `${baseNote} [${metaParts.join(' ')}]`,
+            // ③ Phase 1: 発送日を記録（在庫の"色"。null=未指定＝従来経路）。@db.Date は UTC 0時。
+            shipDate: it.shipDate ? new Date(it.shipDate) : null,
           },
         });
 

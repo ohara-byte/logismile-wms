@@ -89,12 +89,16 @@ model StockMovement {
   refId       String?  @map("ref_id") @db.VarChar(40)
   note        String?  @db.Text
   createdBy   String?  @map("created_by") @db.VarChar(10)
+  /// 発送日（出荷日）。工場納品(inbound)で CraftSmile が商品ごとに紐づけた発送予定日を保持し、
+  ///   在庫を「発送日」で色分け表示する（③ Phase 1・2026-07-01）。null=未指定（従来分）。
+  shipDate    DateTime? @map("ship_date") @db.Date
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   stock Stock @relation(fields: [productCode], references: [productCode], onDelete: Cascade)
 
   @@index([productCode, createdAt])
   @@index([refType, refId])
+  @@index([productCode, shipDate])
   @@map("stock_movements")
 }
 
