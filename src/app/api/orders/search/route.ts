@@ -23,6 +23,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
 import { parseTableLetter } from '@/lib/pk-no';
+import { todayJstAsUTC, parseDateAsUTC, addDaysUTC } from '@/lib/date-utils';
 
 const SEARCH_FIELDS = [
   'pk_no',
@@ -83,10 +84,9 @@ export async function POST(req: Request) {
   }
   const { range, customDate, conditions, flag } = parsed.data;
 
-  // 日付範囲
+  // 日付範囲（@db.Date と揃えるため UTC 真夜中で扱う。date-utils を使用）
   const targetDate = computeTargetDate(range, customDate);
-  const tomorrow = new Date(targetDate);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrow = addDaysUTC(targetDate, 1);
 
   // 各条件を Prisma where へ変換し AND 結合
   const conditionFilters: Prisma.ShippingOrderWhereInput[] = [];
@@ -194,23 +194,13 @@ function computeTargetDate(
   range: 'today' | 'tomorrow' | 'yesterday' | 'custom',
   customDate?: string,
 ): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  if (range === 'today') return d;
-  if (range === 'tomorrow') {
-    d.setDate(d.getDate() + 1);
-    return d;
-  }
-  if (range === 'yesterday') {
-    d.setDate(d.getDate() - 1);
-    return d;
-  }
-  if (customDate) {
-    const c = new Date(customDate);
-    c.setHours(0, 0, 0, 0);
-    return c;
-  }
-  return d;
+  // 業務日（JST暦）を UTC 真夜中の Date として扱う。setHours（ローカル丸め）は
+  //   JSTコンテナで前日15:00Zにずれ @db.Date と1日ズレるため使わない（date-utils）。
+  const today = todayJstAsUTC();
+  if (range === 'tomorrow') return addDaysUTC(today, 1);
+  if (range === 'yesterday') return addDaysUTC(today, -1);
+  if (range === 'custom') return parseDateAsUTC(customDate) ?? today;
+  return today;
 }
 
 function mapCondition(
@@ -257,10 +247,10 @@ function mapCondition(
       const yyyy = m.length === 4 ? parseInt(m[1], 10) : new Date().getFullYear();
       const mm = parseInt(m[m.length - 2], 10);
       const dd = parseInt(m[m.length - 1], 10);
-      const d = new Date(yyyy, mm - 1, dd);
+      // @db.Date と揃えるため UTC 真夜中で構築（ローカル new Date(y,m,d) は JST で前日にずれる）
+      const d = new Date(Date.UTC(yyyy, mm - 1, dd));
       if (isNaN(d.getTime())) return null;
-      const next = new Date(d);
-      next.setDate(next.getDate() + 1);
+      const next = addDaysUTC(d, 1);
       return { shipDate: { gte: d, lt: next } };
     }
     case 'status':
