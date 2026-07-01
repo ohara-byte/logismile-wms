@@ -82,14 +82,17 @@ const WORK_START_HOUR = 9;
 const WORK_END_HOUR = 18;
 const GROUP_DEADLINE_HOUR = 17; // 主要運送会社の締切（暫定固定値）
 
+// shipDate 等の @db.Date は UTC 0時で保存されるため、範囲境界も UTC 0時に固定する。
+//   （コンテナが JST の場合、setHours はローカル(JST)で丸めてしまい 6/30 15:00Z〜のように
+//   前日へまたがり、当日1日のはずが2日分を数える不具合になる。2026-07-01 JST環境で顕在化）
 function startOfDay(d: Date): Date {
   const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
+  x.setUTCHours(0, 0, 0, 0);
   return x;
 }
 function endOfDay(d: Date): Date {
   const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
+  x.setUTCHours(23, 59, 59, 999);
   return x;
 }
 
