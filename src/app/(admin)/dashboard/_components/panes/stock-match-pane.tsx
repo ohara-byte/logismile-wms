@@ -129,6 +129,15 @@ export function StockMatchPane() {
   const [typeKey, setTypeKey] = useState<TypeKey>('all');
   const [diffReport, setDiffReport] = useState<DiffReport | null>(null);
   const [diffOpen, setDiffOpen] = useState(false);
+  // ①②サマリ：伝票単位の検品済/未検品（orderSummary）と種別サマリ（items からクライアント集計）
+  const [orderSummary, setOrderSummary] = useState({
+    total: 0,
+    done: 0,
+    inspecting: 0,
+    pending: 0,
+    held: 0,
+  });
+  const [summaryView, setSummaryView] = useState<'none' | 'order' | 'type'>('none');
 
   const reload = useCallback(async () => {
     setBusy(true);
@@ -141,6 +150,7 @@ export function StockMatchPane() {
       }
       setItems((j.data?.items ?? []) as StockMatchRow[]);
       setSummary((j.data?.summary ?? summary) as Summary);
+      if (j.data?.orderSummary) setOrderSummary(j.data.orderSummary);
       setError(null);
     } catch (e) {
       setError(String(e));
@@ -362,6 +372,27 @@ export function StockMatchPane() {
     made_to_order: items.filter((i) => i.productType === 'made_to_order').length,
   };
 
+  // ② 種別サマリ：構成商品を商品種別（通過型/在庫型/受注生産）ごとに件数・数量で集計
+  const typeSummary = (
+    [
+      { key: 'made_to_order', label: '受注生産' },
+      { key: 'pass_through', label: '通過型' },
+      { key: 'warehouse', label: '在庫型' },
+    ] as const
+  )
+    .map(({ key, label }) => {
+      const rows = items.filter((i) => i.productType === key);
+      return {
+        label,
+        skuCount: rows.length,
+        requiredQty: rows.reduce((s, r) => s + r.requiredQty, 0),
+        allocatedQty: rows.reduce((s, r) => s + r.allocatedQty, 0),
+        deliveredForDate: rows.reduce((s, r) => s + r.deliveredForDate, 0),
+        shortageQty: rows.reduce((s, r) => s + r.shortageQty, 0),
+      };
+    })
+    .filter((x) => x.skuCount > 0);
+
   // ① サイレント不足（出荷残）：引当が不足のまま「黙って許容」された数量の合計。
   //    引当不足はエラーで止めず黙って出荷残にしている。その数量を当日リアルタイムで
   //    必ず確認できるよう、合計を明示する（締め前のチェック用）。
@@ -431,6 +462,30 @@ export function StockMatchPane() {
         </button>
         <button
           type="button"
+          onClick={() => setSummaryView((v) => (v === 'order' ? 'none' : 'order'))}
+          className={`text-xs px-3 py-1.5 rounded border font-bold ${
+            summaryView === 'order'
+              ? 'border-emerald-400 bg-emerald-800 text-emerald-50'
+              : 'border-emerald-600 bg-emerald-950 text-emerald-200 hover:bg-emerald-900'
+          }`}
+          title="伝票単位で 検品済/未検品 を集計"
+        >
+          📊 検品済/未検品
+        </button>
+        <button
+          type="button"
+          onClick={() => setSummaryView((v) => (v === 'type' ? 'none' : 'type'))}
+          className={`text-xs px-3 py-1.5 rounded border font-bold ${
+            summaryView === 'type'
+              ? 'border-sky-400 bg-sky-800 text-sky-50'
+              : 'border-sky-600 bg-sky-950 text-sky-200 hover:bg-sky-900'
+          }`}
+          title="商品種別ごとに集計"
+        >
+          📊 種別サマリ
+        </button>
+        <button
+          type="button"
           onClick={reload}
           disabled={busy}
           className="text-xs px-3 py-1.5 rounded bg-surface-base border border-surface-border hover:border-accent-amber"
@@ -438,6 +493,51 @@ export function StockMatchPane() {
           🔄 更新
         </button>
       </div>
+
+      {/* ① 検品済/未検品サマリ（伝票単位・トグル） */}
+      {summaryView === 'order' && (
+        <div className="mb-2 rounded border border-emerald-700/60 bg-emerald-950/20 px-3 py-2 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-2xs font-bold text-emerald-200">検品済/未検品（伝票単位・{date}）</span>
+          <span className="px-2 py-0.5 rounded bg-surface-base">伝票総数 <b className="text-ink-strong tabular-nums">{orderSummary.total}</b></span>
+          <span className="px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-100">検品済(完了) <b className="tabular-nums">{orderSummary.done}</b></span>
+          <span className="px-2 py-0.5 rounded bg-orange-900/50 text-orange-100">検品中 <b className="tabular-nums">{orderSummary.inspecting}</b></span>
+          <span className="px-2 py-0.5 rounded bg-red-900/50 text-red-100">未検品(未着手) <b className="tabular-nums">{orderSummary.pending}</b></span>
+          {orderSummary.held > 0 && (
+            <span className="px-2 py-0.5 rounded bg-surface-base text-ink-subtle">保留 <b className="tabular-nums">{orderSummary.held}</b></span>
+          )}
+        </div>
+      )}
+
+      {/* ② 商品種別サマリ（トグル） */}
+      {summaryView === 'type' && (
+        <div className="mb-2 rounded border border-sky-700/60 bg-sky-950/20 px-3 py-2 overflow-x-auto">
+          <div className="text-2xs font-bold text-sky-200 mb-1">商品種別サマリ（{date}）</div>
+          <table className="text-2xs w-full min-w-[420px]">
+            <thead>
+              <tr className="text-ink-subtle">
+                <th className="text-left px-2">種別</th>
+                <th className="text-right px-2">SKU</th>
+                <th className="text-right px-2">必要</th>
+                <th className="text-right px-2">引当</th>
+                <th className="text-right px-2">発送日入庫</th>
+                <th className="text-right px-2">不足</th>
+              </tr>
+            </thead>
+            <tbody>
+              {typeSummary.map((t) => (
+                <tr key={t.label} className="border-t border-surface-border">
+                  <td className="px-2 py-0.5 font-bold">{t.label}</td>
+                  <td className="px-2 py-0.5 text-right tabular-nums">{t.skuCount}</td>
+                  <td className="px-2 py-0.5 text-right tabular-nums">{t.requiredQty}</td>
+                  <td className="px-2 py-0.5 text-right tabular-nums">{t.allocatedQty}</td>
+                  <td className="px-2 py-0.5 text-right tabular-nums text-accent-amber">{t.deliveredForDate}</td>
+                  <td className="px-2 py-0.5 text-right tabular-nums text-status-error">{t.shortageQty > 0 ? t.shortageQty : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* ① サイレント不足（出荷残）の可視化：黙って許容した不足の合計を当日リアルタイムで確認 */}
       <div
