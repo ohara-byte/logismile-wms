@@ -78,9 +78,11 @@ export interface GroupProgress {
   delayFlag: boolean;
 }
 
-const WORK_START_HOUR = 9;
-const WORK_END_HOUR = 18;
-const GROUP_DEADLINE_HOUR = 17; // 主要運送会社の締切（暫定固定値）
+// 2026-07-01: 稼働時間を 8:00〜17:00 に変更（8時始業・17時締切）。
+//   完了予測・計画比・遅延(超過)アラートはすべて WORK_END_HOUR(=17) を基準に算出する。
+const WORK_START_HOUR = 8;
+const WORK_END_HOUR = 17; // 検品完了時刻（締切）。全体ETA・計画比・遅延判定の基準
+const GROUP_DEADLINE_HOUR = 17; // グループ別締切（運送会社cutoff）。WORK_END と同じ 17 時
 
 // shipDate 等の @db.Date は UTC 0時で保存されるため、範囲境界も UTC 0時に固定する。
 //   （コンテナが JST の場合、setHours はローカル(JST)で丸めてしまい 6/30 15:00Z〜のように
@@ -185,8 +187,8 @@ export async function getOverallProgress(date: Date): Promise<OverallProgress> {
     etaDeltaMin = 0;
   }
 
-  // 段階目標: 9/12/15/16/18 の累積目標を等分配で生成（運用調整可能）
-  const stageHours = [9, 12, 15, 16, 18];
+  // 段階目標: 8/12/15/16/17 の累積目標を等分配で生成（8時始業・17時締切に合わせて調整）
+  const stageHours = [8, 12, 15, 16, 17];
   const stages = stageHours.map((hour) => {
     const ratio = (hour - WORK_START_HOUR) / (WORK_END_HOUR - WORK_START_HOUR);
     const target = Math.round(total * ratio);

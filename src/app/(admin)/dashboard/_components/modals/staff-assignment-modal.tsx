@@ -74,7 +74,7 @@ export function StaffAssignmentModal({ open, onClose }: Props) {
             👥 メンバー割当
             {currentDate && (
               <span className="ml-2 text-sm font-normal text-purple-700">
-                （{describeDate(currentDate)} 9:00-18:00）
+                （{describeDate(currentDate)} 8:00-17:00）
               </span>
             )}
           </h2>

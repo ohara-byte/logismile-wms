@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react';
 import { useBadges } from '@/components/admin/badge-context';
 
-const DEADLINE_HOUR = 18; // 18:00 締切
+const DEADLINE_HOUR = 17; // 17:00 締切（検品完了時刻・2026-07-01変更）
 
 function pad2(n: number) {
   return String(n).padStart(2, '0');

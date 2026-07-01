@@ -64,8 +64,8 @@ export function KpiStrip({ overall }: Props) {
         />
       </KpiCard>
 
-      {/* 18:00 完了予測 */}
-      <KpiCard tone="ok" label="18:00 完了予測">
+      {/* 17:00 完了予測（締切17時・2026-07-01変更） */}
+      <KpiCard tone="ok" label="17:00 完了予測">
         <div className="text-[22px] leading-none font-bold text-ink-strong tabular-nums font-mono">
           {overall.etaCompletion ?? '—'}
         </div>
