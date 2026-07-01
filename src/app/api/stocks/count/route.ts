@@ -42,16 +42,10 @@ export async function POST(req: Request) {
     update: {},
   });
 
-  if (parsed.data.qty < before.allocatedQty) {
-    return NextResponse.json(
-      {
-        error: 'CONFLICT',
-        message: `引当済 ${before.allocatedQty} 個を下回る数量には変更できません`,
-      },
-      { status: 409 },
-    );
-  }
-
+  // 2026-07-01 緊急撤去：以前は「引当済(allocatedQty)を下回る数量への変更」を 409 で拒否していたが、
+  //   前日引当（予約が先・現物は当日納品で追いつく）運用では、受入/在庫検品の実数が allocatedQty を
+  //   下回るのは正常（予約>現物の一時状態）。このガードが検品自体を止めていた（業務停止）ため削除する。
+  //   差分は下の StockMovement(type='inspection_count') に必ず記録されるため追跡可能。
   const delta = parsed.data.qty - before.qty;
 
   const [updated] = await prisma.$transaction([
