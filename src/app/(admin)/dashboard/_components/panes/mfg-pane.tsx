@@ -427,9 +427,9 @@ export function MfgPane() {
       )}
 
       {/* 一覧 */}
-      <div className="border border-surface-border rounded overflow-hidden">
+      <div className="border border-surface-border rounded">
         <table className="w-full text-xs">
-          <thead className="bg-surface-base border-b border-surface-border">
+          <thead className="bg-surface-base border-b border-surface-border sticky top-0 z-10">
             <tr>
               <th className="px-2 py-2 text-center text-2xs uppercase text-ink-subtle font-bold w-10">
                 {canEdit && approvableItems.length > 0 && (

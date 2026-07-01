@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/permissions';
+import { parseDateAsUTC, addDaysUTC, todayJstAsUTC } from '@/lib/date-utils';
 
 const Query = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -35,12 +36,11 @@ export async function GET(req: Request) {
     );
   }
 
+  // @db.Date と揃えるため UTC 真夜中で扱う（setHours はJSTコンテナで前日にずれるため使わない）
   const targetDate = parsed.data.date
-    ? new Date(parsed.data.date)
-    : new Date();
-  targetDate.setHours(0, 0, 0, 0);
-  const nextDate = new Date(targetDate);
-  nextDate.setDate(nextDate.getDate() + 1);
+    ? (parseDateAsUTC(parsed.data.date) ?? todayJstAsUTC())
+    : todayJstAsUTC();
+  const nextDate = addDaysUTC(targetDate, 1);
 
   // 該当日の全出荷指示明細（活生）
   const items = await prisma.shippingOrderItem.findMany({
@@ -149,6 +149,23 @@ export async function GET(req: Request) {
     moveBySku.set(m.productCode, arr);
   }
 
+  // ③ Phase 2: 対象「発送日」の工場納品数（発送日で色分け）。
+  //   CraftSmile が発送日を付けて納品した inbound を ship_date 一致で集計する。
+  //   発送日未指定（Phase1前の在庫）は含まれない＝新しい納品から順に反映される。
+  const deliveredRows = await prisma.stockMovement.groupBy({
+    by: ['productCode'],
+    where: {
+      productCode: { in: productCodes },
+      type: 'inbound',
+      refType: 'factory_delivery',
+      shipDate: targetDate,
+    },
+    _sum: { qtyDelta: true },
+  });
+  const deliveredForDateBySku = new Map(
+    deliveredRows.map((r) => [r.productCode, r._sum.qtyDelta ?? 0]),
+  );
+
   // 整形
   let fullCount = 0;
   let partialCount = 0;
@@ -184,6 +201,8 @@ export async function GET(req: Request) {
       fulfilledQty: alloc.fulfilled,
       allocatedQty: allocatedTotal,
       shortageQty,
+      // ③ Phase 2: 対象発送日にCraftSmileから納品された数（発送日で色分け）
+      deliveredForDate: deliveredForDateBySku.get(row.productCode) ?? 0,
       orderCount: row.orderIds.size,
       stock: stock
         ? {

@@ -24,6 +24,7 @@ interface StockMatchRow {
   fulfilledQty: number;
   allocatedQty: number;
   shortageQty: number;
+  deliveredForDate: number;
   orderCount: number;
   stock: {
     qty: number;
@@ -521,9 +522,9 @@ export function StockMatchPane() {
       )}
 
       {/* SKU 一覧 */}
-      <div className="border border-surface-border rounded overflow-hidden">
+      <div className="border border-surface-border rounded">
         <table className="w-full text-xs">
-          <thead className="bg-surface-base border-b border-surface-border">
+          <thead className="bg-surface-base border-b border-surface-border sticky top-0 z-10">
             <tr>
               <th className="px-2 py-2 text-left text-2xs uppercase text-ink-subtle font-bold">
                 商品 / コード
@@ -540,6 +541,9 @@ export function StockMatchPane() {
               <th className="px-2 py-2 text-right text-2xs uppercase text-ink-subtle font-bold">
                 不足
               </th>
+              <th className="px-2 py-2 text-right text-2xs uppercase text-accent-amber font-bold">
+                発送日入庫
+              </th>
               <th className="px-2 py-2 text-right text-2xs uppercase text-ink-subtle font-bold">
                 在庫
               </th>
@@ -555,7 +559,7 @@ export function StockMatchPane() {
             {filtered.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="text-center py-8 text-sm text-ink-muted"
                 >
                   該当する SKU はありません
@@ -631,6 +635,9 @@ export function StockMatchPane() {
                   }`}
                 >
                   {row.shortageQty > 0 ? row.shortageQty : '—'}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums font-mono text-accent-amber font-bold">
+                  {row.deliveredForDate > 0 ? row.deliveredForDate : '—'}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums font-mono">
                   {row.stock ? (
