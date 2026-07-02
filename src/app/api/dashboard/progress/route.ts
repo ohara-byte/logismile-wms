@@ -18,13 +18,11 @@ export async function GET(req: Request) {
   if (!guard.ok) return guard.response;
 
   const { searchParams } = new URL(req.url);
-  // 既定の「本日」は JST 8:00 始業を境界にした業務日（8時前は前日・8時以降は当日）。
-  //   toISOString() は常に UTC。JST=UTC+9 で 8時境界なので、現在UTCに +1h した日付が業務日になる。
-  //   （旧実装は素の UTC 日付＝JST 09:00 でしか日付が切り替わらず「9時切替」になっていた）
-  const jstBusinessDate = new Date(Date.now() + 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
-  const dateStr = searchParams.get('date') ?? jstBusinessDate;
+  // 既定の「本日」は UTC 日付（toISOString）で決める。出荷指示一覧など他の全画面と同一基準にし、
+  //   出荷指示データ(shipDate)の実運用日付と一致させるため。
+  //   ※ 以前「JST 8:00始業の業務日(+1h)」に寄せた実装(2290cf6)は、出荷指示データの日付運用と
+  //     ずれて当日0件表示になったため差し戻し。ここは他画面と揃える（勝手に +1h 業務日へ戻さないこと）。
+  const dateStr = searchParams.get('date') ?? new Date().toISOString().slice(0, 10);
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) {
     return NextResponse.json(
