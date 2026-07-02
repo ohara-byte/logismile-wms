@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { parseDateAsUTC, addDaysUTC, todayJstAsUTC } from '@/lib/date-utils';
 
 const Query = z.object({
   productCode: z.string().min(1),
@@ -44,12 +45,11 @@ export async function GET(req: Request) {
   }
 
   const { productCode } = parsed.data;
+  // 日付根治(2026-07-02): shipDate(@db.Date)は UTC 真夜中で照会する。
   const targetDate = parsed.data.date
-    ? new Date(parsed.data.date)
-    : new Date();
-  targetDate.setHours(0, 0, 0, 0);
-  const nextDate = new Date(targetDate);
-  nextDate.setDate(nextDate.getDate() + 1);
+    ? (parseDateAsUTC(parsed.data.date) ?? todayJstAsUTC())
+    : todayJstAsUTC();
+  const nextDate = addDaysUTC(targetDate, 1);
 
   // 商品とJANで検索
   let product = await prisma.product.findUnique({

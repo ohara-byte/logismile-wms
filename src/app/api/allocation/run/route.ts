@@ -16,6 +16,7 @@ import {
   allocateOrder,
   createDraftInstructionsFromShortages,
 } from '@/lib/allocation/allocate-order';
+import { parseDateAsUTC, addDaysUTC, todayJstAsUTC } from '@/lib/date-utils';
 
 export async function POST(req: Request) {
   const guard = await requireRole('admin', 'manager', 'staff');
@@ -29,25 +30,16 @@ export async function POST(req: Request) {
   // - productCode 指定 → その SKU を含む未完了注文を全件
   // - shipDate 指定 → その日の未完了注文を全件
   // - 両方なし → 今日の未完了注文を全件
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  // 日付根治(2026-07-02): @db.Date と一致する UTC 真夜中で扱う。
+  const today = todayJstAsUTC();
+  const tomorrow = addDaysUTC(today, 1);
+  const shipFrom = shipDateStr ? parseDateAsUTC(shipDateStr) : null;
 
   const baseWhere = {
     deletedAt: null,
     status: { in: ['pending', 'inspecting', 'held'] },
-    ...(shipDateStr
-      ? {
-          shipDate: {
-            gte: new Date(shipDateStr),
-            lt: new Date(
-              new Date(shipDateStr).setDate(
-                new Date(shipDateStr).getDate() + 1,
-              ),
-            ),
-          },
-        }
+    ...(shipFrom
+      ? { shipDate: { gte: shipFrom, lt: addDaysUTC(shipFrom, 1) } }
       : !productCode
         ? { shipDate: { gte: today, lt: tomorrow } }
         : {}),

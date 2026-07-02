@@ -16,6 +16,7 @@ import { NextResponse } from 'next/server';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { parseDateAsUTC, addDaysUTC } from '@/lib/date-utils';
 
 export async function GET(req: Request) {
   const guard = await requireRole('admin', 'manager');
@@ -31,13 +32,10 @@ export async function GET(req: Request) {
   const page = Math.max(parseInt(searchParams.get('page') ?? '1', 10) || 1, 1);
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '50', 10) || 50, 200);
 
-  // 出荷日は JST ローカル日で範囲化する（運送 /api/carriers/today・ダッシュボードと同基準）。
-  //   new Date("YYYY-MM-DD") は UTC 0時のため setHours(JST) で当日境界に丸め、翌日未満の半開区間にする。
-  //   （UTC範囲だと JST 09:00 以降に当日データを外して 0 件になる不具合になる）
-  const shipFrom = shipDate ? new Date(shipDate) : null;
-  if (shipFrom) shipFrom.setHours(0, 0, 0, 0);
-  const shipTo = shipFrom ? new Date(shipFrom) : null;
-  if (shipTo) shipTo.setDate(shipTo.getDate() + 1);
+  // 出荷日は UTC 真夜中で範囲化（@db.Date と一致）。日付根治(2026-07-02)で ship_date を正しい暦日に
+  //   補正済みのため、他の全 shipDate クエリと同じ UTC 基準・翌日未満の半開区間で照会する。
+  const shipFrom = shipDate ? parseDateAsUTC(shipDate) : null;
+  const shipTo = shipFrom ? addDaysUTC(shipFrom, 1) : null;
 
   const where: Prisma.ShippingOrderWhereInput = {
     ...(shipFrom && shipTo ? { shipDate: { gte: shipFrom, lt: shipTo } } : {}),

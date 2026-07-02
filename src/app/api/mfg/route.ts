@@ -17,6 +17,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { requireRole, requirePermission } from '@/lib/auth/permissions';
 import { maskError } from '@/lib/api-errors';
+import { parseDateAsUTC, addDaysUTC, todayJstAsUTC } from '@/lib/date-utils';
 
 const Body = z.object({
   productCode: z.string().min(1).max(20),
@@ -45,12 +46,12 @@ export async function GET(req: Request) {
   if (approvedFilter === 'false') where.approved = false;
   if (productTypeFilter) where.product = { productType: productTypeFilter };
   if (dateStr) {
-    const d = new Date(dateStr);
-    d.setHours(0, 0, 0, 0);
-    const next = new Date(d);
-    next.setDate(next.getDate() + 1);
-    dateRange = { gte: d, lt: next };
-    where.targetDate = dateRange;
+    // 日付根治(2026-07-02): targetDate(@db.Date)は UTC 真夜中で照会。
+    const d = parseDateAsUTC(dateStr);
+    if (d) {
+      dateRange = { gte: d, lt: addDaysUTC(d, 1) };
+      where.targetDate = dateRange;
+    }
   }
 
   const items = await prisma.manufacturingInstruction.findMany({
@@ -76,11 +77,14 @@ export async function GET(req: Request) {
   if (productCodes.length > 0 && targetDates.length > 0) {
     // 必要数の集計（出荷指示明細 group by productCode + shipDate）
     const tdRanges = targetDates.map((d) => {
-      const start = new Date(d);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(start);
-      end.setDate(end.getDate() + 1);
-      return { d, start, end };
+      // 日付根治(2026-07-02): shipDate(@db.Date)は UTC、createdAt(タイムスタンプ)は JST 壁時計で照会。
+      const utcStart = parseDateAsUTC(d) ?? todayJstAsUTC();
+      const utcEnd = addDaysUTC(utcStart, 1);
+      const jstStart = new Date(d);
+      jstStart.setHours(0, 0, 0, 0);
+      const jstEnd = new Date(jstStart);
+      jstEnd.setDate(jstEnd.getDate() + 1);
+      return { d, utcStart, utcEnd, jstStart, jstEnd };
     });
 
     // 必要数
@@ -90,7 +94,7 @@ export async function GET(req: Request) {
         order: {
           deletedAt: null,
           OR: tdRanges.map((r) => ({
-            shipDate: { gte: r.start, lt: r.end },
+            shipDate: { gte: r.utcStart, lt: r.utcEnd },
           })),
         },
       },
@@ -114,7 +118,7 @@ export async function GET(req: Request) {
         order: {
           deletedAt: null,
           OR: tdRanges.map((r) => ({
-            shipDate: { gte: r.start, lt: r.end },
+            shipDate: { gte: r.utcStart, lt: r.utcEnd },
           })),
         },
       },
@@ -140,7 +144,7 @@ export async function GET(req: Request) {
         productCode: { in: productCodes },
         type: 'inspection_count',
         OR: tdRanges.map((r) => ({
-          createdAt: { gte: r.start, lt: r.end },
+          createdAt: { gte: r.jstStart, lt: r.jstEnd },
         })),
       },
       select: { productCode: true, createdAt: true },

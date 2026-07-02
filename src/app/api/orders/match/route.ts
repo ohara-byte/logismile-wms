@@ -15,23 +15,23 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { parseDateAsUTC, addDaysUTC, todayJstAsUTC } from '@/lib/date-utils';
 
 export async function GET(req: Request) {
   const guard = await requireRole('admin', 'manager');
   if (!guard.ok) return guard.response;
 
   const { searchParams } = new URL(req.url);
-  const dateStr = searchParams.get('date') ?? new Date().toISOString().slice(0, 10);
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) {
+  const dateParam = searchParams.get('date');
+  // 日付根治(2026-07-02): @db.Date と一致する UTC 真夜中で当日範囲を作る（既定は JST 暦日）。
+  const date = dateParam ? parseDateAsUTC(dateParam) : todayJstAsUTC();
+  if (!date) {
     return NextResponse.json(
-      { error: 'VALIDATION', message: `不正な日付: ${dateStr}` },
+      { error: 'VALIDATION', message: `不正な日付: ${dateParam}` },
       { status: 422 },
     );
   }
-  date.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(date);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrow = addDaysUTC(date, 1);
 
   const orders = await prisma.shippingOrder.findMany({
     where: {

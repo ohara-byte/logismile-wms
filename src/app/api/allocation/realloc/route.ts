@@ -25,6 +25,7 @@ import {
   allocateOrder,
   createDraftInstructionsFromShortages,
 } from '@/lib/allocation/allocate-order';
+import { parseDateAsUTC, addDaysUTC, todayJstAsUTC } from '@/lib/date-utils';
 
 const Query = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -52,10 +53,9 @@ export async function POST(req: Request) {
     );
   }
 
-  const targetDate = new Date(parsed.data.date);
-  targetDate.setHours(0, 0, 0, 0);
-  const nextDate = new Date(targetDate);
-  nextDate.setDate(nextDate.getDate() + 1);
+  // 日付根治(2026-07-02): @db.Date と一致する UTC 真夜中で当日範囲を作る。
+  const targetDate = parseDateAsUTC(parsed.data.date) ?? todayJstAsUTC();
+  const nextDate = addDaysUTC(targetDate, 1);
 
   // 対象出荷指示を「優先度順」で取得
   const orders = await prisma.shippingOrder.findMany({

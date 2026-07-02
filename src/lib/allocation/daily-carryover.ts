@@ -9,6 +9,7 @@
  */
 
 import { prisma } from '@/lib/db';
+import { parseDateAsUTC, addDaysUTC, todayJstAsUTC } from '@/lib/date-utils';
 
 export interface CarryoverResult {
   targetDate: string;
@@ -27,10 +28,9 @@ export async function runDailyCarryover(
   targetDate: string,
   trigger: 'factory_api' | 'manual',
 ): Promise<CarryoverResult> {
-  const start = new Date(targetDate);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
+  // 日付根治（2026-07-02）: @db.Date と揃うよう UTC 真夜中で扱う（setHours は JST でズレる）。
+  const start = parseDateAsUTC(targetDate) ?? todayJstAsUTC();
+  const end = addDaysUTC(start, 1);
 
   const orders = await prisma.shippingOrder.findMany({
     where: {

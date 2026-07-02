@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { parseDateAsUTC, addDaysUTC, todayJstAsUTC } from '@/lib/date-utils';
 
 const Body = z.object({
   date: z
@@ -34,13 +35,11 @@ export async function POST(req: Request) {
     );
   }
 
-  const dateStr = parsed.data.date ?? new Date().toISOString().slice(0, 10);
-  const date = new Date(dateStr);
-  date.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(date);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const dayAfter = new Date(tomorrow);
-  dayAfter.setDate(dayAfter.getDate() + 1);
+  // 日付根治（2026-07-02）: @db.Date と揃うよう UTC 真夜中で扱う（setHours は JST でズレる）。
+  const date = parsed.data.date
+    ? (parseDateAsUTC(parsed.data.date) ?? todayJstAsUTC())
+    : todayJstAsUTC();
+  const tomorrow = addDaysUTC(date, 1);
 
   // 対象抽出
   const targets = await prisma.shippingOrder.findMany({

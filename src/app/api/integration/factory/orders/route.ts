@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { isFactoryApiMode } from '@/lib/integration/factory-mode';
 import { verifyFactoryRequest } from '@/lib/integration/factory-auth';
+import { parseDateAsUTC, addDaysUTC, todayJstAsUTC } from '@/lib/date-utils';
 
 const Query = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -52,10 +53,9 @@ export async function GET(req: Request) {
     );
   }
 
-  const start = new Date(parsed.data.date);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
+  // 日付根治(2026-07-02): shipDate(@db.Date)は UTC 真夜中で照会。
+  const start = parseDateAsUTC(parsed.data.date) ?? todayJstAsUTC();
+  const end = addDaysUTC(start, 1);
 
   // 出荷指示明細を SKU 単位で集計
   const items = await prisma.shippingOrderItem.findMany({

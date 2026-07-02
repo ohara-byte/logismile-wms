@@ -17,6 +17,7 @@
 import { prisma } from '@/lib/db';
 import type { Prisma } from '@prisma/client';
 import { isFactoryApiMode } from '@/lib/integration/factory-mode';
+import { todayJstAsUTC } from '@/lib/date-utils';
 
 export interface AllocateOrderResult {
   pkNo: string;
@@ -273,8 +274,8 @@ export async function createDraftInstructionsFromShortages(
     createAlerts?: boolean;
   } = {},
 ): Promise<void> {
-  const targetDate =
-    options.targetDate ?? new Date(new Date().setHours(0, 0, 0, 0));
+  // 日付根治(2026-07-02): 既定の対象日は JST 暦日を UTC 真夜中で（@db.Date と一致）。
+  const targetDate = options.targetDate ?? todayJstAsUTC();
   const createAlerts = options.createAlerts !== false; // 既定は true（後方互換）
 
   for (const s of shortages) {
@@ -325,9 +326,9 @@ export async function createDraftInstructionsFromShortages(
 }
 
 function makeInstructionNo(targetDate: Date): string {
-  const y = targetDate.getFullYear();
-  const m = String(targetDate.getMonth() + 1).padStart(2, '0');
-  const d = String(targetDate.getDate()).padStart(2, '0');
+  const y = targetDate.getUTCFullYear();
+  const m = String(targetDate.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(targetDate.getUTCDate()).padStart(2, '0');
   const rand = Math.floor(Math.random() * 1000)
     .toString()
     .padStart(3, '0');

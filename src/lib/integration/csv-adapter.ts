@@ -543,7 +543,10 @@ function parseShipDate(raw: string): Date | null {
   const m = raw.match(/^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})$/);
   if (!m) return null;
   const [, y, mo, d] = m;
-  const date = new Date(Number(y), Number(mo) - 1, Number(d));
+  // @db.Date は「暦日」。UTC 0時で生成する（`new Date(y,mo,d)` はコンテナTZ=JSTのローカル0時
+  //   ＝前日15:00Z になり、Prisma が @db.Date を UTC 日付で保存するため 1 日前倒しになる不具合）。
+  //   日付根治（2026-07-02）: 出荷予定日は暦日どおり保存する。
+  const date = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
   if (isNaN(date.getTime())) return null;
   return date;
 }

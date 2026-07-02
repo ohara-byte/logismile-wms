@@ -16,6 +16,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { parseDateAsUTC, addDaysUTC, todayJstAsUTC, formatDateYmd } from '@/lib/date-utils';
 
 const Query = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -39,12 +40,15 @@ export async function GET(req: Request) {
     );
   }
 
-  const targetDate = parsed.data.date
-    ? new Date(parsed.data.date)
-    : new Date();
-  targetDate.setHours(0, 0, 0, 0);
-  const nextDate = new Date(targetDate);
-  nextDate.setDate(nextDate.getDate() + 1);
+  // 日付根治(2026-07-02): shipDate(@db.Date)は UTC 真夜中、createdAt(タイムスタンプ)は JST 壁時計の当日。
+  const ymd = parsed.data.date ?? formatDateYmd(todayJstAsUTC());
+  const targetDate = parseDateAsUTC(ymd) ?? todayJstAsUTC();
+  const nextDate = addDaysUTC(targetDate, 1);
+  // 当日入庫(createdAt)は JST の当日で照会（@db.Date ではないため UTC 真夜中では 9h ずれる）。
+  const createdFrom = new Date(ymd);
+  createdFrom.setHours(0, 0, 0, 0);
+  const createdTo = new Date(createdFrom);
+  createdTo.setDate(createdTo.getDate() + 1);
 
   // 当日の全 ShippingOrder（削除除外）
   const orders = await prisma.shippingOrder.findMany({
@@ -164,7 +168,7 @@ export async function GET(req: Request) {
   const movements = await prisma.stockMovement.findMany({
     where: {
       type: { in: ['inbound', 'inspection_count'] },
-      createdAt: { gte: targetDate, lt: nextDate },
+      createdAt: { gte: createdFrom, lt: createdTo },
     },
     select: { productCode: true, qtyDelta: true },
   });

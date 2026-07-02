@@ -84,19 +84,18 @@ const WORK_START_HOUR = 8;
 const WORK_END_HOUR = 17; // 検品完了時刻（締切）。全体ETA・計画比・遅延判定の基準
 const GROUP_DEADLINE_HOUR = 17; // グループ別締切（運送会社cutoff）。WORK_END と同じ 17 時
 
-// 日付範囲の境界は JST ローカル（setHours）で丸める。運送タブ /api/carriers/today や
-//   出荷指示 /api/orders/match と同一基準にし、shipDate データの実運用日付と一致させるため。
-//   （このファイルの他ロジックも全て getHours/setHours=JSTローカルで動作している。
-//     一時 setUTCHours に寄せた実装(6643550)は 09:00 JST 以降にUTC日付が翌日へ進み、
-//     当日データを外して 0 件表示になったため差し戻し。ここは setUTCHours にしないこと）
+// 日付範囲(shipDate)の境界は UTC 真夜中で丸める。@db.Date は UTC 日付で保存されるため。
+//   日付根治(2026-07-02): CSV取込の1日前倒しを解消し ship_date を正しい暦日に補正したので、
+//   全 shipDate クエリを UTC 基準へ統一（route の既定日は todayJstAsUTC で JST 暦日を渡す）。
+//   ※ 時刻(稼働時間8-17時・ETA等)の getHours/setHours は JST ウォールクロックのため据置。ここは setHours にしないこと。
 function startOfDay(d: Date): Date {
   const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
+  x.setUTCHours(0, 0, 0, 0);
   return x;
 }
 function endOfDay(d: Date): Date {
   const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
+  x.setUTCHours(23, 59, 59, 999);
   return x;
 }
 
