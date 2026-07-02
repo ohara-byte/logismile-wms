@@ -55,11 +55,11 @@ export default async function AdminLayout({
           <nav className="flex items-center gap-1 shrink-0 ml-1">
             <NavChip href="/dashboard" label="ダッシュボード" icon="📊" />
             <NavChip href="/orders" label="伝票一覧" icon="📋" />
-            {/* Sprint Z-2: 照合タブへの直リンクを追加（重要業務のため目立たせる）*/}
+            {/* 2026-07-02: 検品照合はフル画面 /stock-match へ独立（旧リンクは誤って出荷照合(tab=match)へ遷移していた）。*/}
             <NavChip
-              href="/dashboard?tab=match"
+              href="/stock-match"
               label="検品照合"
-              icon="📋"
+              icon="📦"
               accent
             />
             <NavChip href="/imports" label="CSV取込" icon="📁" />
