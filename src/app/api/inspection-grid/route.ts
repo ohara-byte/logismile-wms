@@ -136,33 +136,39 @@ export async function GET(req: Request) {
   // ④⑧ 検品（inspection_count・入庫日で前2日/当日に分割）
   //   ※ 現状 inspection_count に ship_date が無いため商品コード＋日付で近似。
   //     Phase 5（ハンディ発送日検品）で ship_date を付与したら ship_date 一致で厳密化する。
+  // ④⑧ 検品（発送日別 受入検品・Phase 5）：inspection_count・ship_date一致・検品実数(inspectedQty)を集計。
+  //   入庫日(createdAt)で前2日/当日に分割。発送日別に厳密（旧・総在庫検品は ship_date=null で除外される）。
   const [prevInsp, todayInsp] = await Promise.all([
     prisma.stockMovement.groupBy({
       by: ['productCode'],
       where: {
         productCode: { in: productCodes },
         type: 'inspection_count',
+        shipDate: shipDateUTC,
         createdAt: { gte: prevStart, lt: dayStart },
       },
-      _sum: { qtyDelta: true },
+      _sum: { inspectedQty: true },
     }),
     prisma.stockMovement.groupBy({
       by: ['productCode'],
       where: {
         productCode: { in: productCodes },
         type: 'inspection_count',
+        shipDate: shipDateUTC,
         createdAt: { gte: dayStart, lt: dayEnd },
       },
-      _sum: { qtyDelta: true },
+      _sum: { inspectedQty: true },
     }),
   ]);
 
   const sumMap = (rows: { productCode: string; _sum: { qtyDelta: number | null } }[]) =>
     new Map(rows.map((r) => [r.productCode, r._sum.qtyDelta ?? 0]));
+  const inspSumMap = (rows: { productCode: string; _sum: { inspectedQty: number | null } }[]) =>
+    new Map(rows.map((r) => [r.productCode, r._sum.inspectedQty ?? 0]));
   const prevDelById = sumMap(prevInbound);
   const todayDelById = sumMap(todayInbound);
-  const prevInspById = sumMap(prevInsp);
-  const todayInspById = sumMap(todayInsp);
+  const prevInspById = inspSumMap(prevInsp);
+  const todayInspById = inspSumMap(todayInsp);
 
   const rows: GridRow[] = plans.map((p) => {
     const prevDelivered = prevDelById.get(p.productCode) ?? 0;

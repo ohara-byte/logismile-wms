@@ -39,6 +39,14 @@ export default async function HandyHome() {
           <PickingNoScanForm currentStaffCode={session?.staffCode} />
         </div>
 
+        {/* 発送日別 受入検品（Phase 5・2026-07-02） */}
+        <a
+          href="/handy/receiving"
+          className="mt-4 w-full max-w-xs text-center px-3 py-2 rounded border border-accent-amber/50 bg-accent-amber/10 text-accent-amber text-xs font-bold"
+        >
+          📦 発送日別 受入検品
+        </a>
+
         <div className="mt-8 text-3xs text-ink-muted text-center">
           {session?.name}（{session?.empCode}）
         </div>
