@@ -39,6 +39,8 @@ interface MfgRow {
   required: number;
   allocated: number;
   inspections: number;
+  /** 対象日(ship_date)の最新 inbound(工場納品) 時刻（ISO・不足商品の納品時刻表示用） */
+  lastDeliveryAt: string | null;
   targetDate: string;
   requestedBy: string | null;
   factoryRef: string | null;
@@ -461,6 +463,9 @@ export function MfgPane() {
               <th className="px-2 py-2 text-right text-2xs uppercase text-ink-subtle font-bold">
                 引当 / 必要
               </th>
+              <th className="px-2 py-2 text-right text-2xs uppercase text-ink-subtle font-bold">
+                最終納品
+              </th>
               <th className="px-2 py-2 text-center text-2xs uppercase text-ink-subtle font-bold">
                 状態
               </th>
@@ -473,7 +478,7 @@ export function MfgPane() {
             {items.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="text-center py-8 text-sm text-ink-muted"
                 >
                   該当する製造連絡はありません
@@ -545,6 +550,19 @@ export function MfgPane() {
                       <div className="text-3xs text-ink-muted">
                         検品 {m.inspections} 回
                       </div>
+                    )}
+                  </td>
+                  <td className="px-2 py-1.5 text-right text-2xs tabular-nums">
+                    {m.lastDeliveryAt ? (
+                      <span className="text-ink-strong">
+                        {new Date(m.lastDeliveryAt).toLocaleTimeString('ja-JP', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: false,
+                        })}
+                      </span>
+                    ) : (
+                      <span className="text-ink-muted">—</span>
                     )}
                   </td>
                   <td className="px-2 py-1.5 text-center">

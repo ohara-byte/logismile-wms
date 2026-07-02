@@ -73,6 +73,8 @@ export async function GET(req: Request) {
   const allocBySkuDate = new Map<string, { reserved: number; fulfilled: number }>();
   const requiredBySkuDate = new Map<string, number>();
   const inspectionCountBySkuDate = new Map<string, number>();
+  // 不足商品の「最終納品時刻」（productCode__shipDate → 最新 inbound createdAt）
+  const lastDeliveryBySkuDate = new Map<string, Date>();
 
   if (productCodes.length > 0 && targetDates.length > 0) {
     // 必要数の集計（出荷指示明細 group by productCode + shipDate）
@@ -154,6 +156,22 @@ export async function GET(req: Request) {
       const k = `${m.productCode}__${dateKey}`;
       inspectionCountBySkuDate.set(k, (inspectionCountBySkuDate.get(k) ?? 0) + 1);
     }
+
+    // 不足商品の「最終納品時刻」：対象日(ship_date)の inbound(工場納品)の最新 createdAt。
+    const deliveries = await prisma.stockMovement.findMany({
+      where: {
+        productCode: { in: productCodes },
+        type: 'inbound',
+        OR: tdRanges.map((r) => ({ shipDate: { gte: r.utcStart, lt: r.utcEnd } })),
+      },
+      select: { productCode: true, shipDate: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    for (const d of deliveries) {
+      if (!d.shipDate) continue;
+      const dk = `${d.productCode}__${d.shipDate.toISOString().slice(0, 10)}`;
+      if (!lastDeliveryBySkuDate.has(dk)) lastDeliveryBySkuDate.set(dk, d.createdAt);
+    }
   }
 
   function deriveDisplayStatus(
@@ -199,6 +217,7 @@ export async function GET(req: Request) {
       required,
       allocated,
       inspections,
+      lastDeliveryAt: lastDeliveryBySkuDate.get(k)?.toISOString() ?? null,
       targetDate,
       requestedBy: m.requestedBy,
       factoryRef: m.factoryRef,
