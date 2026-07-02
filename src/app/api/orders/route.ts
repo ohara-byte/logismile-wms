@@ -31,15 +31,16 @@ export async function GET(req: Request) {
   const page = Math.max(parseInt(searchParams.get('page') ?? '1', 10) || 1, 1);
   const limit = Math.min(parseInt(searchParams.get('limit') ?? '50', 10) || 50, 200);
 
+  // 出荷日は JST ローカル日で範囲化する（運送 /api/carriers/today・ダッシュボードと同基準）。
+  //   new Date("YYYY-MM-DD") は UTC 0時のため setHours(JST) で当日境界に丸め、翌日未満の半開区間にする。
+  //   （UTC範囲だと JST 09:00 以降に当日データを外して 0 件になる不具合になる）
+  const shipFrom = shipDate ? new Date(shipDate) : null;
+  if (shipFrom) shipFrom.setHours(0, 0, 0, 0);
+  const shipTo = shipFrom ? new Date(shipFrom) : null;
+  if (shipTo) shipTo.setDate(shipTo.getDate() + 1);
+
   const where: Prisma.ShippingOrderWhereInput = {
-    ...(shipDate
-      ? {
-          shipDate: {
-            gte: new Date(shipDate),
-            lte: new Date(`${shipDate}T23:59:59.999Z`),
-          },
-        }
-      : {}),
+    ...(shipFrom && shipTo ? { shipDate: { gte: shipFrom, lt: shipTo } } : {}),
     // status の明示指定が優先。excludeHeld は status 未指定時のみ作用させる
     ...(status
       ? { status }
