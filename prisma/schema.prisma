@@ -880,3 +880,27 @@ model PermissionOverride {
 
   @@map("permission_overrides")
 }
+
+/// 29. 工場発送予定（クラフトスマイル連携・検品照合グリッド用）
+///   クラフトスマイルが発送日ごとに push する「発送予定数(①)・18時確定数(②)・製造部署」のスナップショット。
+///   検品照合(発送日×製造部署×種別)グリッドで WMS 実績(納品/検品=StockMovement)と突合する基準値。
+///   同一発送日は push のたびに洗い替え（全削除→一括作成）。productionDeptCode は集計軸。
+model FactoryShipPlan {
+  id                 String   @id @default(cuid())
+  shipDate           DateTime @map("ship_date") @db.Date
+  productCode        String   @map("product_code") @db.VarChar(20)
+  productName        String?  @map("product_name") @db.VarChar(100)
+  productionDeptCode String?  @map("production_dept_code") @db.VarChar(20)
+  productionDeptName String?  @map("production_dept_name") @db.VarChar(40)
+  /// ① 発送予定数（ShipPlan.plannedQty 由来）
+  plannedQty         Int      @default(0) @map("planned_qty")
+  /// ② 18時確定数（OrderForecast.quantity 由来・未確定は null）
+  confirmedQty       Int?     @map("confirmed_qty")
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([shipDate, productCode])
+  @@index([shipDate])
+  @@index([shipDate, productionDeptCode])
+  @@map("factory_ship_plans")
+}
