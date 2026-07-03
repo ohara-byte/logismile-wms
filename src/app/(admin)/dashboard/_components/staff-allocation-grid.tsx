@@ -27,8 +27,8 @@ interface Props {
   };
 }
 
-const SLOT_COUNT = 18;
-const WORK_START_HOUR = 8; // 8時始業（2026-07-01変更）。18スロット = 8:00〜17:00
+const SLOT_COUNT = 20;
+const WORK_START_HOUR = 8; // 8時始業。20スロット = 8:00〜18:00（割当ガントと範囲を統一）
 const LUNCH_SLOTS = [8, 9]; // 12:00, 12:30（始業8時基準：8+4=12:00）
 
 function slotLabel(idx: number): string {
@@ -56,7 +56,7 @@ export function StaffAllocationGrid({ rows, summary }: Props) {
         <h3 className="text-2xs font-bold text-accent-amber uppercase tracking-wider">
           👥 30分要員配置
         </h3>
-        <span className="text-3xs text-ink-muted">8:00 - 17:00</span>
+        <span className="text-3xs text-ink-muted">8:00 - 18:00</span>
       </div>
 
       <div

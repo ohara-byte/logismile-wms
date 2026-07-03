@@ -38,10 +38,13 @@ interface ServerAssignment extends Assignment {
   group: { id: string; name: string };
 }
 
-const HOURS_FROM = 9;
+// シフト割り当て（メンバー割当ガント）の表示範囲＝8:00〜18:00。
+//   8〜9時は準備時間を含む（シフトは準備時間込み）。ダッシュボードの進捗計算は
+//   実際の梱包時間 9:00〜17:00 のみで別途行う（progress.ts）。
+const HOURS_FROM = 8;
 const HOURS_TO = 18; // 18:00 まで
 const SLOT_MIN = 30;
-const SLOTS = ((HOURS_TO - HOURS_FROM) * 60) / SLOT_MIN; // 18 slots
+const SLOTS = ((HOURS_TO - HOURS_FROM) * 60) / SLOT_MIN; // 20 slots（8:00〜18:00）
 
 // 2026-05-20: 休み判定の保険として、パターンコード名でも休みを判別する。
 //   通常は pattern.is_off=true で判定可能だが、マスタデータ不整合への防御として
@@ -644,7 +647,7 @@ export function AssignmentClient({
   }
 
   // モック準拠: 1 時間 = 9 列のうち 1 列。横軸 9-18時 (9 時間 = 18 スロット)
-  const HOURS_COUNT = HOURS_TO - HOURS_FROM; // = 9
+  const HOURS_COUNT = HOURS_TO - HOURS_FROM; // = 10（8〜18時）
   // 強調する縦線（昼休憩・夕方締切相当）
   const STRONG_HOURS = [12, 15, 16];
 

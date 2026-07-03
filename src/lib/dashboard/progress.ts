@@ -83,9 +83,11 @@ export interface GroupProgress {
 const WORK_START_HOUR = 9;
 const WORK_END_HOUR = 17; // 検品完了時刻（締切）。全体ETA・計画比・遅延判定の基準
 const GROUP_DEADLINE_HOUR = 17; // グループ別締切（運送会社cutoff）。WORK_END と同じ 17 時
-// 要員配置(シフト)の表示範囲は 8:00〜17:00（8〜9時は準備時間・ピッキングは9時から）。
-//   進捗・段階バー・完了予測の WORK_START_HOUR(=9・ピッキング) とは別軸で扱う。
+// 要員配置(シフト)の表示範囲は 8:00〜18:00（8〜9時は準備時間・シフトは準備時間込み）。
+//   割当ガント(assignment-client)の 8:00〜18:00 と範囲を合わせる。
+//   進捗・段階バー・完了予測の WORK_START_HOUR(=9・実梱包) / WORK_END_HOUR(=17) とは別軸。
 const SHIFT_START_HOUR = 8;
+const SHIFT_END_HOUR = 18;
 
 // 日付範囲(shipDate)の境界は UTC 真夜中で丸める。@db.Date は UTC 日付で保存されるため。
 //   日付根治(2026-07-02): CSV取込の1日前倒しを解消し ship_date を正しい暦日に補正したので、
@@ -572,8 +574,8 @@ export async function getStaffAllocationGrid(date: Date): Promise<{
     select: { groupId: true, startTime: true, endTime: true },
   });
 
-  // 要員配置は SHIFT_START_HOUR(8時)始業で 8:00-17:00 を 30 分刻み＝18 スロット。
-  const SLOTS = (WORK_END_HOUR - SHIFT_START_HOUR) * 2; // 18 スロット
+  // 要員配置は SHIFT_START_HOUR(8時)始業で 8:00-18:00 を 30 分刻み＝20 スロット。
+  const SLOTS = (SHIFT_END_HOUR - SHIFT_START_HOUR) * 2; // 20 スロット（8:00〜18:00）
   function slotIdx(time: string): number {
     const [h, m] = time.split(':').map((s) => parseInt(s, 10));
     return Math.max(0, Math.min(SLOTS - 1, (h - SHIFT_START_HOUR) * 2 + (m >= 30 ? 1 : 0)));
@@ -631,7 +633,7 @@ export async function getStaffAllocationGrid(date: Date): Promise<{
       currentTime: slotToHHMM(safeSlot),
       currentCount,
       amPeak: { time: slotToHHMM(amPeakIdx), count: amSlots[amPeakIdx] ?? 0 },
-      pmPeak: { time: slotToHHMM(6 + pmPeakIdx), count: pmSlots[pmPeakIdx] ?? 0 },
+      pmPeak: { time: slotToHHMM(8 + pmPeakIdx), count: pmSlots[pmPeakIdx] ?? 0 },
       totalManHours,
     },
   };
