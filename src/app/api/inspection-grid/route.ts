@@ -27,6 +27,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/permissions';
 import { parseDateAsUTC, todayJstAsUTC, formatDateYmd } from '@/lib/date-utils';
+import { fetchLiveShipPlan } from '@/lib/integration/factory-ship-plan-pull';
 
 const Query = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -79,22 +80,40 @@ export async function GET(req: Request) {
   const prevStart = new Date(dayStart);
   prevStart.setDate(prevStart.getDate() - 2);
 
-  // ①②・製造部署（母集合）
-  const plans = await prisma.factoryShipPlan.findMany({
-    where: { shipDate: shipDateUTC },
-    select: {
-      productCode: true,
-      productName: true,
-      productionDeptCode: true,
-      productionDeptName: true,
-      plannedQty: true,
-      confirmedQty: true,
-    },
-  });
+  // ①②・製造部署（母集合）。まずクラフトスマイルからライブ取得（リアル連携＝push待ち不要で常に最新）、
+  //   連携未設定/不達時は FactoryShipPlan（push キャッシュ）にフォールバックする。
+  type PlanRow = {
+    productCode: string;
+    productName: string | null;
+    productionDeptCode: string | null;
+    productionDeptName: string | null;
+    plannedQty: number;
+    confirmedQty: number | null;
+  };
+  const live = await fetchLiveShipPlan(ymd);
+  let plans: PlanRow[];
+  let planSource: 'live' | 'cache';
+  if (live && live.length > 0) {
+    plans = live;
+    planSource = 'live';
+  } else {
+    plans = await prisma.factoryShipPlan.findMany({
+      where: { shipDate: shipDateUTC },
+      select: {
+        productCode: true,
+        productName: true,
+        productionDeptCode: true,
+        productionDeptName: true,
+        plannedQty: true,
+        confirmedQty: true,
+      },
+    });
+    planSource = 'cache';
+  }
 
   if (plans.length === 0) {
     return NextResponse.json({
-      data: { shipDate: ymd, depts: [], typeCounts: {}, total: emptyTotal() },
+      data: { shipDate: ymd, depts: [], typeCounts: {}, total: emptyTotal(), planSource },
       message: 'OK',
     });
   }
@@ -225,7 +244,7 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json({
-    data: { shipDate: ymd, depts, typeCounts, total: sumRows(rows) },
+    data: { shipDate: ymd, depts, typeCounts, total: sumRows(rows), planSource },
     message: 'OK',
   });
 }
