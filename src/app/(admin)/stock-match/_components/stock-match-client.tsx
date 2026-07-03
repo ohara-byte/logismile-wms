@@ -2,8 +2,8 @@
 
 /**
  * 検品照合グリッド（フル画面）。CraftSmile「必要製造数」画面に合わせた見せ方。
- *  - 製造部署タブ（全体＋各部署・部署カラー）で切り分け（必須）
- *  - Excel「検品照合」の全列をファーストビュー表示（sticky 商品列＋固定ヘッダ・トグルで隠さない）
+ *  - 製造部署タブ（全体＋8部署・部署カラー）は【固定表示】。データ0でも常に見える。
+ *  - Excel「検品照合」の全カラム見出しは【固定表示】。商品が無くても項目は常にファーストビューで見える。
  *  - 発送予定数(①)・18時確定数(②=本日必要数)はクラフトスマイル連携値、③〜⑨はWMS実績
  *  - 引当・在庫は概念から外す（列に出さない・サイレント）
  *  - リアル表示：15秒ポーリングで自動更新
@@ -69,17 +69,17 @@ const TYPE_LABEL: Record<Exclude<TypeKey, 'all'>, string> = {
   warehouse: '在庫型',
 };
 
-// 製造部署カラー（CraftSmile と同系統・タブのアクセント用）
-const DEPT_DOT: Record<string, string> = {
-  ATELIER: 'bg-pink-400',
-  SANK: 'bg-orange-400',
-  SMOKE: 'bg-amber-400',
-  NOODLE: 'bg-indigo-400',
-  CHOCOLAB: 'bg-fuchsia-400',
-  AGRI: 'bg-emerald-400',
-  SPC: 'bg-orange-300',
-  DELICA: 'bg-cyan-400',
-};
+// 製造部署（固定・CraftSmile と同一・8部署）。データ有無に関わらずタブは常に表示。
+const DEPTS: { code: string; name: string; dot: string }[] = [
+  { code: 'ATELIER', name: 'アトリエ', dot: 'bg-pink-400' },
+  { code: 'SANK', name: 'サンク', dot: 'bg-orange-400' },
+  { code: 'SMOKE', name: '燻製', dot: 'bg-amber-400' },
+  { code: 'NOODLE', name: '製麺所', dot: 'bg-indigo-400' },
+  { code: 'CHOCOLAB', name: 'チョコLAB', dot: 'bg-fuchsia-400' },
+  { code: 'AGRI', name: 'アグリ', dot: 'bg-emerald-400' },
+  { code: 'SPC', name: 'SPC', dot: 'bg-orange-300' },
+  { code: 'DELICA', name: 'デリカ', dot: 'bg-cyan-400' },
+];
 
 function pad(n: number) {
   return String(n).padStart(2, '0');
@@ -95,6 +95,7 @@ function shiftYmd(ymd: string, days: number): string {
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
 }
 
+// 全カラム（固定）。商品が無くても見出しは常に表示する。
 const COLS: { key: keyof GridRow; label: string; sub?: string; accent?: string }[] = [
   { key: 'plannedQty', label: '①発送予定', sub: 'CS', accent: 'text-ink-strong' },
   { key: 'confirmedQty', label: '②18時確定', sub: '本日必要' },
@@ -110,10 +111,25 @@ const COLS: { key: keyof GridRow; label: string; sub?: string; accent?: string }
   { key: 'balance', label: '過不足', sub: '納-検' },
 ];
 
+const EMPTY_TOTAL: Total = {
+  skuCount: 0,
+  plannedQty: 0,
+  confirmedQty: 0,
+  prevDelivered: 0,
+  prevInspected: 0,
+  prevDiff: 0,
+  todayDelivered: 0,
+  todayInspected: 0,
+  todayDiff: 0,
+  totalInspected: 0,
+  totalDelivered: 0,
+  balance: 0,
+};
+
 export function StockMatchClient() {
   const [date, setDate] = useState(todayYmd());
   const [typeKey, setTypeKey] = useState<TypeKey>('all');
-  const [activeDept, setActiveDept] = useState<string>('__all__'); // '__all__'=全体 / deptCode / '__none__'
+  const [activeDept, setActiveDept] = useState<string>('__all__'); // '__all__'=全体 / deptCode
   const [data, setData] = useState<GridData | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -150,49 +166,21 @@ export function StockMatchClient() {
     return () => clearInterval(id);
   }, [reload]);
 
-  // 部署タブ（全体＋データにある部署）
-  const deptTabs = useMemo(() => {
-    const tabs: { code: string; label: string; deptCode: string | null }[] = [
-      { code: '__all__', label: '全体', deptCode: null },
-    ];
-    for (const d of data?.depts ?? []) {
-      tabs.push({
-        code: d.deptCode ?? '__none__',
-        label: d.deptName ?? '（部署なし）',
-        deptCode: d.deptCode,
-      });
-    }
-    return tabs;
-  }, [data]);
-
-  // アクティブ部署の行（全体＝全部署結合）＋種別フィルタ
+  // アクティブ部署の行（全体＝全部署結合）＋種別フィルタ。データが無ければ空配列（見出しは固定表示のまま）。
   const rows = useMemo(() => {
     if (!data) return [];
     let base: GridRow[];
     if (activeDept === '__all__') {
       base = data.depts.flatMap((d) => d.rows);
     } else {
-      const g = data.depts.find((d) => (d.deptCode ?? '__none__') === activeDept);
+      const g = data.depts.find((d) => d.deptCode === activeDept);
       base = g?.rows ?? [];
     }
     return typeKey === 'all' ? base : base.filter((r) => r.productType === typeKey);
   }, [data, activeDept, typeKey]);
 
   const subtotal = useMemo(() => {
-    const t: Total = {
-      skuCount: rows.length,
-      plannedQty: 0,
-      confirmedQty: 0,
-      prevDelivered: 0,
-      prevInspected: 0,
-      prevDiff: 0,
-      todayDelivered: 0,
-      todayInspected: 0,
-      todayDiff: 0,
-      totalInspected: 0,
-      totalDelivered: 0,
-      balance: 0,
-    };
+    const t: Total = { ...EMPTY_TOTAL, skuCount: rows.length };
     for (const r of rows) {
       t.plannedQty += r.plannedQty;
       t.confirmedQty += r.confirmedQty ?? 0;
@@ -209,12 +197,22 @@ export function StockMatchClient() {
     return t;
   }, [rows]);
 
+  // 部署ごとの SKU 件数（タブのバッジ用・固定タブに件数を出す）
+  const countByDept = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const d of data?.depts ?? []) {
+      if (d.deptCode) m.set(d.deptCode, d.rows.length);
+    }
+    return m;
+  }, [data]);
+
   const typeCounts = data?.typeCounts ?? {};
   const cellVal = (r: GridRow, key: keyof GridRow): number | string => {
     const v = r[key];
     if (v == null) return '—';
     return v as number;
   };
+  const total = data?.total ?? EMPTY_TOTAL;
 
   return (
     <div>
@@ -242,18 +240,19 @@ export function StockMatchClient() {
         </div>
       </div>
 
-      {/* 製造部署タブ（必須・全体＋各部署） */}
+      {/* 製造部署タブ（固定・全体＋8部署）。データ有無に関わらず常に表示。 */}
       <div className="flex flex-wrap gap-1 mb-2">
-        {deptTabs.map((t) => {
+        {[{ code: '__all__', name: '全体', dot: '' }, ...DEPTS].map((t) => {
           const active = activeDept === t.code;
-          const dot = t.deptCode ? DEPT_DOT[t.deptCode] : null;
+          const cnt = t.code === '__all__' ? total.skuCount : countByDept.get(t.code) ?? 0;
           return (
             <button key={t.code} type="button" onClick={() => setActiveDept(t.code)}
               className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-2xs font-bold transition-colors ${
                 active ? 'border-accent-amber bg-accent-amber text-surface-base' : 'border-surface-border bg-surface-panel text-ink-subtle hover:border-accent-amber'
               }`}>
-              {dot && <span className={`w-2 h-2 rounded-full ${dot}`} />}
-              {t.label}
+              {t.dot && <span className={`w-2 h-2 rounded-full ${t.dot}`} />}
+              {t.name}
+              <span className={`text-3xs ${active ? 'text-surface-base/80' : 'text-ink-muted'}`}>({cnt})</span>
             </button>
           );
         })}
@@ -261,76 +260,75 @@ export function StockMatchClient() {
 
       {error && <div className="mb-2 p-2 text-2xs bg-status-error-bg text-status-error border border-status-error rounded">{error}</div>}
 
-      {data && data.depts.length === 0 && (
-        <div className="p-6 text-center text-ink-subtle text-xs border border-surface-border rounded">
-          この発送日の発送予定データ（クラフトスマイル連携）がありません。WMS一括納品の送信 or 18時確定取込で連携されます。
+      {/* データ0件でも見出し（カラム・タブ）は固定表示。連携待ちのときだけ小さく注記。 */}
+      {data && total.skuCount === 0 && !error && (
+        <div className="mb-2 px-2 py-1 text-3xs text-ink-muted bg-surface-panel border border-surface-border rounded">
+          ※ この発送日の発送予定データ（クラフトスマイル連携）はまだありません。WMS一括納品の送信 or 18時確定取込で表示されます。
         </div>
       )}
 
-      {/* グリッド：全列ファーストビュー・sticky 商品列＋固定ヘッダ */}
-      {data && data.depts.length > 0 && (
-        <div className="border border-surface-border rounded overflow-auto max-h-[calc(100vh-190px)]">
-          <table className="w-full text-2xs border-collapse">
-            <thead className="sticky top-0 z-20">
-              <tr className="bg-surface-base text-ink-subtle">
-                <th className="sticky left-0 z-30 bg-surface-base text-left px-2 py-1.5 border-b border-surface-border min-w-[200px]">商品</th>
-                {COLS.map((c) => (
-                  <th key={c.key} className="text-right px-2 py-1.5 border-b border-surface-border whitespace-nowrap">
-                    <div>{c.label}</div>
-                    {c.sub && <div className="text-3xs font-normal text-ink-muted">{c.sub}</div>}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.productCode} className="hover:bg-surface-base/60 border-b border-surface-border/60">
-                  <td className="sticky left-0 z-10 bg-surface-panel px-2 py-1">
-                    <div className="text-ink-strong truncate max-w-[190px]">{r.productName ?? '—'}</div>
-                    <div className="text-3xs text-ink-muted tabular-nums">
-                      {r.productCode}
-                      {r.productType ? `／${TYPE_LABEL[r.productType as Exclude<TypeKey, 'all'>] ?? r.productType}` : ''}
-                    </div>
-                  </td>
-                  {COLS.map((c) => {
-                    const raw = r[c.key];
-                    let cls = 'text-right px-2 py-1 tabular-nums';
-                    if (c.key === 'confirmedShortage' && raw != null && (raw as number) > 0) cls += ' text-status-error font-bold';
-                    else if ((c.key === 'prevDiff' || c.key === 'todayDiff') && raw !== 0) cls += ' text-accent-amber';
-                    else if (c.key === 'balance') cls += (raw as number) > 0 ? ' text-accent-amber font-bold' : (raw as number) < 0 ? ' text-status-error font-bold' : '';
-                    else if (c.accent) cls += ' ' + c.accent;
-                    return <td key={c.key} className={cls}>{cellVal(r, c.key)}</td>;
-                  })}
-                </tr>
+      {/* グリッド：カラム見出しは常に固定表示（sticky 商品列＋固定ヘッダ＋合計行固定） */}
+      <div className="border border-surface-border rounded overflow-auto max-h-[calc(100vh-190px)]">
+        <table className="w-full text-2xs border-collapse">
+          <thead className="sticky top-0 z-20">
+            <tr className="bg-surface-base text-ink-subtle">
+              <th className="sticky left-0 z-30 bg-surface-base text-left px-2 py-1.5 border-b border-surface-border min-w-[200px]">商品</th>
+              {COLS.map((c) => (
+                <th key={c.key} className="text-right px-2 py-1.5 border-b border-surface-border whitespace-nowrap">
+                  <div>{c.label}</div>
+                  {c.sub && <div className="text-3xs font-normal text-ink-muted">{c.sub}</div>}
+                </th>
               ))}
-              {rows.length === 0 && (
-                <tr>
-                  <td colSpan={COLS.length + 1} className="text-center py-6 text-ink-muted text-2xs">該当データがありません</td>
-                </tr>
-              )}
-            </tbody>
-            {rows.length > 0 && (
-              <tfoot className="sticky bottom-0 z-20">
-                <tr className="bg-surface-base font-bold text-ink-strong">
-                  <td className="sticky left-0 z-30 bg-surface-base px-2 py-1.5 border-t border-surface-border">合計（{subtotal.skuCount} SKU）</td>
-                  <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.plannedQty}</td>
-                  <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.confirmedQty}</td>
-                  <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.prevDelivered}</td>
-                  <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.prevInspected}</td>
-                  <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.prevDiff}</td>
-                  <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">—</td>
-                  <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.todayDelivered}</td>
-                  <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.todayInspected}</td>
-                  <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.todayDiff}</td>
-                  <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.totalInspected}</td>
-                  <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.totalDelivered}</td>
-                  <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.balance}</td>
-                </tr>
-              </tfoot>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.productCode} className="hover:bg-surface-base/60 border-b border-surface-border/60">
+                <td className="sticky left-0 z-10 bg-surface-panel px-2 py-1">
+                  <div className="text-ink-strong truncate max-w-[190px]">{r.productName ?? '—'}</div>
+                  <div className="text-3xs text-ink-muted tabular-nums">
+                    {r.productCode}
+                    {r.productType ? `／${TYPE_LABEL[r.productType as Exclude<TypeKey, 'all'>] ?? r.productType}` : ''}
+                  </div>
+                </td>
+                {COLS.map((c) => {
+                  const raw = r[c.key];
+                  let cls = 'text-right px-2 py-1 tabular-nums';
+                  if (c.key === 'confirmedShortage' && raw != null && (raw as number) > 0) cls += ' text-status-error font-bold';
+                  else if ((c.key === 'prevDiff' || c.key === 'todayDiff') && raw !== 0) cls += ' text-accent-amber';
+                  else if (c.key === 'balance') cls += (raw as number) > 0 ? ' text-accent-amber font-bold' : (raw as number) < 0 ? ' text-status-error font-bold' : '';
+                  else if (c.accent) cls += ' ' + c.accent;
+                  return <td key={c.key} className={cls}>{cellVal(r, c.key)}</td>;
+                })}
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={COLS.length + 1} className="text-center py-10 text-ink-muted text-2xs">
+                  {busy ? '読込中…' : '該当する商品がありません（項目は上に固定表示）'}
+                </td>
+              </tr>
             )}
-          </table>
-        </div>
-      )}
+          </tbody>
+          <tfoot className="sticky bottom-0 z-20">
+            <tr className="bg-surface-base font-bold text-ink-strong">
+              <td className="sticky left-0 z-30 bg-surface-base px-2 py-1.5 border-t border-surface-border">合計（{subtotal.skuCount} SKU）</td>
+              <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.plannedQty}</td>
+              <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.confirmedQty}</td>
+              <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.prevDelivered}</td>
+              <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.prevInspected}</td>
+              <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.prevDiff}</td>
+              <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">—</td>
+              <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.todayDelivered}</td>
+              <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.todayInspected}</td>
+              <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.todayDiff}</td>
+              <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.totalInspected}</td>
+              <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.totalDelivered}</td>
+              <td className="text-right px-2 py-1.5 border-t border-surface-border tabular-nums">{subtotal.balance}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   );
 }
