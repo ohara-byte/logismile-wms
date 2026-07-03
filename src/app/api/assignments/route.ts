@@ -56,8 +56,14 @@ export async function PUT(req: Request) {
   const json = await req.json();
   const parsed = PutBody.safeParse(json);
   if (!parsed.success) {
+    // どの項目が不正かを含める（例: assignments.0.startTime）。原因特定を容易にするため。
     return NextResponse.json(
-      { error: 'VALIDATION', message: parsed.error.issues.map((i) => i.message).join(', ') },
+      {
+        error: 'VALIDATION',
+        message: parsed.error.issues
+          .map((i) => `${i.path.join('.') || 'body'}: ${i.message}`)
+          .join(' / '),
+      },
       { status: 422 },
     );
   }

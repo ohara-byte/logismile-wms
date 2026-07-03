@@ -271,10 +271,36 @@ export function AssignmentClient({
   async function onSave() {
     setBusy(true);
     setStatusMsg(null);
+    // 送信前サニタイズ：時刻は必ず HH:MM（0 埋め）に整形し、欠損/未整形の割当は保存前に検出する。
+    //   （null・"" や "8:00" のような未整形値がそのまま飛ぶと、API 側の Zod 検証が
+    //     「Invalid input」で 422 を返し、原因が分かりにくくなるため。）
+    const padHHMM = (t: string | null | undefined): string => {
+      const m = /^(\d{1,2}):(\d{1,2})$/.exec((t ?? '').trim());
+      return m ? `${m[1].padStart(2, '0')}:${m[2].padStart(2, '0')}` : '';
+    };
+    const cleaned = assignments.map((a) => ({
+      staffCode: (a.staffCode ?? '').trim(),
+      groupId: (a.groupId ?? '').trim(),
+      startTime: padHHMM(a.startTime),
+      endTime: padHHMM(a.endTime),
+    }));
+    const bad = cleaned.find(
+      (a) => !a.staffCode || !a.groupId || !a.startTime || !a.endTime,
+    );
+    if (bad) {
+      setBusy(false);
+      const who =
+        todayShifts.find((s) => s.staffCode === bad.staffCode)?.staffName ??
+        (bad.staffCode || '(不明なメンバー)');
+      setStatusMsg(
+        `❌ 割当に不備があるため保存できません（${who}）。グループ・開始・終了時刻を確認してください。`,
+      );
+      return;
+    }
     const res = await fetch('/api/assignments', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date, assignments }),
+      body: JSON.stringify({ date, assignments: cleaned }),
     });
     const j = await res.json();
     setBusy(false);
