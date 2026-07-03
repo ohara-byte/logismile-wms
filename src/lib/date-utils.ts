@@ -87,3 +87,38 @@ export function addDaysUTC(d: Date, days: number): Date {
     Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + days),
   );
 }
+
+/**
+ * 時刻文字列を正準 "HH:MM"（0 埋め）に正規化する。
+ *
+ * シフトパターン/過去データ由来の表記ゆれ（コロン無し "1700"、単桁 "8:0" 等）を
+ * 吸収し、常に "HH:MM" を返す。正規化できない/範囲外の値は "" を返す。
+ *
+ *  - "17:00" → "17:00"
+ *  - "8:0"   → "08:00"
+ *  - "1700"  → "17:00"  （コロン無し HHMM）
+ *  - "930"   → "09:30"  （コロン無し HMM）
+ *  - null / "" / "abc" / "25:00" → ""（呼び出し側で不備として扱う）
+ */
+export function normalizeHHMM(input: string | null | undefined): string {
+  const s = (input ?? '').trim();
+  let h: string | undefined;
+  let m: string | undefined;
+  const colon = /^(\d{1,2}):(\d{1,2})$/.exec(s);
+  if (colon) {
+    h = colon[1];
+    m = colon[2];
+  } else {
+    // コロン無し（"1700" / "930"）: 末尾2桁を分、先頭を時とみなす
+    const compact = /^(\d{1,2})(\d{2})$/.exec(s);
+    if (compact) {
+      h = compact[1];
+      m = compact[2];
+    }
+  }
+  if (h == null || m == null) return '';
+  const hh = h.padStart(2, '0');
+  const mm = m.padStart(2, '0');
+  if (Number(hh) > 23 || Number(mm) > 59) return '';
+  return `${hh}:${mm}`;
+}

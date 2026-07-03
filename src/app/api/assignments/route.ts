@@ -10,7 +10,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
-import { parseDateAsUTC } from '@/lib/date-utils';
+import { parseDateAsUTC, normalizeHHMM } from '@/lib/date-utils';
 
 export async function GET(req: Request) {
   const guard = await requireRole('admin', 'manager');
@@ -54,6 +54,17 @@ export async function PUT(req: Request) {
   if (!guard.ok) return guard.response;
 
   const json = await req.json();
+  // 時刻の表記ゆれ（コロン無し "1700"・単桁 "8:0" 等）を正準 "HH:MM" に正規化してから検証・保存する。
+  //   → シフトパターン/過去データ由来のゆれを保存時に自己修復し、格納値を常に "HH:MM" に保つ。
+  if (json && Array.isArray((json as { assignments?: unknown }).assignments)) {
+    for (const a of (json as { assignments: unknown[] }).assignments) {
+      if (a && typeof a === 'object') {
+        const rec = a as { startTime?: unknown; endTime?: unknown };
+        if (typeof rec.startTime === 'string') rec.startTime = normalizeHHMM(rec.startTime);
+        if (typeof rec.endTime === 'string') rec.endTime = normalizeHHMM(rec.endTime);
+      }
+    }
+  }
   const parsed = PutBody.safeParse(json);
   if (!parsed.success) {
     // どの項目が不正かを含める（例: assignments.0.startTime）。原因特定を容易にするため。

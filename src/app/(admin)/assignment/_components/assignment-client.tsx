@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { TextInput } from '@/components/ui/form-controls';
 import { cn } from '@/lib/cn';
+import { normalizeHHMM } from '@/lib/date-utils';
 
 interface Group {
   id: string;
@@ -271,18 +272,14 @@ export function AssignmentClient({
   async function onSave() {
     setBusy(true);
     setStatusMsg(null);
-    // 送信前サニタイズ：時刻は必ず HH:MM（0 埋め）に整形し、欠損/未整形の割当は保存前に検出する。
-    //   （null・"" や "8:00" のような未整形値がそのまま飛ぶと、API 側の Zod 検証が
-    //     「Invalid input」で 422 を返し、原因が分かりにくくなるため。）
-    const padHHMM = (t: string | null | undefined): string => {
-      const m = /^(\d{1,2}):(\d{1,2})$/.exec((t ?? '').trim());
-      return m ? `${m[1].padStart(2, '0')}:${m[2].padStart(2, '0')}` : '';
-    };
+    // 送信前サニタイズ：時刻を正準 "HH:MM" に正規化し、欠損/不正な割当は保存前に検出する。
+    //   （コロン無し "1700" や単桁 "8:0" 等の表記ゆれが混じったまま飛ぶと、API の Zod 検証が
+    //     422 を返す。normalizeHHMM で "1700"→"17:00" 等に整えて保存成功＆値を自己修復する。）
     const cleaned = assignments.map((a) => ({
       staffCode: (a.staffCode ?? '').trim(),
       groupId: (a.groupId ?? '').trim(),
-      startTime: padHHMM(a.startTime),
-      endTime: padHHMM(a.endTime),
+      startTime: normalizeHHMM(a.startTime),
+      endTime: normalizeHHMM(a.endTime),
     }));
     const bad = cleaned.find(
       (a) => !a.staffCode || !a.groupId || !a.startTime || !a.endTime,
