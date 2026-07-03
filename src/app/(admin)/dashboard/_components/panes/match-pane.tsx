@@ -477,6 +477,7 @@ export function MatchPane() {
                         )
                       }
                       onAction={() => setActionTarget(row)}
+                      onOpenDetail={() => openOrderDetail(row.pkNo)}
                     />
                   ))
                 )}
@@ -617,11 +618,14 @@ function MatchTr({
   onBarcode,
   onVisual,
   onAction,
+  onOpenDetail,
 }: {
   row: MatchRow;
   onBarcode: () => void;
   onVisual: () => void;
   onAction: () => void;
+  /** 伝票NO クリックで伝票詳細モーダルを開く */
+  onOpenDetail: () => void;
 }) {
   const rowCls = row.inspected
     ? 'bg-emerald-950/20'
@@ -651,7 +655,16 @@ function MatchTr({
           className="cursor-pointer"
         />
       </td>
-      <td className="px-1.5 py-1 font-mono text-accent-amber tabular-nums">{row.pkNo}</td>
+      <td className="px-1.5 py-1 font-mono tabular-nums">
+        <button
+          type="button"
+          onClick={onOpenDetail}
+          className="text-accent-amber hover:underline focus:outline-none focus:ring-1 focus:ring-accent-amber rounded"
+          title="クリックで伝票の詳細を表示"
+        >
+          {row.pkNo}
+        </button>
+      </td>
       <td className="px-1.5 py-1 font-mono text-ink-subtle">{row.invoiceNo ?? '—'}</td>
       <td className="px-1.5 py-1 truncate max-w-[140px]" title={row.destName ?? ''}>
         {row.destName ?? '—'}
