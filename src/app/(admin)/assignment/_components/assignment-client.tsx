@@ -48,6 +48,39 @@ const SLOTS = ((HOURS_TO - HOURS_FROM) * 60) / SLOT_MIN; // 18 slots
 //   既知の休みパターンコードもハードコードしておく。
 const KNOWN_OFF_PATTERNS = new Set(['公休', '有休', '希休', '特休', '欠勤']);
 
+// 2026-07-03: 12:00〜13:00 に昼休憩を自動で挟むシフトパターン（大文字小文字を区別しない）。
+//   勤務時間が 12〜13 時を含む場合のみ、その 1 時間を空けてバーを 2 本に分割する
+//   （午後開始の D6/D7 等は 12〜13 を勤務しないので自然に対象外＝変化なし）。
+const LUNCH_BREAK_PATTERNS = new Set(
+  ['A6', 'A7', 'A8', 'A9', 'B6', 'B7', 'B9', 'D5', 'D6', 'D7', 'G6', 'G7'],
+);
+const LUNCH_START = '12:00';
+const LUNCH_END = '13:00';
+
+/**
+ * 対象パターンかつ勤務が 12〜13 時を含む場合、[開始,終了] を昼休憩で分割した時間帯配列を返す。
+ * 非対象パターン／休憩帯と重ならない場合はそのまま 1 件。時刻は "HH:MM" に正規化して返す
+ * （正規化できない値は原値のまま返し、保存時のガードで不備として検出させる）。
+ */
+function splitByLunchBreak(
+  rawStart: string,
+  rawEnd: string,
+  patternCode: string | null | undefined,
+): Array<{ startTime: string; endTime: string }> {
+  const startTime = normalizeHHMM(rawStart);
+  const endTime = normalizeHHMM(rawEnd);
+  if (!startTime || !endTime) return [{ startTime: rawStart, endTime: rawEnd }];
+  if (!LUNCH_BREAK_PATTERNS.has((patternCode ?? '').trim().toUpperCase())) {
+    return [{ startTime, endTime }];
+  }
+  // 勤務が休憩帯と重ならない（午後開始/午前で終業）→ そのまま
+  if (endTime <= LUNCH_START || startTime >= LUNCH_END) return [{ startTime, endTime }];
+  const segs: Array<{ startTime: string; endTime: string }> = [];
+  if (startTime < LUNCH_START) segs.push({ startTime, endTime: LUNCH_START });
+  if (endTime > LUNCH_END) segs.push({ startTime: LUNCH_END, endTime });
+  return segs.length ? segs : [{ startTime, endTime }];
+}
+
 function slotToTime(idx: number): string {
   const total = HOURS_FROM * 60 + idx * SLOT_MIN;
   const h = Math.floor(total / 60);
@@ -169,15 +202,18 @@ export function AssignmentClient({
         };
         return next;
       }
-      // 新規追加
+      // 新規追加：対象パターンかつ 12〜13 時を含むなら昼休憩でバーを分割する
+      const patternCode =
+        todayShifts.find((s) => s.staffCode === picker.staffCode)?.patternCode ?? null;
+      const segs = splitByLunchBreak(picker.startTime, picker.endTime, patternCode);
       return [
         ...prev,
-        {
+        ...segs.map((seg) => ({
           staffCode: picker.staffCode,
           groupId: picker.groupId,
-          startTime: picker.startTime,
-          endTime: picker.endTime,
-        },
+          startTime: seg.startTime,
+          endTime: seg.endTime,
+        })),
       ];
     });
     setPicker(null);
@@ -344,15 +380,20 @@ export function AssignmentClient({
     for (const s of todayShifts) {
       if (!s.startTime || !s.endTime) continue;
       const groupId = s.defaultGroupId ?? groups[0].id;
-      next.push({
-        staffCode: s.staffCode,
-        groupId,
-        startTime: s.startTime,
-        endTime: s.endTime,
-      });
+      // 対象パターンは 12:00〜13:00 の昼休憩を空けてバーを分割する
+      for (const seg of splitByLunchBreak(s.startTime, s.endTime, s.patternCode)) {
+        next.push({
+          staffCode: s.staffCode,
+          groupId,
+          startTime: seg.startTime,
+          endTime: seg.endTime,
+        });
+      }
     }
     setAssignments(next);
-    setStatusMsg(`📅 当日シフトから ${next.length} 件を反映しました（保存ボタンで確定）`);
+    setStatusMsg(
+      `📅 当日シフトから ${next.length} 件を反映しました（対象パターンは12:00〜13:00を休憩として除外／保存ボタンで確定）`,
+    );
   }
 
   // === モック準拠 グループ色マップ（管理用PCモック_v0.22.html L817-826） ===
