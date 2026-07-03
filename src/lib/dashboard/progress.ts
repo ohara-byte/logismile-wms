@@ -78,11 +78,14 @@ export interface GroupProgress {
   delayFlag: boolean;
 }
 
-// 2026-07-01: 稼働時間を 8:00〜17:00 に変更（8時始業・17時締切）。
+// 2026-07-03: 稼働時間を 9:00〜17:00 に変更（9時始業・17時締切）。作業開始は9時から。
 //   完了予測・計画比・遅延(超過)アラートはすべて WORK_END_HOUR(=17) を基準に算出する。
-const WORK_START_HOUR = 8;
+const WORK_START_HOUR = 9;
 const WORK_END_HOUR = 17; // 検品完了時刻（締切）。全体ETA・計画比・遅延判定の基準
 const GROUP_DEADLINE_HOUR = 17; // グループ別締切（運送会社cutoff）。WORK_END と同じ 17 時
+// 要員配置(シフト)の表示範囲は 8:00〜17:00（8〜9時は準備時間・ピッキングは9時から）。
+//   進捗・段階バー・完了予測の WORK_START_HOUR(=9・ピッキング) とは別軸で扱う。
+const SHIFT_START_HOUR = 8;
 
 // 日付範囲(shipDate)の境界は UTC 真夜中で丸める。@db.Date は UTC 日付で保存されるため。
 //   日付根治(2026-07-02): CSV取込の1日前倒しを解消し ship_date を正しい暦日に補正したので、
@@ -188,8 +191,8 @@ export async function getOverallProgress(date: Date): Promise<OverallProgress> {
     etaDeltaMin = 0;
   }
 
-  // 段階目標: 8/12/15/16/17 の累積目標を等分配で生成（8時始業・17時締切に合わせて調整）
-  const stageHours = [8, 12, 15, 16, 17];
+  // 段階目標: 9/12/15/16/17 の累積目標を等分配で生成（9時始業・17時締切）
+  const stageHours = [9, 12, 15, 16, 17];
   const stages = stageHours.map((hour) => {
     const ratio = (hour - WORK_START_HOUR) / (WORK_END_HOUR - WORK_START_HOUR);
     const target = Math.round(total * ratio);
@@ -548,7 +551,7 @@ export async function getHourlyProgress(
 export interface StaffSlotRow {
   category: 'group' | 'line' | 'sort' | 'sas';
   label: string;
-  /** 18 スロット × 30 分（9:00-18:00） */
+  /** 18 スロット × 30 分（8:00-17:00・要員配置=8時始業表示） */
   slots: number[];
 }
 
@@ -569,10 +572,11 @@ export async function getStaffAllocationGrid(date: Date): Promise<{
     select: { groupId: true, startTime: true, endTime: true },
   });
 
-  const SLOTS = 18; // 9:00 - 18:00 を 30 分刻みで 18 スロット
+  // 要員配置は SHIFT_START_HOUR(8時)始業で 8:00-17:00 を 30 分刻み＝18 スロット。
+  const SLOTS = (WORK_END_HOUR - SHIFT_START_HOUR) * 2; // 18 スロット
   function slotIdx(time: string): number {
     const [h, m] = time.split(':').map((s) => parseInt(s, 10));
-    return Math.max(0, Math.min(SLOTS - 1, (h - WORK_START_HOUR) * 2 + (m >= 30 ? 1 : 0)));
+    return Math.max(0, Math.min(SLOTS - 1, (h - SHIFT_START_HOUR) * 2 + (m >= 30 ? 1 : 0)));
   }
 
   const groupSlotMap = new Map<string, number[]>();
@@ -599,7 +603,7 @@ export async function getStaffAllocationGrid(date: Date): Promise<{
 
   // サマリ計算
   const now = new Date();
-  const currentSlot = (now.getHours() - WORK_START_HOUR) * 2 + (now.getMinutes() >= 30 ? 1 : 0);
+  const currentSlot = (now.getHours() - SHIFT_START_HOUR) * 2 + (now.getMinutes() >= 30 ? 1 : 0);
   const safeSlot = Math.max(0, Math.min(SLOTS - 1, currentSlot));
 
   const totalsBySlot = new Array(SLOTS).fill(0);
@@ -609,12 +613,12 @@ export async function getStaffAllocationGrid(date: Date): Promise<{
   const currentCount = totalsBySlot[safeSlot];
 
   // AM/PM ピーク
-  const amSlots = totalsBySlot.slice(0, 6); // 9:00 - 12:00
-  const pmSlots = totalsBySlot.slice(6); // 12:00 -
+  const amSlots = totalsBySlot.slice(0, 8); // 8:00 - 12:00
+  const pmSlots = totalsBySlot.slice(8); // 12:00 -
   const amPeakIdx = amSlots.length > 0 ? amSlots.indexOf(Math.max(...amSlots)) : 0;
   const pmPeakIdx = pmSlots.length > 0 ? pmSlots.indexOf(Math.max(...pmSlots)) : 0;
   function slotToHHMM(idx: number): string {
-    const h = WORK_START_HOUR + Math.floor(idx / 2);
+    const h = SHIFT_START_HOUR + Math.floor(idx / 2);
     const m = (idx % 2) * 30;
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   }
