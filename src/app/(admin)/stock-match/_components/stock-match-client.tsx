@@ -135,6 +135,8 @@ export function StockMatchClient() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string>('');
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setBusy(true);
@@ -160,6 +162,34 @@ export function StockMatchClient() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // 差分確定→CraftSmile送信（検品済み＋差分ありの前々日前日納品分のみ）
+  const confirmDiff = useCallback(async () => {
+    if (
+      !window.confirm(
+        `${date} の検品差分をCraftSmileへ確定送信します。\n\n` +
+          `・対象＝「検品済み かつ 差分あり」の商品（前々日前日納品分）\n` +
+          `・検品していない商品はCraftSmileの納品データを正として送りません\n\nよろしいですか？`,
+      )
+    )
+      return;
+    setSending(true);
+    setSendResult(null);
+    try {
+      const r = await fetch('/api/inspection-grid/confirm-diff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date }),
+      });
+      const j = await r.json();
+      setSendResult(r.ok ? `✅ ${j.message}` : `❌ ${j?.message ?? `HTTP ${r.status}`}`);
+      if (r.ok) void reload();
+    } catch (e) {
+      setSendResult(`❌ ${String(e)}`);
+    } finally {
+      setSending(false);
+    }
+  }, [date, reload]);
 
   // リアル表示：15秒ポーリング
   useEffect(() => {
@@ -252,6 +282,13 @@ export function StockMatchClient() {
           ⚠ 検品差分のみ ({diffCount})
         </button>
 
+        {/* 差分を確定してCraftSmileへ送信 */}
+        <button type="button" onClick={confirmDiff} disabled={sending}
+          title="この発送日の検品差分（検品済み＋差分ありの前々日前日納品分）を確定してCraftSmileへ送信します"
+          className="ml-1 px-2 py-1 rounded border text-xs font-bold bg-blue-700 text-white border-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed">
+          {sending ? '送信中…' : '📤 差分を確定して送信'}
+        </button>
+
         <div className="ml-auto flex items-center gap-2 text-2xs text-ink-muted">
           {updatedAt && <span>更新 {updatedAt}{busy ? '…' : ''}（自動15秒）</span>}
           <button type="button" onClick={reload} disabled={busy} className="px-2 py-1 rounded bg-surface-base border border-surface-border hover:border-accent-amber disabled:opacity-50 text-xs">🔄</button>
@@ -277,6 +314,12 @@ export function StockMatchClient() {
       </div>
 
       {error && <div className="mb-2 p-2 text-xs bg-status-error-bg text-status-error border border-status-error rounded">{error}</div>}
+      {sendResult && (
+        <div className="mb-2 p-2 text-xs bg-surface-panel border border-surface-border rounded text-ink-strong flex items-center justify-between gap-2">
+          <span>{sendResult}</span>
+          <button type="button" onClick={() => setSendResult(null)} className="text-ink-muted hover:text-ink">×</button>
+        </div>
+      )}
 
       {/* データ0件でも見出し（カラム・タブ）は固定表示。連携待ちのときだけ小さく注記。 */}
       {data && total.skuCount === 0 && !error && (

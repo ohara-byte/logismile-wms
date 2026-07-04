@@ -69,6 +69,112 @@ export function signWmsRequest(
     .digest('hex');
 }
 
+/** 検品差分（確定送信）の 1 明細。前々日前日納品分の差分（③④）。 */
+export interface InspectionDiffItem {
+  productCode: string;
+  /** 前々日前日納品数（③） */
+  qtyDeclared: number;
+  /** 検品数（④） */
+  qtyInspected: number;
+  /** ④-③（負＝不足） */
+  qtyDiff: number;
+}
+
+export interface InspectionDiffPayload {
+  /** 対象発送日 YYYY-MM-DD */
+  shipDate: string;
+  inspectedAt: string;
+  inspectedBy: string;
+  items: InspectionDiffItem[];
+}
+
+/**
+ * 検品照合グリッドの「差分確定」を製造システムへ送信する（発送日×商品・前々日前日納品分の差分）。
+ *   URL: POST {FACTORY_BASE_URL}/api/wms/inspection-diff
+ *   署名: X-WMS-Signature（`${ts}\n${body}`・FACTORY_OUTBOUND_HMAC_SECRET）
+ *   Idempotency-Key: `diff_${shipDate}_${epoch}`
+ * DRY-RUN 中は実送信せず log のみ（既定・安全側）。
+ */
+export async function notifyInspectionDiff(
+  payload: InspectionDiffPayload,
+  opts: { nowEpochSec?: number; timeoutMs?: number } = {},
+): Promise<FactoryNotifyResult> {
+  const secret = getFactoryOutboundSecret();
+  const baseUrl = getFactoryBaseUrl();
+
+  const body = JSON.stringify({
+    shipDate: payload.shipDate,
+    inspectedAt: payload.inspectedAt,
+    inspectedBy: payload.inspectedBy,
+    items: payload.items.map((it) => ({
+      productCode: it.productCode,
+      qtyDeclared: it.qtyDeclared,
+      qtyInspected: it.qtyInspected,
+      qtyDiff: it.qtyDiff,
+    })),
+  });
+
+  const timestamp = String(opts.nowEpochSec ?? Math.floor(Date.now() / 1000));
+  const idempotencyKey = `diff_${payload.shipDate}_${timestamp}`;
+
+  if (isFactoryOutboundDryRun()) {
+    console.info(
+      `[factory-notify] DRY-RUN inspection-diff shipDate=${payload.shipDate} ` +
+        `items=${payload.items.length} idem=${idempotencyKey}`,
+    );
+    return { ok: true, dryRun: true };
+  }
+  if (!secret) {
+    return { ok: false, message: 'FACTORY_OUTBOUND_HMAC_SECRET が未設定です（16 文字以上）' };
+  }
+  if (!baseUrl) {
+    return { ok: false, message: 'FACTORY_BASE_URL が未設定です' };
+  }
+
+  const signature = signWmsRequest(secret, timestamp, body);
+  const url = `${baseUrl}/api/wms/inspection-diff`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 10_000);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-WMS-Signature': signature,
+        'X-WMS-Timestamp': timestamp,
+        'Idempotency-Key': idempotencyKey,
+      },
+      body,
+      signal: controller.signal,
+    });
+    let json: unknown = null;
+    try {
+      json = await res.json();
+    } catch {
+      /* JSON でない応答は無視 */
+    }
+    if (!res.ok) {
+      return { ok: false, status: res.status, message: `製造システムが ${res.status} を返しました` };
+    }
+    const adrRaw =
+      typeof json === 'object' && json !== null && 'data' in json
+        ? (json as { data?: { additionalDeliveryRequired?: unknown } }).data?.additionalDeliveryRequired
+        : undefined;
+    const additionalDeliveryRequired = Array.isArray(adrRaw) ? adrRaw.length > 0 : undefined;
+    return { ok: true, dryRun: false, status: res.status, additionalDeliveryRequired, response: json };
+  } catch (e) {
+    return {
+      ok: false,
+      message:
+        e instanceof Error && e.name === 'AbortError'
+          ? '製造システムへの送信がタイムアウトしました'
+          : `送信エラー: ${String(e)}`,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Idempotency-Key を生成： `${deliveryNo}_${inspectedAt-epoch}` */
 export function buildIdempotencyKey(
   deliveryNo: string,
