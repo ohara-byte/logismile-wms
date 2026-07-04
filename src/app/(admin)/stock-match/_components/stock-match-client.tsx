@@ -129,6 +129,7 @@ const EMPTY_TOTAL: Total = {
 export function StockMatchClient() {
   const [date, setDate] = useState(todayYmd());
   const [typeKey, setTypeKey] = useState<TypeKey>('all');
+  const [diffOnly, setDiffOnly] = useState(false); // 検品差分（過不足）の出た商品だけ表示
   const [activeDept, setActiveDept] = useState<string>('__all__'); // '__all__'=全体 / deptCode
   const [data, setData] = useState<GridData | null>(null);
   const [busy, setBusy] = useState(false);
@@ -167,7 +168,7 @@ export function StockMatchClient() {
   }, [reload]);
 
   // アクティブ部署の行（全体＝全部署結合）＋種別フィルタ。データが無ければ空配列（見出しは固定表示のまま）。
-  const rows = useMemo(() => {
+  const baseRows = useMemo(() => {
     if (!data) return [];
     let base: GridRow[];
     if (activeDept === '__all__') {
@@ -178,6 +179,14 @@ export function StockMatchClient() {
     }
     return typeKey === 'all' ? base : base.filter((r) => r.productType === typeKey);
   }, [data, activeDept, typeKey]);
+
+  // 検品差分あり＝前日前々日差分(⑤)・当日差分(⑨)・過不足 のいずれかが 0 でない行。
+  const hasDiff = (r: GridRow) => r.prevDiff !== 0 || r.todayDiff !== 0 || r.balance !== 0;
+  const diffCount = useMemo(() => baseRows.filter(hasDiff).length, [baseRows]);
+  const rows = useMemo(
+    () => (diffOnly ? baseRows.filter(hasDiff) : baseRows),
+    [baseRows, diffOnly],
+  );
 
   const subtotal = useMemo(() => {
     const t: Total = { ...EMPTY_TOTAL, skuCount: rows.length };
@@ -217,10 +226,10 @@ export function StockMatchClient() {
   return (
     <div>
       {/* コンテキストバー：発送日＋種別＋更新 */}
-      <div className="bg-surface-base border border-surface-border rounded p-2 mb-2 flex flex-wrap gap-2 items-center text-2xs">
+      <div className="bg-surface-base border border-surface-border rounded p-2 mb-2 flex flex-wrap gap-2 items-center text-xs">
         <span className="text-ink-subtle">発送日:</span>
         <button type="button" onClick={() => setDate((d) => shiftYmd(d, -1))} className="px-2 py-1 rounded border border-surface-border bg-surface-panel hover:border-accent-amber">◀ 前日</button>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-surface-panel border border-surface-border rounded px-1.5 py-1 text-2xs text-ink" />
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-surface-panel border border-surface-border rounded px-1.5 py-1 text-xs text-ink" />
         <button type="button" onClick={() => setDate((d) => shiftYmd(d, 1))} className="px-2 py-1 rounded border border-surface-border bg-surface-panel hover:border-accent-amber">翌日 ▶</button>
         <button type="button" onClick={() => setDate(todayYmd())} className="px-2 py-1 rounded border border-surface-border bg-surface-panel hover:border-accent-amber">今日</button>
 
@@ -228,15 +237,24 @@ export function StockMatchClient() {
         <div className="inline-flex border border-surface-border rounded overflow-hidden">
           {(['all', 'made_to_order', 'pass_through', 'warehouse'] as TypeKey[]).map((k) => (
             <button key={k} type="button" onClick={() => setTypeKey(k)}
-              className={`px-2 py-1 text-2xs font-bold ${typeKey === k ? 'bg-accent-amber text-surface-base' : 'bg-surface-base hover:bg-surface-panel text-ink-subtle'}`}>
+              className={`px-2 py-1 text-xs font-bold ${typeKey === k ? 'bg-accent-amber text-surface-base' : 'bg-surface-base hover:bg-surface-panel text-ink-subtle'}`}>
               {k === 'all' ? '全て' : TYPE_LABEL[k]} ({typeCounts[k] ?? 0})
             </button>
           ))}
         </div>
 
-        <div className="ml-auto flex items-center gap-2 text-3xs text-ink-muted">
+        {/* 検品差分のみ表示トグル（種別の右） */}
+        <button type="button" onClick={() => setDiffOnly((v) => !v)}
+          title="検品差分（前日前々日差分・当日差分・過不足）の出た商品だけを表示"
+          className={`ml-1 px-2 py-1 rounded border text-xs font-bold transition-colors ${
+            diffOnly ? 'bg-status-error text-white border-status-error' : 'bg-surface-base border-surface-border text-ink-subtle hover:border-accent-amber'
+          }`}>
+          ⚠ 検品差分のみ ({diffCount})
+        </button>
+
+        <div className="ml-auto flex items-center gap-2 text-2xs text-ink-muted">
           {updatedAt && <span>更新 {updatedAt}{busy ? '…' : ''}（自動15秒）</span>}
-          <button type="button" onClick={reload} disabled={busy} className="px-2 py-1 rounded bg-surface-base border border-surface-border hover:border-accent-amber disabled:opacity-50 text-2xs">🔄</button>
+          <button type="button" onClick={reload} disabled={busy} className="px-2 py-1 rounded bg-surface-base border border-surface-border hover:border-accent-amber disabled:opacity-50 text-xs">🔄</button>
         </div>
       </div>
 
@@ -247,36 +265,36 @@ export function StockMatchClient() {
           const cnt = t.code === '__all__' ? total.skuCount : countByDept.get(t.code) ?? 0;
           return (
             <button key={t.code} type="button" onClick={() => setActiveDept(t.code)}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-2xs font-bold transition-colors ${
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition-colors ${
                 active ? 'border-accent-amber bg-accent-amber text-surface-base' : 'border-surface-border bg-surface-panel text-ink-subtle hover:border-accent-amber'
               }`}>
               {t.dot && <span className={`w-2 h-2 rounded-full ${t.dot}`} />}
               {t.name}
-              <span className={`text-3xs ${active ? 'text-surface-base/80' : 'text-ink-muted'}`}>({cnt})</span>
+              <span className={`text-2xs ${active ? 'text-surface-base/80' : 'text-ink-muted'}`}>({cnt})</span>
             </button>
           );
         })}
       </div>
 
-      {error && <div className="mb-2 p-2 text-2xs bg-status-error-bg text-status-error border border-status-error rounded">{error}</div>}
+      {error && <div className="mb-2 p-2 text-xs bg-status-error-bg text-status-error border border-status-error rounded">{error}</div>}
 
       {/* データ0件でも見出し（カラム・タブ）は固定表示。連携待ちのときだけ小さく注記。 */}
       {data && total.skuCount === 0 && !error && (
-        <div className="mb-2 px-2 py-1 text-3xs text-ink-muted bg-surface-panel border border-surface-border rounded">
+        <div className="mb-2 px-2 py-1 text-2xs text-ink-muted bg-surface-panel border border-surface-border rounded">
           ※ この発送日の発送予定データ（クラフトスマイル連携）はまだありません。WMS一括納品の送信 or 18時確定取込で表示されます。
         </div>
       )}
 
       {/* グリッド：カラム見出しは常に固定表示（sticky 商品列＋固定ヘッダ＋合計行固定） */}
       <div className="border border-surface-border rounded overflow-auto max-h-[calc(100vh-190px)]">
-        <table className="w-full text-2xs border-collapse">
+        <table className="w-full text-xs border-collapse">
           <thead className="sticky top-0 z-20">
             <tr className="bg-surface-base text-ink-subtle">
               <th className="sticky left-0 z-30 bg-surface-base text-left px-2 py-1.5 border-b border-surface-border min-w-[200px]">商品</th>
               {COLS.map((c) => (
                 <th key={c.key} className="text-right px-2 py-1.5 border-b border-surface-border whitespace-nowrap">
                   <div>{c.label}</div>
-                  {c.sub && <div className="text-3xs font-normal text-ink-muted">{c.sub}</div>}
+                  {c.sub && <div className="text-2xs font-normal text-ink-muted">{c.sub}</div>}
                 </th>
               ))}
             </tr>
@@ -286,7 +304,7 @@ export function StockMatchClient() {
               <tr key={r.productCode} className="hover:bg-surface-base/60 border-b border-surface-border/60">
                 <td className="sticky left-0 z-10 bg-surface-panel px-2 py-1">
                   <div className="text-ink-strong truncate max-w-[190px]">{r.productName ?? '—'}</div>
-                  <div className="text-3xs text-ink-muted tabular-nums">
+                  <div className="text-2xs text-ink-muted tabular-nums">
                     {r.productCode}
                     {r.productType ? `／${TYPE_LABEL[r.productType as Exclude<TypeKey, 'all'>] ?? r.productType}` : ''}
                   </div>
@@ -304,7 +322,7 @@ export function StockMatchClient() {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={COLS.length + 1} className="text-center py-10 text-ink-muted text-2xs">
+                <td colSpan={COLS.length + 1} className="text-center py-10 text-ink-muted text-xs">
                   {busy ? '読込中…' : '該当する商品がありません（項目は上に固定表示）'}
                 </td>
               </tr>
