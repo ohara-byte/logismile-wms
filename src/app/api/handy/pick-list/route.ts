@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
 import { parseDateAsUTC, todayJstAsUTC, formatDateYmd } from '@/lib/date-utils';
+import { fetchLiveShipPlan } from '@/lib/integration/factory-ship-plan-pull';
 
 const Query = z.object({
   shipDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -36,17 +37,38 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'VALIDATION', message: `不正な発送日: ${ymd}` }, { status: 422 });
   }
 
-  const plans = await prisma.factoryShipPlan.findMany({
-    where: { shipDate },
-    select: {
-      productCode: true,
-      productName: true,
-      productionDeptName: true,
-      plannedQty: true,
-      confirmedQty: true,
-    },
-    orderBy: [{ productionDeptName: 'asc' }, { productCode: 'asc' }],
-  });
+  // ①②・製造部署（母集合）：まず CraftSmile からライブ取得（検品照合グリッドと同じ経路・
+  //   push 待ち不要で常に最新）。連携未設定/不達時のみ FactoryShipPlan（push キャッシュ）へフォールバック。
+  type PlanRow = {
+    productCode: string;
+    productName: string | null;
+    productionDeptName: string | null;
+    plannedQty: number;
+    confirmedQty: number | null;
+  };
+  const live = await fetchLiveShipPlan(ymd);
+  let plans: PlanRow[];
+  if (live && live.length > 0) {
+    plans = live.map((p) => ({
+      productCode: p.productCode,
+      productName: p.productName,
+      productionDeptName: p.productionDeptName,
+      plannedQty: p.plannedQty,
+      confirmedQty: p.confirmedQty,
+    }));
+  } else {
+    plans = await prisma.factoryShipPlan.findMany({
+      where: { shipDate },
+      select: {
+        productCode: true,
+        productName: true,
+        productionDeptName: true,
+        plannedQty: true,
+        confirmedQty: true,
+      },
+      orderBy: [{ productionDeptName: 'asc' }, { productCode: 'asc' }],
+    });
+  }
 
   if (plans.length === 0) {
     return NextResponse.json({ data: { shipDate: ymd, items: [] }, message: 'OK' });
@@ -77,6 +99,12 @@ export async function GET(req: Request) {
     deliveredQty: deliveredBy.get(p.productCode) ?? 0,
     inspectedQty: inspectedBy.get(p.productCode) ?? 0,
   }));
+  // ライブpull由来は未ソートのため、部署→商品コードで整列（表示順の安定）
+  items.sort(
+    (a, b) =>
+      (a.productionDeptName ?? 'zzz').localeCompare(b.productionDeptName ?? 'zzz') ||
+      a.productCode.localeCompare(b.productCode),
+  );
 
   return NextResponse.json({ data: { shipDate: ymd, items }, message: 'OK' });
 }
