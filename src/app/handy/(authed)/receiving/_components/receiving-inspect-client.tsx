@@ -5,14 +5,22 @@
  *  発送日を選び、その日の入庫予定商品（クラフトスマイル発送予定）ごとに検品実数を記録する。
  *  記録は POST /api/handy/receiving-inspect → inspection_count(ship_date+inspectedQty)。
  *  検品照合グリッド④⑧の集計元。
+ *
+ *  基本フロー（現場の運用に合わせスキャン主導）:
+ *    ① バーコード（JAN or 商品コード）をスキャン → 一覧内の該当商品を自動特定
+ *    ② 該当行へスクロール＆ハイライト、検品数欄に「納品数」を初期表示しフォーカス
+ *    ③ 数量を確認/修正して「記録」（Enter でも可）→ スキャン入力へフォーカス復帰
+ *  ※ スキャンせず目視で探して手入力する従来操作も併用可。
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useScanSound } from '@/lib/use-scan-sound';
 
 type PickItem = {
   productCode: string;
   productName: string | null;
   productionDeptName: string | null;
+  jan: string | null;
   plannedQty: number;
   confirmedQty: number | null;
   deliveredQty: number;
@@ -41,6 +49,17 @@ export function ReceivingInspectClient() {
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [savingCode, setSavingCode] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [scanInput, setScanInput] = useState('');
+  const [selectedCode, setSelectedCode] = useState<string | null>(null);
+
+  const { playBeep, playError } = useScanSound();
+  const scanInputRef = useRef<HTMLInputElement>(null);
+  const qtyRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const focusScan = useCallback(() => {
+    // レンダー確定後にフォーカスを戻す（連続スキャンのため）
+    requestAnimationFrame(() => scanInputRef.current?.focus());
+  }, []);
 
   const reload = useCallback(async () => {
     setBusy(true);
@@ -64,12 +83,70 @@ export function ReceivingInspectClient() {
   useEffect(() => {
     void reload();
     setInputs({});
+    setSelectedCode(null);
   }, [reload]);
+
+  // 一覧読込後はスキャン待受にフォーカス
+  useEffect(() => {
+    if (!busy && items.length > 0) focusScan();
+  }, [busy, items.length, focusScan]);
+
+  // スキャン値 → 該当商品を特定（JAN 優先、次に商品コード。大小/前後空白は無視）
+  const findByScan = useCallback(
+    (raw: string): PickItem | null => {
+      const v = raw.trim();
+      if (!v) return null;
+      const lower = v.toLowerCase();
+      return (
+        items.find((it) => it.jan && it.jan === v) ??
+        items.find((it) => it.productCode.toLowerCase() === lower) ??
+        null
+      );
+    },
+    [items],
+  );
+
+  const onScan = (e: React.FormEvent) => {
+    e.preventDefault();
+    const raw = scanInput.trim();
+    setScanInput('');
+    if (!raw) {
+      focusScan();
+      return;
+    }
+    const hit = findByScan(raw);
+    if (!hit) {
+      playError();
+      setSelectedCode(null);
+      setFlash(`⚠ 予定外/未登録のバーコード: ${raw}`);
+      focusScan();
+      return;
+    }
+    playBeep();
+    setSelectedCode(hit.productCode);
+    // 検品数の初期値＝納品数（未入力の場合のみ。誤入力・二重入力を避ける）
+    setInputs((prev) => ({
+      ...prev,
+      [hit.productCode]:
+        prev[hit.productCode] != null && prev[hit.productCode] !== ''
+          ? prev[hit.productCode]
+          : String(hit.deliveredQty),
+    }));
+    setFlash(`▶ ${hit.productName ?? hit.productCode}：数量を確認して記録`);
+    // 該当行へスクロール＆数量欄へフォーカス
+    requestAnimationFrame(() => {
+      const el = qtyRefs.current[hit.productCode];
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el?.focus();
+      el?.select();
+    });
+  };
 
   const record = async (it: PickItem) => {
     const raw = inputs[it.productCode];
     const qty = Number(raw);
     if (raw == null || raw === '' || !Number.isInteger(qty) || qty < 0) {
+      playError();
       setFlash(`⚠ ${it.productName ?? it.productCode}: 数量を入力してください`);
       return;
     }
@@ -82,6 +159,7 @@ export function ReceivingInspectClient() {
       });
       const j = await r.json();
       if (!r.ok) {
+        playError();
         setFlash(`⚠ ${j?.message ?? `HTTP ${r.status}`}`);
         return;
       }
@@ -90,13 +168,19 @@ export function ReceivingInspectClient() {
         prev.map((p) => (p.productCode === it.productCode ? { ...p, inspectedQty: qty } : p)),
       );
       setInputs((prev) => ({ ...prev, [it.productCode]: '' }));
+      setSelectedCode(null);
       setFlash(`✓ ${it.productName ?? it.productCode}: 検品 ${qty} を記録`);
+      // 次のスキャンへ待受を戻す
+      focusScan();
     } catch (e) {
+      playError();
       setFlash(`⚠ ${String(e)}`);
     } finally {
       setSavingCode(null);
     }
   };
+
+  const doneCount = items.filter((it) => it.inspectedQty > 0).length;
 
   return (
     <div className="flex-1 flex flex-col p-2 gap-2 overflow-y-auto">
@@ -131,8 +215,28 @@ export function ReceivingInspectClient() {
         </button>
       </div>
 
+      {/* スキャン待受（現場の基本フロー：スキャン→対象確定→数量入力） */}
+      <form
+        onSubmit={onScan}
+        className="shrink-0 rounded border-2 border-accent-amber/50 bg-surface-panel p-2"
+      >
+        <label className="block text-3xs font-bold mb-1 text-accent-amber">
+          🔍 バーコードをスキャン（JAN／商品コード）→ 数量入力へ
+        </label>
+        <input
+          ref={scanInputRef}
+          autoFocus
+          value={scanInput}
+          onChange={(e) => setScanInput(e.target.value)}
+          inputMode="none"
+          className="w-full bg-surface-base border-2 border-accent-amber/50 rounded px-2 py-2 text-base font-mono text-ink-strong tabular-nums focus:outline-none focus:border-accent-amber focus:ring-2 focus:ring-accent-amber/30"
+          placeholder="4901234567894"
+        />
+      </form>
+
       <div className="text-3xs text-ink-subtle">
         発送日 <b className="text-ink-strong">{date}</b> の入庫予定：{items.length} 品目
+        <span className="ml-2">検品済 <b className="text-ink-strong">{doneCount}</b>/{items.length}</span>
         {busy && <span className="ml-2 text-accent-amber">読込中…</span>}
       </div>
 
@@ -157,11 +261,16 @@ export function ReceivingInspectClient() {
       <div className="flex flex-col gap-1.5">
         {items.map((it) => {
           const done = it.inspectedQty > 0;
+          const selected = selectedCode === it.productCode;
           return (
             <div
               key={it.productCode}
-              className={`rounded border p-2 ${
-                done ? 'border-emerald-600/50 bg-emerald-950/20' : 'border-surface-border bg-surface-panel'
+              className={`rounded border p-2 transition-colors ${
+                selected
+                  ? 'border-accent-amber bg-accent-amber/10 ring-2 ring-accent-amber/40'
+                  : done
+                    ? 'border-emerald-600/50 bg-emerald-950/20'
+                    : 'border-surface-border bg-surface-panel'
               }`}
             >
               <div className="flex justify-between items-start gap-2">
@@ -181,12 +290,21 @@ export function ReceivingInspectClient() {
               </div>
               <div className="mt-1.5 flex items-center gap-1.5">
                 <input
+                  ref={(el) => {
+                    qtyRefs.current[it.productCode] = el;
+                  }}
                   type="number"
                   inputMode="numeric"
                   min={0}
                   placeholder="検品数"
                   value={inputs[it.productCode] ?? ''}
                   onChange={(e) => setInputs((prev) => ({ ...prev, [it.productCode]: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void record(it);
+                    }
+                  }}
                   className="flex-1 bg-surface-base border border-surface-border rounded px-2 py-1.5 text-sm text-ink tabular-nums"
                 />
                 <button

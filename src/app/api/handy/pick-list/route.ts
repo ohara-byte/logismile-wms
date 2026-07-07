@@ -75,7 +75,7 @@ export async function GET(req: Request) {
   }
 
   const codes = plans.map((p) => p.productCode);
-  const [delivered, inspected] = await Promise.all([
+  const [delivered, inspected, products] = await Promise.all([
     prisma.stockMovement.groupBy({
       by: ['productCode'],
       where: { productCode: { in: codes }, type: 'inbound', shipDate },
@@ -86,14 +86,21 @@ export async function GET(req: Request) {
       where: { productCode: { in: codes }, type: 'inspection_count', refType: 'receiving', shipDate },
       _sum: { inspectedQty: true },
     }),
+    // スキャン照合用に JAN を解決（ハンディ：スキャン値 → productCode）
+    prisma.product.findMany({
+      where: { code: { in: codes } },
+      select: { code: true, jan: true },
+    }),
   ]);
   const deliveredBy = new Map(delivered.map((d) => [d.productCode, d._sum.qtyDelta ?? 0]));
   const inspectedBy = new Map(inspected.map((d) => [d.productCode, d._sum.inspectedQty ?? 0]));
+  const janBy = new Map(products.map((p) => [p.code, p.jan]));
 
   const items = plans.map((p) => ({
     productCode: p.productCode,
     productName: p.productName,
     productionDeptName: p.productionDeptName,
+    jan: janBy.get(p.productCode) ?? null,
     plannedQty: p.plannedQty,
     confirmedQty: p.confirmedQty,
     deliveredQty: deliveredBy.get(p.productCode) ?? 0,
