@@ -228,7 +228,6 @@ export function ReceivingInspectClient() {
           autoFocus
           value={scanInput}
           onChange={(e) => setScanInput(e.target.value)}
-          inputMode="none"
           className="w-full bg-surface-base border-2 border-accent-amber/50 rounded px-2 py-2 text-base font-mono text-ink-strong tabular-nums focus:outline-none focus:border-accent-amber focus:ring-2 focus:ring-accent-amber/30"
           placeholder="4901234567894"
         />
