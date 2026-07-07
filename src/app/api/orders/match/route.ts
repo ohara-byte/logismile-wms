@@ -33,10 +33,14 @@ export async function GET(req: Request) {
   }
   const tomorrow = addDaysUTC(date, 1);
 
+  // キャンセル(=LogiSmile取消＝論理削除 deletedAt)の扱い。既定は除外（deletedAt IS NULL）。
+  //   includeCancelled=1 のときだけ取消伝票も含めて返す（cancelled フラグ付き）。
+  const includeCancelled = searchParams.get('includeCancelled') === '1';
+
   const orders = await prisma.shippingOrder.findMany({
     where: {
       shipDate: { gte: date, lt: tomorrow },
-      deletedAt: null,
+      ...(includeCancelled ? {} : { deletedAt: null }),
     },
     include: {
       carrier: { select: { code: true, name: true, short: true, cool: true } },
@@ -81,6 +85,8 @@ export async function GET(req: Request) {
       invoiceNo: o.invoiceNo,
       destName: o.destName,
       destAddr: o.destAddr,
+      // キャンセル（LogiSmile取消＝論理削除）。includeCancelled=1 のとき true が混ざる。
+      cancelled: o.deletedAt != null,
       carrier: o.carrier
         ? {
             code: o.carrier.code,
@@ -105,18 +111,21 @@ export async function GET(req: Request) {
     };
   });
 
-  const total = items.length;
-  const done = items.filter((i) => i.inspected).length;
+  // 統計はキャンセル(取消)を除いた実出荷対象で数える（件数を意味あるものに保つ）。
+  const active = items.filter((i) => !i.cancelled);
+  const cancelledCount = items.length - active.length;
+  const total = active.length;
+  const done = active.filter((i) => i.inspected).length;
   const pending = total - done;
-  const matched = items.filter((i) => i.matchStatus !== 'none').length;
-  const carryCandidate = items.filter(
+  const matched = active.filter((i) => i.matchStatus !== 'none').length;
+  const carryCandidate = active.filter(
     (i) => !i.inspected && i.matchStatus !== 'none',
   ).length;
   // Sprint Z-5: 引当差分集計
-  const allocFull = items.filter((i) => i.allocStatus === 'full').length;
-  const allocPartial = items.filter((i) => i.allocStatus === 'partial').length;
-  const allocNone = items.filter((i) => i.allocStatus === 'none').length;
-  const allocDiffCount = items.filter((i) => i.allocStatus !== 'full').length;
+  const allocFull = active.filter((i) => i.allocStatus === 'full').length;
+  const allocPartial = active.filter((i) => i.allocStatus === 'partial').length;
+  const allocNone = active.filter((i) => i.allocStatus === 'none').length;
+  const allocDiffCount = active.filter((i) => i.allocStatus !== 'full').length;
 
   return NextResponse.json({
     data: {
@@ -131,6 +140,7 @@ export async function GET(req: Request) {
         allocPartial,
         allocNone,
         allocDiffCount,
+        cancelledCount,
       },
       items,
     },

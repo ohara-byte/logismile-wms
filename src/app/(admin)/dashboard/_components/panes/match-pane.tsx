@@ -32,6 +32,8 @@ interface MatchRow {
   itemCount: number;
   status: string;
   inspected: boolean;
+  /** キャンセル（LogiSmile取消＝論理削除）。includeCancelled=1 のとき true が混ざる。 */
+  cancelled?: boolean;
   matchStatus: 'none' | 'barcode' | 'visual';
   matchedAt: string | null;
   matchedBy: string | null;
@@ -53,6 +55,7 @@ interface Stats {
   allocPartial: number;
   allocNone: number;
   allocDiffCount: number;
+  cancelledCount?: number;
 }
 
 type AllocFilterKey = 'all' | 'diff' | 'full' | 'partial' | 'none';
@@ -86,13 +89,16 @@ export function MatchPane() {
   const [allocFilter, setAllocFilter] = useState<AllocFilterKey>('all');
   // 検品状態フィルタ（未検品の抽出用）。既定は全て。カードのクリックでも切替。
   const [inspectFilter, setInspectFilter] = useState<InspectFilterKey>('all');
+  // キャンセル(取消)除外。既定ON＝取消伝票を一覧から外す。OFFで取消も表示（印付き）。
+  const [excludeCancelled, setExcludeCancelled] = useState(true);
 
   const { refresh: refreshBadges } = useBadges();
   const { open: openOrderDetail } = useOrderDetailModal();
 
   const reload = useCallback(async () => {
     try {
-      const r = await fetch(`/api/orders/match?date=${date}`);
+      const qs = `date=${date}${excludeCancelled ? '' : '&includeCancelled=1'}`;
+      const r = await fetch(`/api/orders/match?${qs}`);
       const j = await r.json();
       if (!r.ok) {
         setError(j?.message ?? `HTTP ${r.status}`);
@@ -103,7 +109,7 @@ export function MatchPane() {
     } catch (e) {
       setError(String(e));
     }
-  }, [date]);
+  }, [date, excludeCancelled]);
 
   useEffect(() => {
     reload();
@@ -276,6 +282,21 @@ export function MatchPane() {
           >
             全クリア
           </button>
+          <label
+            className="flex items-center gap-1 px-2 py-0.5 rounded border border-surface-border bg-surface-panel text-[10px] text-ink-subtle cursor-pointer"
+            title="キャンセル（LogiSmile取消＝論理削除）の伝票を一覧から除外します。外すと取消伝票も「取消」印付きで表示します。"
+          >
+            <input
+              type="checkbox"
+              checked={excludeCancelled}
+              onChange={(e) => setExcludeCancelled(e.target.checked)}
+              className="cursor-pointer"
+            />
+            キャンセル除外
+            {!excludeCancelled && data?.stats.cancelledCount
+              ? `（${data.stats.cancelledCount}）`
+              : ''}
+          </label>
           <div className="flex-1" />
           <button
             onClick={() => alert('CSV 出力は将来ブロックで実装予定です')}
@@ -418,6 +439,8 @@ export function MatchPane() {
       {/* 一覧テーブル */}
       {data && (() => {
         const filteredItems = data.items.filter((it) => {
+          // キャンセル除外（既定ON）。API側でも除外するが、トグル直後の整合のため二重で守る。
+          if (excludeCancelled && it.cancelled) return false;
           // 引当差分フィルタ
           const allocOk =
             allocFilter === 'all'
@@ -581,15 +604,17 @@ export function MatchPane() {
 }
 
 function recomputeStats(items: MatchRow[]): Stats {
-  const total = items.length;
-  const done = items.filter((i) => i.inspected).length;
+  // 統計はキャンセル(取消)を除いた実出荷対象で数える（API と同一基準）。
+  const active = items.filter((i) => !i.cancelled);
+  const total = active.length;
+  const done = active.filter((i) => i.inspected).length;
   const pending = total - done;
-  const matched = items.filter((i) => i.matchStatus !== 'none').length;
-  const carryCandidate = items.filter((i) => !i.inspected && i.matchStatus !== 'none').length;
-  const allocFull = items.filter((i) => i.allocStatus === 'full').length;
-  const allocPartial = items.filter((i) => i.allocStatus === 'partial').length;
-  const allocNone = items.filter((i) => i.allocStatus === 'none').length;
-  const allocDiffCount = items.filter((i) => i.allocStatus !== 'full').length;
+  const matched = active.filter((i) => i.matchStatus !== 'none').length;
+  const carryCandidate = active.filter((i) => !i.inspected && i.matchStatus !== 'none').length;
+  const allocFull = active.filter((i) => i.allocStatus === 'full').length;
+  const allocPartial = active.filter((i) => i.allocStatus === 'partial').length;
+  const allocNone = active.filter((i) => i.allocStatus === 'none').length;
+  const allocDiffCount = active.filter((i) => i.allocStatus !== 'full').length;
   return {
     total,
     done,
@@ -600,6 +625,7 @@ function recomputeStats(items: MatchRow[]): Stats {
     allocPartial,
     allocNone,
     allocDiffCount,
+    cancelledCount: items.length - active.length,
   };
 }
 
@@ -627,11 +653,13 @@ function MatchTr({
   /** 伝票NO クリックで伝票詳細モーダルを開く */
   onOpenDetail: () => void;
 }) {
-  const rowCls = row.inspected
-    ? 'bg-emerald-950/20'
-    : row.matchStatus !== 'none'
-      ? 'bg-amber-950/20'
-      : '';
+  const rowCls = row.cancelled
+    ? 'bg-red-950/20 opacity-60'
+    : row.inspected
+      ? 'bg-emerald-950/20'
+      : row.matchStatus !== 'none'
+        ? 'bg-amber-950/20'
+        : '';
   return (
     <tr className={`border-t border-surface-border ${rowCls}`}>
       <td className="px-1.5 py-1 text-center">
@@ -667,6 +695,9 @@ function MatchTr({
       </td>
       <td className="px-1.5 py-1 font-mono text-ink-subtle">{row.invoiceNo ?? '—'}</td>
       <td className="px-1.5 py-1 truncate max-w-[140px]" title={row.destName ?? ''}>
+        {row.cancelled && (
+          <span className="mr-1 px-1 rounded bg-red-700 text-white text-[9px] font-bold align-middle">取消</span>
+        )}
         {row.destName ?? '—'}
       </td>
       <td className="px-1.5 py-1 text-ink-subtle">
