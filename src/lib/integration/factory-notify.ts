@@ -86,6 +86,12 @@ export interface InspectionDiffPayload {
   inspectedAt: string;
   inspectedBy: string;
   items: InspectionDiffItem[];
+  /**
+   * 検品パターン。'prev'=前々日前日納品分（③④）／'today'=当日納品分（⑦⑧）。
+   * CraftSmile はこのパターンに該当する伝票（納品時刻の窓）だけへ検品数を反映し、
+   * 他パターンの伝票は据置く（未検品→納品数フォールバックで偽の不足を出さない）。
+   */
+  pattern?: 'prev' | 'today';
 }
 
 /**
@@ -106,6 +112,7 @@ export async function notifyInspectionDiff(
     shipDate: payload.shipDate,
     inspectedAt: payload.inspectedAt,
     inspectedBy: payload.inspectedBy,
+    ...(payload.pattern ? { pattern: payload.pattern } : {}),
     items: payload.items.map((it) => ({
       productCode: it.productCode,
       qtyDeclared: it.qtyDeclared,

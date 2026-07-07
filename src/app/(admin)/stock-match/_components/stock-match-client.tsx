@@ -10,7 +10,7 @@
  * API: GET /api/inspection-grid?date=YYYY-MM-DD
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 type GridRow = {
   productCode: string;
@@ -137,6 +137,11 @@ export function StockMatchClient() {
   const [updatedAt, setUpdatedAt] = useState<string>('');
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<string | null>(null);
+  // ①検品パターン（前々日前日 / 当日）。差分フィルタ・送信対象をこのパターンにスコープする。
+  const [pattern, setPattern] = useState<'prev' | 'today'>('prev');
+  // ②送信対象の行選択（productCode）。途中まで検品→選んだ行だけ送信できるようにする。
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const lastAutoKey = useRef<string>('');
 
   const reload = useCallback(async () => {
     setBusy(true);
@@ -163,13 +168,19 @@ export function StockMatchClient() {
     void reload();
   }, [reload]);
 
-  // 差分確定→CraftSmile送信（検品済み＋差分ありの前々日前日納品分のみ）
+  // 差分確定→CraftSmile送信（選択した行・アクティブパターンの検品済み＋差分ありのみ）
   const confirmDiff = useCallback(async () => {
+    const codes = [...selected];
+    if (codes.length === 0) {
+      setSendResult('❌ 送信対象の行が選択されていません（チェックを付けてください）');
+      return;
+    }
+    const patLabel = pattern === 'today' ? '当日納品' : '前々日前日納品';
     if (
       !window.confirm(
-        `${date} の検品差分をCraftSmileへ確定送信します。\n\n` +
-          `・対象＝「検品済み かつ 差分あり」の商品（前々日前日納品分）\n` +
-          `・検品していない商品はCraftSmileの納品データを正として送りません\n\nよろしいですか？`,
+        `${date} の【${patLabel}】検品差分を、選択した ${codes.length} 商品ぶん CraftSmile へ確定送信します。\n\n` +
+          `・実送信されるのは「検品済み かつ 差分あり」の行のみ\n` +
+          `・未検品／未選択の商品は CraftSmile の納品データを正として送りません\n\nよろしいですか？`,
       )
     )
       return;
@@ -179,7 +190,7 @@ export function StockMatchClient() {
       const r = await fetch('/api/inspection-grid/confirm-diff', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date }),
+        body: JSON.stringify({ date, pattern, productCodes: codes }),
       });
       const j = await r.json();
       setSendResult(r.ok ? `✅ ${j.message}` : `❌ ${j?.message ?? `HTTP ${r.status}`}`);
@@ -189,7 +200,7 @@ export function StockMatchClient() {
     } finally {
       setSending(false);
     }
-  }, [date, reload]);
+  }, [date, pattern, selected, reload]);
 
   // リアル表示：15秒ポーリング
   useEffect(() => {
@@ -210,12 +221,53 @@ export function StockMatchClient() {
     return typeKey === 'all' ? base : base.filter((r) => r.productType === typeKey);
   }, [data, activeDept, typeKey]);
 
-  // 検品差分あり＝前日前々日差分(⑤)・当日差分(⑨)・過不足 のいずれかが 0 でない行。
-  const hasDiff = (r: GridRow) => r.prevDiff !== 0 || r.todayDiff !== 0 || r.balance !== 0;
-  const diffCount = useMemo(() => baseRows.filter(hasDiff).length, [baseRows]);
+  // ①検品差分あり＝アクティブパターンの差分（前々日前日=⑤ / 当日=⑨）が 0 でない行だけ。
+  const hasDiff = useCallback(
+    (r: GridRow) => (pattern === 'today' ? r.todayDiff !== 0 : r.prevDiff !== 0),
+    [pattern],
+  );
+  // 送信の既定対象＝アクティブパターンで「検品済み(>0)かつ差分あり」の行。
+  const isSendable = useCallback(
+    (r: GridRow) =>
+      pattern === 'today'
+        ? r.todayInspected > 0 && r.todayDiff !== 0
+        : r.prevInspected > 0 && r.prevDiff !== 0,
+    [pattern],
+  );
+  const diffCount = useMemo(() => baseRows.filter(hasDiff).length, [baseRows, hasDiff]);
   const rows = useMemo(
     () => (diffOnly ? baseRows.filter(hasDiff) : baseRows),
-    [baseRows, diffOnly],
+    [baseRows, diffOnly, hasDiff],
+  );
+
+  // 発送日／パターンが変わったら、送信対象を既定（検品済み＋差分あり）で自動選択。
+  //   同一(date,pattern)での 15 秒ポーリング再取得では選択を維持（手動チェックを消さない）。
+  useEffect(() => {
+    if (baseRows.length === 0) return;
+    const key = `${date}|${pattern}`;
+    if (lastAutoKey.current === key) return;
+    lastAutoKey.current = key;
+    setSelected(new Set(baseRows.filter(isSendable).map((r) => r.productCode)));
+  }, [baseRows, date, pattern, isSendable]);
+
+  const toggleRow = (code: string) =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(code)) n.delete(code);
+      else n.add(code);
+      return n;
+    });
+  const allVisibleChecked = rows.length > 0 && rows.every((r) => selected.has(r.productCode));
+  const toggleAllVisible = () =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (rows.every((r) => n.has(r.productCode))) rows.forEach((r) => n.delete(r.productCode));
+      else rows.forEach((r) => n.add(r.productCode));
+      return n;
+    });
+  const selectedVisibleCount = useMemo(
+    () => rows.filter((r) => selected.has(r.productCode)).length,
+    [rows, selected],
   );
 
   const subtotal = useMemo(() => {
@@ -273,20 +325,32 @@ export function StockMatchClient() {
           ))}
         </div>
 
-        {/* 検品差分のみ表示トグル（種別の右） */}
+        {/* ①検品パターン切替（前々日前日 / 当日）。差分フィルタと送信対象をスコープ */}
+        <span className="ml-3 text-ink-subtle">検品:</span>
+        <div className="inline-flex border border-surface-border rounded overflow-hidden">
+          {(['prev', 'today'] as const).map((p) => (
+            <button key={p} type="button" onClick={() => setPattern(p)}
+              title={p === 'prev' ? '前々日前日納品(③④)の差分を対象にする' : '当日納品(⑦⑧)の差分を対象にする'}
+              className={`px-2 py-1 text-xs font-bold ${pattern === p ? 'bg-accent-amber text-surface-base' : 'bg-surface-base hover:bg-surface-panel text-ink-subtle'}`}>
+              {p === 'prev' ? '前々日前日' : '当日'}
+            </button>
+          ))}
+        </div>
+
+        {/* 検品差分のみ表示トグル（アクティブパターンの差分のみ） */}
         <button type="button" onClick={() => setDiffOnly((v) => !v)}
-          title="検品差分（前日前々日差分・当日差分・過不足）の出た商品だけを表示"
+          title="アクティブパターン（前々日前日 or 当日）の検品差分が出た商品だけを表示"
           className={`ml-1 px-2 py-1 rounded border text-xs font-bold transition-colors ${
             diffOnly ? 'bg-status-error text-white border-status-error' : 'bg-surface-base border-surface-border text-ink-subtle hover:border-accent-amber'
           }`}>
           ⚠ 検品差分のみ ({diffCount})
         </button>
 
-        {/* 差分を確定してCraftSmileへ送信 */}
-        <button type="button" onClick={confirmDiff} disabled={sending}
-          title="この発送日の検品差分（検品済み＋差分ありの前々日前日納品分）を確定してCraftSmileへ送信します"
+        {/* 差分を確定してCraftSmileへ送信（選択行のみ・アクティブパターン） */}
+        <button type="button" onClick={confirmDiff} disabled={sending || selectedVisibleCount === 0}
+          title="選択した行の検品差分（検品済み＋差分あり・アクティブパターン）を確定してCraftSmileへ送信します"
           className="ml-1 px-2 py-1 rounded border text-xs font-bold bg-blue-700 text-white border-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed">
-          {sending ? '送信中…' : '📤 差分を確定して送信'}
+          {sending ? '送信中…' : `📤 差分を確定して送信（${selectedVisibleCount}）`}
         </button>
 
         <div className="ml-auto flex items-center gap-2 text-2xs text-ink-muted">
@@ -333,7 +397,12 @@ export function StockMatchClient() {
         <table className="w-full text-xs border-collapse">
           <thead className="sticky top-0 z-20">
             <tr className="bg-surface-base text-ink-subtle">
-              <th className="sticky left-0 z-30 bg-surface-base text-left px-2 py-1.5 border-b border-surface-border min-w-[200px]">商品</th>
+              <th className="sticky left-0 z-30 bg-surface-base text-left px-2 py-1.5 border-b border-surface-border min-w-[200px]">
+                <label className="inline-flex items-center gap-1.5 cursor-pointer" title="表示中の行を全選択／全解除">
+                  <input type="checkbox" checked={allVisibleChecked} onChange={toggleAllVisible} className="accent-accent-amber" />
+                  商品
+                </label>
+              </th>
               {COLS.map((c) => (
                 <th key={c.key} className="text-right px-2 py-1.5 border-b border-surface-border whitespace-nowrap">
                   <div>{c.label}</div>
@@ -346,10 +415,15 @@ export function StockMatchClient() {
             {rows.map((r) => (
               <tr key={r.productCode} className="hover:bg-surface-base/60 border-b border-surface-border/60">
                 <td className="sticky left-0 z-10 bg-surface-panel px-2 py-1">
-                  <div className="text-ink-strong truncate max-w-[190px]">{r.productName ?? '—'}</div>
-                  <div className="text-2xs text-ink-muted tabular-nums">
-                    {r.productCode}
-                    {r.productType ? `／${TYPE_LABEL[r.productType as Exclude<TypeKey, 'all'>] ?? r.productType}` : ''}
+                  <div className="flex items-start gap-1.5">
+                    <input type="checkbox" checked={selected.has(r.productCode)} onChange={() => toggleRow(r.productCode)} className="mt-0.5 accent-accent-amber shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-ink-strong truncate max-w-[170px]">{r.productName ?? '—'}</div>
+                      <div className="text-2xs text-ink-muted tabular-nums">
+                        {r.productCode}
+                        {r.productType ? `／${TYPE_LABEL[r.productType as Exclude<TypeKey, 'all'>] ?? r.productType}` : ''}
+                      </div>
+                    </div>
                   </div>
                 </td>
                 {COLS.map((c) => {
