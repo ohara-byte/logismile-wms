@@ -16,6 +16,8 @@ import { fetchLiveShipPlan } from '@/lib/integration/factory-ship-plan-pull';
 
 const Query = z.object({
   shipDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** 納品パターン。'prev'=前々日前日納品(③④)／'today'=当日納品(⑦⑧)。既定 prev。 */
+  pattern: z.enum(['prev', 'today']).default('prev'),
 });
 
 export async function GET(req: Request) {
@@ -23,7 +25,10 @@ export async function GET(req: Request) {
   if (!guard.ok) return guard.response;
 
   const { searchParams } = new URL(req.url);
-  const parsed = Query.safeParse({ shipDate: searchParams.get('shipDate') ?? undefined });
+  const parsed = Query.safeParse({
+    shipDate: searchParams.get('shipDate') ?? undefined,
+    pattern: searchParams.get('pattern') ?? undefined,
+  });
   if (!parsed.success) {
     return NextResponse.json(
       { error: 'VALIDATION', message: parsed.error.issues.map((i) => i.message).join(', ') },
@@ -36,6 +41,19 @@ export async function GET(req: Request) {
   if (!shipDate) {
     return NextResponse.json({ error: 'VALIDATION', message: `不正な発送日: ${ymd}` }, { status: 422 });
   }
+
+  // 納品パターンでスコープ。納品(inbound)は入庫日(createdAt)の窓、検品(inspection_count)は refType で判定。
+  //   prev=前々日前日 [prevStart, dayStart) / today=当日 [dayStart, dayEnd)。
+  const pattern = parsed.data.pattern;
+  const dayStart = new Date(ymd);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  const prevStart = new Date(dayStart);
+  prevStart.setDate(prevStart.getDate() - 2);
+  const inWinStart = pattern === 'today' ? dayStart : prevStart;
+  const inWinEnd = pattern === 'today' ? dayEnd : dayStart;
+  const inspRefTypes = pattern === 'today' ? ['receiving_today', 'receiving'] : ['receiving_prev'];
 
   // ①②・製造部署（母集合）：まず CraftSmile からライブ取得（検品照合グリッドと同じ経路・
   //   push 待ち不要で常に最新）。連携未設定/不達時のみ FactoryShipPlan（push キャッシュ）へフォールバック。
@@ -78,12 +96,22 @@ export async function GET(req: Request) {
   const [delivered, inspected, products] = await Promise.all([
     prisma.stockMovement.groupBy({
       by: ['productCode'],
-      where: { productCode: { in: codes }, type: 'inbound', shipDate },
+      where: {
+        productCode: { in: codes },
+        type: 'inbound',
+        shipDate,
+        createdAt: { gte: inWinStart, lt: inWinEnd },
+      },
       _sum: { qtyDelta: true },
     }),
     prisma.stockMovement.groupBy({
       by: ['productCode'],
-      where: { productCode: { in: codes }, type: 'inspection_count', refType: 'receiving', shipDate },
+      where: {
+        productCode: { in: codes },
+        type: 'inspection_count',
+        refType: { in: inspRefTypes },
+        shipDate,
+      },
       _sum: { inspectedQty: true },
     }),
     // スキャン照合用に JAN を解決（ハンディ：スキャン値 → productCode）

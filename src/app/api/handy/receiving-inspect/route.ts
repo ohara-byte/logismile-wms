@@ -18,6 +18,8 @@ const Body = z.object({
   shipDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'shipDate は YYYY-MM-DD 形式'),
   productCode: z.string().min(1).max(20),
   inspectedQty: z.number().int().min(0),
+  /** 納品パターン。'prev'=前々日前日納品分(④)／'today'=当日納品分(⑧)。既定 prev（現場運用の主。既存はtoday扱い）。 */
+  pattern: z.enum(['prev', 'today']).default('prev'),
 });
 
 export async function POST(req: Request) {
@@ -53,20 +55,22 @@ export async function POST(req: Request) {
     );
   }
 
-  // 当日(JST)の同一(発送日×商品)受入検品を洗い替え（再カウントは置き換え）。
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(todayStart);
-  todayEnd.setDate(todayEnd.getDate() + 1);
+  // 納品パターンを refType で表現：'receiving_prev'（前々日前日=④）/ 'receiving_today'（当日=⑧）。
+  //   検品照合グリッドは「検品時刻」ではなく「このパターン」で ④/⑧ に振り分ける。
+  const pattern = parsed.data.pattern;
+  const refType = pattern === 'today' ? 'receiving_today' : 'receiving_prev';
+  // 洗い替え対象：同一(発送日×商品×パターン)を置き換え。today は旧 'receiving'（当日扱い）も統合削除。
+  const delRefTypes = pattern === 'today' ? ['receiving_today', 'receiving'] : ['receiving_prev'];
+  const patLabel = pattern === 'today' ? '当日納品分' : '前日納品分';
 
   await prisma.$transaction(async (tx) => {
+    // 同一(発送日×商品×パターン)の受入検品を洗い替え（再カウントは置き換え＝1商品1パターン1値）。
     await tx.stockMovement.deleteMany({
       where: {
         productCode: parsed.data.productCode,
         type: 'inspection_count',
-        refType: 'receiving',
+        refType: { in: delRefTypes },
         shipDate,
-        createdAt: { gte: todayStart, lt: todayEnd },
       },
     });
     // Stock 行が無いと FK で失敗するため upsert（qty は触らない）
@@ -82,8 +86,8 @@ export async function POST(req: Request) {
         qtyDelta: 0, // 発送日別受入検品は在庫プールを触らない（引当・在庫はサイレント）
         inspectedQty: parsed.data.inspectedQty,
         shipDate,
-        refType: 'receiving',
-        note: `発送日別受入検品 ${parsed.data.shipDate}`,
+        refType,
+        note: `発送日別受入検品(${patLabel}) ${parsed.data.shipDate}`,
         createdBy: guard.auth.staffCode ?? null,
       },
     });

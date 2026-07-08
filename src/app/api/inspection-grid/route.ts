@@ -152,11 +152,10 @@ export async function GET(req: Request) {
     }),
   ]);
 
-  // ④⑧ 検品（inspection_count・入庫日で前2日/当日に分割）
-  //   ※ 現状 inspection_count に ship_date が無いため商品コード＋日付で近似。
-  //     Phase 5（ハンディ発送日検品）で ship_date を付与したら ship_date 一致で厳密化する。
-  // ④⑧ 検品（発送日別 受入検品・Phase 5）：inspection_count・ship_date一致・検品実数(inspectedQty)を集計。
-  //   入庫日(createdAt)で前2日/当日に分割。発送日別に厳密（旧・総在庫検品は ship_date=null で除外される）。
+  // ④⑧ 検品（発送日別 受入検品）：ハンディで選んだ「納品パターン」で ④/⑧ を振り分ける。
+  //   ④前日前々日検品 = refType='receiving_prev' ／ ⑧当日検品 = refType IN ('receiving_today','receiving')。
+  //   ※「検品した時刻(createdAt)」では振り分けない（前日納品分を当日検品しても④に載るようにするため）。
+  //     旧 'receiving'（パターン未指定の既存データ）は後方互換で当日(⑧)扱い。
   const [prevInsp, todayInsp] = await Promise.all([
     prisma.stockMovement.groupBy({
       by: ['productCode'],
@@ -164,7 +163,7 @@ export async function GET(req: Request) {
         productCode: { in: productCodes },
         type: 'inspection_count',
         shipDate: shipDateUTC,
-        createdAt: { gte: prevStart, lt: dayStart },
+        refType: 'receiving_prev',
       },
       _sum: { inspectedQty: true },
     }),
@@ -174,7 +173,7 @@ export async function GET(req: Request) {
         productCode: { in: productCodes },
         type: 'inspection_count',
         shipDate: shipDateUTC,
-        createdAt: { gte: dayStart, lt: dayEnd },
+        refType: { in: ['receiving_today', 'receiving'] },
       },
       _sum: { inspectedQty: true },
     }),

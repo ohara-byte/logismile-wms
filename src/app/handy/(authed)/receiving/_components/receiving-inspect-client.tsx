@@ -51,6 +51,8 @@ export function ReceivingInspectClient() {
   const [flash, setFlash] = useState<string | null>(null);
   const [scanInput, setScanInput] = useState('');
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  // 納品パターン：'prev'=前日納品分(④) / 'today'=当日納品分(⑧)。既定 prev（当日納品を検品する時だけ切替）。
+  const [pattern, setPattern] = useState<'prev' | 'today'>('prev');
 
   const { playBeep, playError } = useScanSound();
   const scanInputRef = useRef<HTMLInputElement>(null);
@@ -64,7 +66,7 @@ export function ReceivingInspectClient() {
   const reload = useCallback(async () => {
     setBusy(true);
     try {
-      const r = await fetch(`/api/handy/pick-list?shipDate=${date}`);
+      const r = await fetch(`/api/handy/pick-list?shipDate=${date}&pattern=${pattern}`);
       const j = await r.json();
       if (!r.ok) {
         setError(j?.message ?? `HTTP ${r.status}`);
@@ -78,7 +80,7 @@ export function ReceivingInspectClient() {
     } finally {
       setBusy(false);
     }
-  }, [date]);
+  }, [date, pattern]);
 
   useEffect(() => {
     void reload();
@@ -155,7 +157,7 @@ export function ReceivingInspectClient() {
       const r = await fetch('/api/handy/receiving-inspect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shipDate: date, productCode: it.productCode, inspectedQty: qty }),
+        body: JSON.stringify({ shipDate: date, productCode: it.productCode, inspectedQty: qty, pattern }),
       });
       const j = await r.json();
       if (!r.ok) {
@@ -184,6 +186,31 @@ export function ReceivingInspectClient() {
 
   return (
     <div className="flex-1 flex flex-col p-2 gap-2 overflow-y-auto">
+      {/* 納品パターン選択：どの納品分を検品しているか（前日納品分=④ / 当日納品分=⑧）。
+          「いつ検品したか」ではなくこの選択で振り分けるので、前日納品分を当日検品しても③との突合(④)に正しく載る。 */}
+      <div className="flex items-center gap-1 text-2xs">
+        <span className="text-ink-subtle mr-0.5 shrink-0">検品対象:</span>
+        {(
+          [
+            ['prev', '前日納品分'],
+            ['today', '当日納品分'],
+          ] as const
+        ).map(([p, label]) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setPattern(p)}
+            className={`flex-1 px-2 py-1.5 rounded border font-bold ${
+              pattern === p
+                ? 'border-accent-amber bg-accent-amber text-surface-base'
+                : 'border-surface-border bg-surface-panel text-ink-subtle'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* 発送日セレクタ */}
       <div className="flex items-center gap-1.5 text-2xs">
         <button
@@ -234,7 +261,9 @@ export function ReceivingInspectClient() {
       </form>
 
       <div className="text-3xs text-ink-subtle">
-        発送日 <b className="text-ink-strong">{date}</b> の入庫予定：{items.length} 品目
+        発送日 <b className="text-ink-strong">{date}</b>{' '}
+        <b className="text-accent-amber">{pattern === 'today' ? '当日納品分' : '前日納品分'}</b>{' '}
+        の入庫予定：{items.length} 品目
         <span className="ml-2">検品済 <b className="text-ink-strong">{doneCount}</b>/{items.length}</span>
         {busy && <span className="ml-2 text-accent-amber">読込中…</span>}
       </div>

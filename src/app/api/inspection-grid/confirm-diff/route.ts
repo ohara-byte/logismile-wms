@@ -55,6 +55,8 @@ export async function POST(req: Request) {
   dayEnd.setDate(dayEnd.getDate() + 1);
   const winStart = pattern === 'today' ? dayStart : prevStart;
   const winEnd = pattern === 'today' ? dayEnd : dayStart;
+  // 検品(④/⑧)はパターン(refType)で判定。旧 'receiving' は当日扱いで後方互換。
+  const inspRefTypes = pattern === 'today' ? ['receiving_today', 'receiving'] : ['receiving_prev'];
 
   // 母集合＝クラフトスマイル由来（ライブpull・不達時 FactoryShipPlan）
   const live = await fetchLiveShipPlan(ymd);
@@ -87,7 +89,7 @@ export async function POST(req: Request) {
     }),
     prisma.stockMovement.groupBy({
       by: ['productCode'],
-      where: { productCode: { in: codes }, type: 'inspection_count', shipDate: shipDateUTC, createdAt: { gte: winStart, lt: winEnd } },
+      where: { productCode: { in: codes }, type: 'inspection_count', shipDate: shipDateUTC, refType: { in: inspRefTypes } },
       _sum: { inspectedQty: true },
     }),
   ]);

@@ -72,7 +72,11 @@ export async function GET(req: Request) {
       }),
       prisma.stockMovement.groupBy({
         by: ['productCode'],
-        where: { type: 'inspection_count', refType: 'receiving', shipDate },
+        where: {
+          type: 'inspection_count',
+          refType: { in: ['receiving_prev', 'receiving_today', 'receiving'] },
+          shipDate,
+        },
         _sum: { inspectedQty: true },
         _max: { createdAt: true },
       }),
