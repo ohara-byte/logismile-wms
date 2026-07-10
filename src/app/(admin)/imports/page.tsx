@@ -45,6 +45,7 @@ interface ImportResultPayload {
   errors: Array<{
     rowIndex: number;
     pkNo?: string;
+    invoiceNo?: string;
     productCode?: string;
     reason: string;
     message: string;
@@ -64,6 +65,23 @@ interface QueueItem {
 
 function makeQueueKey(f: File): string {
   return `${f.name}::${f.size}::${f.lastModified}`;
+}
+
+/**
+ * 取込の処理順ランク（小さいほど先に処理）。
+ *   0 = 商品マスタ（①/商品マスタ/master）／2 = 出荷指示（②/出荷指示/order）／1 = 不明。
+ * 順序保証：新商品を含む出荷指示が、その商品を定義する商品マスタより先に取り込まれて
+ *   伝票が丸ごと落ちる事故（2026-07-07）を防ぐため、商品マスタを必ず先に処理する。
+ */
+function fileTypeRank(name: string): number {
+  const n = name.toLowerCase();
+  if (name.includes('①') || name.includes('商品マスタ') || n.includes('master') || n.includes('product')) {
+    return 0;
+  }
+  if (name.includes('②') || name.includes('出荷指示') || n.includes('order') || n.includes('shipping')) {
+    return 2;
+  }
+  return 1;
 }
 
 export default function ImportsPage() {
@@ -137,7 +155,18 @@ export default function ImportsPage() {
       while (true) {
         const next = (await new Promise<QueueItem | null>((resolve) => {
           setQueue((prev) => {
-            const idx = prev.findIndex((q) => q.status === 'pending');
+            // 順序保証：pending のうち処理ランクが最小（＝商品マスタ優先）のものを選ぶ。
+            //   同ランクは元の並び順（先に積んだ順）を維持。
+            let idx = -1;
+            let bestRank = Number.POSITIVE_INFINITY;
+            for (let k = 0; k < prev.length; k++) {
+              if (prev[k].status !== 'pending') continue;
+              const r = fileTypeRank(prev[k].file.name);
+              if (r < bestRank) {
+                bestRank = r;
+                idx = k;
+              }
+            }
             if (idx < 0) {
               resolve(null);
               return prev;
@@ -227,6 +256,9 @@ export default function ImportsPage() {
             </div>
             <div className="text-3xs text-ink-muted mt-1">
               対応: 商品マスタ CSV / 出荷指示 CSV（重複ファイルはスキップ）
+            </div>
+            <div className="text-3xs text-accent-amber/80 mt-0.5">
+              ※ まとめて投入しても、取込は「商品マスタ①→出荷指示②」の順で自動実行します（新商品の伝票落ち防止）
             </div>
             <input
               ref={fileInputRef}
@@ -385,6 +417,9 @@ export default function ImportsPage() {
                             <li key={i} className="border-l-2 border-status-error pl-2 py-0.5">
                               <span className="text-ink-muted">行 {err.rowIndex}</span>{' '}
                               <Badge variant="error">{err.reason}</Badge>{' '}
+                              {err.invoiceNo && (
+                                <span className="font-mono">納品書={err.invoiceNo} </span>
+                              )}
                               {err.pkNo && <span className="font-mono">PkNo={err.pkNo} </span>}
                               {err.productCode && (
                                 <span className="font-mono">商品={err.productCode} </span>
