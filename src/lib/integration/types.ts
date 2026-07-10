@@ -38,6 +38,8 @@ export interface ImportResult {
 export interface ImportRowError {
   rowIndex: number; // 1-origin（ヘッダ行を除く）
   pkNo?: string;
+  /** 納品書№（invoice_no）。エラー内容を後から追えるよう伝票単位のエラーに付与する。 */
+  invoiceNo?: string;
   productCode?: string;
   reason:
     | 'jan_empty'

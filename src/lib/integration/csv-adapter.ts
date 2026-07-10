@@ -293,6 +293,13 @@ export class CsvAdapter implements IntegrationAdapter {
     const errors: ImportRowError[] = [];
     const unmappedCodesSet = new Set<string>();
     let duplicatePkNoCount = 0;
+    // 未登録商品で丸ごとスキップした伝票（是正対策：後から追えるよう詳細を残す）
+    const droppedUnmapped: {
+      pkNo: string;
+      invoiceNo?: string;
+      missingCodes: string[];
+      rowIndex: number;
+    }[] = [];
 
     // ① ピッキング№でグルーピング（1 PkNo に複数明細）
     type Header = {
@@ -352,6 +359,7 @@ export class CsvAdapter implements IntegrationAdapter {
           errors.push({
             rowIndex: i + 1,
             pkNo,
+            invoiceNo: row[O.INVOICE_NO]?.trim() || undefined,
             reason: 'validation_error',
             message: `出荷予定日が不正: ${shipDateRaw}`,
           });
@@ -420,6 +428,7 @@ export class CsvAdapter implements IntegrationAdapter {
         errors.push({
           rowIndex: group.items[0]?.rowIndex ?? 0,
           pkNo,
+          invoiceNo: group.header.invoiceNo,
           reason: 'duplicate_pk_no',
           message: `ピッキング№が重複しています（既存伝票あり）: ${pkNo}`,
         });
@@ -442,13 +451,20 @@ export class CsvAdapter implements IntegrationAdapter {
         errors.push({
           rowIndex: it.rowIndex,
           pkNo,
+          invoiceNo: group.header.invoiceNo,
           productCode: it.productCode,
           reason: 'product_not_found',
           message: `商品コードがマスタに未登録: ${it.productCode}`,
         });
       });
       if (missing.length > 0) {
-        // 未マップ伝票はスキップ（マスタ補完後に再取込）
+        // 未マップ伝票はスキップ（マスタ補完後に再取込）。是正対策：落ちた伝票を記録して後から追えるようにする。
+        droppedUnmapped.push({
+          pkNo,
+          invoiceNo: group.header.invoiceNo,
+          missingCodes: missing.map((m) => m.productCode),
+          rowIndex: group.items[0]?.rowIndex ?? 0,
+        });
         continue;
       }
 
@@ -510,6 +526,54 @@ export class CsvAdapter implements IntegrationAdapter {
       }
     }
 
+    // 是正対策①：未登録商品で丸ごと落ちた伝票を「伝票単位のエラーアラート」で発報。
+    //   納品書№/PkNo/未登録商品/理由/ファイルを明記し、アラート画面で即追える。PkNoで重複抑止。
+    const DROP_ALERT_CAP = 50;
+    for (const d of droppedUnmapped.slice(0, DROP_ALERT_CAP)) {
+      const exists = await prisma.alert.findFirst({
+        where: { type: 'order_dropped_unmapped', refCode: d.pkNo, resolved: false },
+        select: { id: true },
+      });
+      if (exists) continue;
+      await prisma.alert.create({
+        data: {
+          type: 'order_dropped_unmapped',
+          severity: 'error',
+          title: `未取込伝票（未登録商品）: 納品書 ${d.invoiceNo ?? '—'} / ${d.pkNo}`,
+          body:
+            `未登録商品を含むため出荷指示を取り込めませんでした（伝票を丸ごとスキップ）。\n` +
+            `納品書№: ${d.invoiceNo ?? '(なし)'}\n` +
+            `ピッキング№: ${d.pkNo}\n` +
+            `未登録商品: ${d.missingCodes.join(', ')}\n` +
+            `ファイル: ${source.filename}\n` +
+            `対処: 商品マスタ登録後、同じ出荷指示CSVを再取込してください。`,
+          refCode: d.pkNo,
+        },
+      });
+    }
+
+    // 是正対策②：この取込で落ちた/エラーになった全明細を thomas_imports.note に構造化保存（後から取込単位で追える）。
+    const noteLines = errors.map((e) => {
+      const parts = [
+        `理由=${e.reason}`,
+        e.invoiceNo ? `納品書=${e.invoiceNo}` : null,
+        e.pkNo ? `PkNo=${e.pkNo}` : null,
+        e.productCode ? `商品=${e.productCode}` : null,
+        `行=${e.rowIndex}`,
+      ].filter(Boolean);
+      return `- ${parts.join(' ')} ／ ${e.message}`;
+    });
+    const noteBody =
+      errors.length === 0
+        ? null
+        : [
+            `[取込エラー ${errors.length}件・${source.filename}]`,
+            ...noteLines.slice(0, 500),
+            noteLines.length > 500 ? `…ほか ${noteLines.length - 500} 件` : null,
+          ]
+            .filter(Boolean)
+            .join('\n');
+
     const updated = await prisma.thomasImport.update({
       where: { id: importLog.id },
       data: {
@@ -517,6 +581,7 @@ export class CsvAdapter implements IntegrationAdapter {
         errorCount: errors.length,
         janErrorCount: 0,
         unmapCount: unmappedCodesSet.size,
+        note: noteBody,
       },
     });
 
