@@ -23,6 +23,7 @@ export interface Notice {
   priority: number;
   category: string | null;
   senderCode: string | null;
+  senderName?: string | null;
   date: string;
   createdAt: string;
 }
@@ -449,7 +450,9 @@ function NoticeItem({
           >
             {isHigh ? '重要' : notice.kind === 'inbox' ? '受信' : '連絡'}
           </span>
-          {notice.senderCode && <span>{notice.senderCode}</span>}
+          {(notice.senderName ?? notice.senderCode) && (
+            <span>{notice.senderName ?? notice.senderCode}</span>
+          )}
           <span>{datetime}</span>
           {notice.category && (
             <span style={{ color: '#64748b', fontFamily: 'Consolas, monospace' }}>

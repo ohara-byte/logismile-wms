@@ -86,11 +86,28 @@ export async function GET(req: Request) {
     take: 200,
   });
 
+  // ①（2026-07-xx 現場要望）：送信者を職員番号でなく氏名で表示するため、senderCode → Staff.name を解決して付与。
+  //   本部の連絡受信一覧・端末の連絡表示ともに senderName を優先表示する（氏名が無ければ従来どおり職員番号）。
+  const senderCodes = Array.from(
+    new Set(items.map((n) => n.senderCode).filter((c): c is string => !!c)),
+  )
+  const senders = senderCodes.length
+    ? await prisma.staff.findMany({
+        where: { code: { in: senderCodes } },
+        select: { code: true, name: true },
+      })
+    : []
+  const nameByCode = new Map(senders.map((s) => [s.code, s.name]))
+  const itemsWithSender = items.map((n) => ({
+    ...n,
+    senderName: n.senderCode ? nameByCode.get(n.senderCode) ?? null : null,
+  }))
+
   // ── モバイルの宛先フィルタ配信（2026-06-06）──
   //   targetType ごとに「この端末/担当者が対象か」を判定して配信する。
   //   旧実装は target を無視して全 announce を返していたため、
   //   「タブレット指定」がハンディにも、「担当者指定」が全員に届いていた。
-  let filtered = items;
+  let filtered = itemsWithSender;
   if (isMobile) {
     // 端末種別（tablet/handy）と所属グループを取得して照合
     const dev = guard.auth.deviceCode

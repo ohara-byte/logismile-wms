@@ -37,6 +37,8 @@ interface Notice {
   category: string | null;
   ackRequired: boolean;
   senderCode: string | null;
+  /** ①：送信者氏名（senderCode→Staff.name 解決）。氏名優先で表示、無ければ職員番号。 */
+  senderName?: string | null;
   priority: number;
   active: boolean;
   readAt: string | null;
@@ -547,7 +549,7 @@ function InboxCard({
     >
       <div className="flex justify-between items-baseline mb-0.5 text-[10px] text-ink-muted">
         <span>
-          {catIcon} {notice.senderCode ?? '匿名'}
+          {catIcon} {notice.senderName ?? notice.senderCode ?? '匿名'}
         </span>
         <span className="font-mono">{formatTime(notice.createdAt)}</span>
       </div>
