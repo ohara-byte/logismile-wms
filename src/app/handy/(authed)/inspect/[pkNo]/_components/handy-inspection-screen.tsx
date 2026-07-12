@@ -118,6 +118,8 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
   const [showFinalCheck, setShowFinalCheck] = useState(false);
   const [forceTarget, setForceTarget] = useState<InspectionItem | null>(null);
   const [qtyTarget, setQtyTarget] = useState<InspectionItem | null>(null);
+  // ③数量キーパッドの入力モード：'add'=残数加算（従来）／'set'=絶対値で修正（減算/0可）
+  const [qtyMode, setQtyMode] = useState<'add' | 'set'>('add');
   const [holdMenuOpen, setHoldMenuOpen] = useState(false);
   const [holdContactOpen, setHoldContactOpen] = useState(false);
   const [reprintOpen, setReprintOpen] = useState(false);
@@ -512,6 +514,32 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     }
   }
 
+  // ③検品数の修正：絶対値でセット（減算/0 も可）。/api/inspect/set-qty を叩き、ローカルも更新。
+  async function applyCorrectQty(item: InspectionItem, qty: number) {
+    if (!sessionId) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/inspect/set-qty', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, itemId: item.id, qty }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        setErrorMsg(j.message ?? '数量修正に失敗しました');
+        triggerFlash('red');
+        playError();
+        throw new Error(j.message ?? `HTTP ${res.status}`);
+      }
+      triggerFlash('green');
+      playBeep();
+      applyScannedQtyLocal(item.id, j.data.scannedQty);
+    } finally {
+      setBusy(false);
+      scanInputRef.current?.focus();
+    }
+  }
+
   async function onTogglePrintFlag() {
     // ②（2026-06-14）：QRフラグは検品中いつでも☑可・保持する。トグル後にスキャン入力へ
     //   フォーカスを戻さないと、HIDスキャナの入力が宙に浮き「検品が進まない」不具合になる。
@@ -865,6 +893,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
       />
       <QtyKeypadModal
         open={qtyTarget !== null}
+        mode={qtyMode}
         productName={qtyTarget?.productName ?? ''}
         productCode={qtyTarget?.productCode ?? ''}
         productJan={qtyTarget?.productJan ?? null}
@@ -872,13 +901,18 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
         totalQty={qtyTarget?.qty ?? 0}
         initialDigit={qtyInitialDigit ?? undefined}
         onConfirm={async (n) => {
-          if (qtyTarget) await applyManualQty(qtyTarget, n);
+          if (qtyTarget) {
+            if (qtyMode === 'set') await applyCorrectQty(qtyTarget, n);
+            else await applyManualQty(qtyTarget, n);
+          }
           setQtyTarget(null);
           setQtyInitialDigit(null);
+          setQtyMode('add');
         }}
         onCancel={() => {
           setQtyTarget(null);
           setQtyInitialDigit(null);
+          setQtyMode('add');
         }}
       />
       <HoldMenuModal
@@ -986,7 +1020,15 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
             item={it}
             isLast={lastResult?.itemId === it.id}
             lastResult={lastResult}
-            onOpenKeypad={(item) => setQtyTarget(item)}
+            onOpenKeypad={(item) => {
+              setQtyMode('add');
+              setQtyTarget(item);
+            }}
+            onCorrect={(item) => {
+              setQtyMode('set');
+              setQtyInitialDigit(null);
+              setQtyTarget(item);
+            }}
             isSelected={selectedRow === idx}
           />
         ))}
@@ -1148,12 +1190,15 @@ function ScanLine({
   isLast,
   lastResult,
   onOpenKeypad,
+  onCorrect,
   isSelected,
 }: {
   item: InspectionItem;
   isLast: boolean;
   lastResult: { result: ScanResult; itemId: number | null } | null;
   onOpenKeypad: (i: InspectionItem) => void;
+  /** ③検品数の修正（絶対値セット・減算/0可）。完了行を含む任意の行で使える。 */
+  onCorrect: (i: InspectionItem) => void;
   isSelected?: boolean;
 }) {
   const done = item.forceOk || item.scannedQty >= item.qty;
@@ -1261,6 +1306,25 @@ function ScanLine({
             className="hover:brightness-110 active:scale-95"
           >
             🔢 数量
+          </button>
+        )}
+        {/* ③修正：誤入力を直す（絶対値セット・減算/0可）。検品数がある/完了行でも表示。 */}
+        {(item.scannedQty > 0 || done) && (
+          <button
+            onClick={() => onCorrect(item)}
+            title="検品数を修正（絶対値で入力・減らす/0も可）"
+            style={{
+              background: 'transparent',
+              color: '#fbbf24',
+              padding: '6px 10px',
+              borderRadius: 4,
+              fontSize: 13,
+              fontWeight: 'bold',
+              border: '1px solid #b45309',
+            }}
+            className="hover:bg-amber-900/30 active:scale-95"
+          >
+            ✎ 修正
           </button>
         )}
       </div>

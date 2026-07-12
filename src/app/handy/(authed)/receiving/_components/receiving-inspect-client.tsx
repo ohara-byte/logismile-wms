@@ -325,7 +325,8 @@ export function ReceivingInspectClient() {
                   inputMode="numeric"
                   min={0}
                   placeholder="検品数"
-                  value={inputs[it.productCode] ?? ''}
+                  // ③修正：検品済みは現在値を初期表示（誤入力を上書き修正しやすく）。編集中は入力値を優先。
+                  value={inputs[it.productCode] ?? (done ? String(it.inspectedQty) : '')}
                   onChange={(e) => setInputs((prev) => ({ ...prev, [it.productCode]: e.target.value }))}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -341,7 +342,7 @@ export function ReceivingInspectClient() {
                   disabled={savingCode === it.productCode}
                   className="px-3 py-1.5 rounded bg-accent-amber text-surface-base text-xs font-bold disabled:opacity-50"
                 >
-                  記録
+                  {done ? '修正' : '記録'}
                 </button>
               </div>
             </div>

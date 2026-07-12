@@ -26,7 +26,7 @@ interface Props {
   productJan: string | null;
   alreadyScanned: number;
   totalQty: number;
-  onConfirm: (addedQty: number) => Promise<void> | void;
+  onConfirm: (qty: number) => Promise<void> | void;
   onCancel: () => void;
   /**
    * Sprint Y-14: ハンディの数字キー押下で keypad を起動した際に、
@@ -34,6 +34,11 @@ interface Props {
    * 例: 数字「3」キー押下 → setQtyTarget(item) + initialDigit=3 → keypad の表示値が "3" で開く
    */
   initialDigit?: number;
+  /**
+   * ③（2026-07 現場要望）入力モード。
+   *   'add'（既定）= 残数を加算（従来）／'set' = 検品数を絶対値でセット（誤入力の修正・減算/0も可）。
+   */
+  mode?: 'add' | 'set';
 }
 
 export function QtyKeypadModal({
@@ -46,16 +51,20 @@ export function QtyKeypadModal({
   onConfirm,
   onCancel,
   initialDigit,
+  mode = 'add',
 }: Props) {
   const [buf, setBuf] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isSet = mode === 'set';
   const remain = Math.max(totalQty - alreadyScanned, 0);
+  // set(修正)は全数まで、add は残数まで。
+  const maxVal = isSet ? totalQty : remain;
   const value = buf === '' ? 0 : parseInt(buf, 10);
-  // 残数超過は確定不可（エラー扱いを継続）。残数内であれば 10 以上でも入力可。
-  const isOver = value > remain;
-  const canConfirm = !busy && value > 0 && !isOver;
+  const isOver = value > maxVal;
+  // set(修正)は 0 も許可（誤入力を 0 に戻す/減らす）。add は 1 以上。
+  const canConfirm = !busy && !isOver && (isSet || value > 0);
 
   // open のたびに初期化（initialDigit があれば反映）
   useEffect(() => {
@@ -66,7 +75,10 @@ export function QtyKeypadModal({
         initialDigit >= 0 &&
         initialDigit <= 9
           ? String(initialDigit)
-          : '';
+          : // set(修正)は現在の検品数を初期表示（そのまま編集して直せる）
+            isSet && alreadyScanned > 0
+            ? String(alreadyScanned)
+            : '';
       setBuf(seed);
       setError(null);
       setBusy(false);
@@ -132,10 +144,20 @@ export function QtyKeypadModal({
       }}
     >
       <div className="bg-surface-panel border border-surface-border rounded-2xl shadow-modal max-w-md w-full p-5">
-        <h2 className="text-lg font-bold text-ink-strong mb-1">🔢 残数を入力</h2>
+        <h2 className="text-lg font-bold text-ink-strong mb-1">
+          {isSet ? '🔢 検品数を修正' : '🔢 残数を入力'}
+        </h2>
         <p className="text-2xs text-ink-subtle mb-3 leading-snug">
-          スキャンしていない<b>残り個数</b>を入力してください。
-          既存スキャン数に加算されます（残数超過は不可）。
+          {isSet ? (
+            <>
+              正しい<b>検品数</b>を入力してください（絶対値でセット・0 や減らす修正も可能）。
+            </>
+          ) : (
+            <>
+              スキャンしていない<b>残り個数</b>を入力してください。
+              既存スキャン数に加算されます（残数超過は不可）。
+            </>
+          )}
         </p>
 
         {/* 対象商品情報 */}
@@ -165,7 +187,9 @@ export function QtyKeypadModal({
           >
             {value}
           </span>
-          <small className="text-xs text-ink-muted ml-2">（残 {remain}）</small>
+          <small className="text-xs text-ink-muted ml-2">
+            （{isSet ? '全' : '残'} {maxVal}）
+          </small>
         </div>
 
         {/* エラー表示 — 残数超過は確定不可 */}
@@ -173,7 +197,7 @@ export function QtyKeypadModal({
           <div className="bg-red-900/40 text-red-200 border border-status-error/40 rounded px-3 py-2 mb-2 text-xs font-bold">
             {error
               ? `⚠ ${error}`
-              : `⚠ 入力値 ${value} は残数 ${remain} を超えています`}
+              : `⚠ 入力値 ${value} は${isSet ? '全数' : '残数'} ${maxVal} を超えています`}
           </div>
         )}
 
