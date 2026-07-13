@@ -114,21 +114,24 @@ export async function GET(req: Request) {
       },
       _sum: { inspectedQty: true },
     }),
-    // スキャン照合用に JAN を解決（ハンディ：スキャン値 → productCode）
+    // スキャン照合用に JAN を、②使用期限用に発送可能賞味期限(日数)を解決。
     prisma.product.findMany({
       where: { code: { in: codes } },
-      select: { code: true, jan: true },
+      select: { code: true, jan: true, shippableExpiryDays: true },
     }),
   ]);
   const deliveredBy = new Map(delivered.map((d) => [d.productCode, d._sum.qtyDelta ?? 0]));
   const inspectedBy = new Map(inspected.map((d) => [d.productCode, d._sum.inspectedQty ?? 0]));
   const janBy = new Map(products.map((p) => [p.code, p.jan]));
+  const expiryDaysBy = new Map(products.map((p) => [p.code, p.shippableExpiryDays]));
 
   const items = plans.map((p) => ({
     productCode: p.productCode,
     productName: p.productName,
     productionDeptName: p.productionDeptName,
     jan: janBy.get(p.productCode) ?? null,
+    // ②使用期限：発送可能賞味期限(日数)。在庫検品バナーと同じ源（Product.shippableExpiryDays）。
+    shippableExpiryDays: expiryDaysBy.get(p.productCode) ?? null,
     plannedQty: p.plannedQty,
     confirmedQty: p.confirmedQty,
     deliveredQty: deliveredBy.get(p.productCode) ?? 0,

@@ -21,11 +21,24 @@ type PickItem = {
   productName: string | null;
   productionDeptName: string | null;
   jan: string | null;
+  /** ②使用期限：発送可能賞味期限(日数)。在庫検品バナーと同じ源。null なら表示しない。 */
+  shippableExpiryDays: number | null;
   plannedQty: number;
   confirmedQty: number | null;
   deliveredQty: number;
   inspectedQty: number;
 };
+
+/**
+ * ②使用期限：発送可能賞味期限日を「入庫日（=本日）＋日数−1」で算出し「M月D日」表記で返す。
+ * 在庫検品バナーの shippableExpiryLabel と同一ロジック（例 本日+4日 → 7/16）。
+ */
+function shippableExpiryLabel(days: number): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + days - 1);
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
 
 function pad(n: number) {
   return String(n).padStart(2, '0');
@@ -315,6 +328,12 @@ export function ReceivingInspectClient() {
                 <span>予定 <b className="text-ink-strong">{it.plannedQty}</b></span>
                 <span>確定 <b className="text-ink-strong">{it.confirmedQty ?? '—'}</b></span>
                 <span>納品 <b className="text-ink-strong">{it.deliveredQty}</b></span>
+                {it.shippableExpiryDays != null && (
+                  <span className="text-amber-300">
+                    使用期限{' '}
+                    <b className="text-amber-200">{shippableExpiryLabel(it.shippableExpiryDays)}以降</b>
+                  </span>
+                )}
               </div>
               <div className="mt-1.5 flex items-center gap-1.5">
                 <input
