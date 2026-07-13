@@ -139,6 +139,11 @@ export async function PUT(
     );
   }
 
+  // PCログインメールは全角混入（IME ON の全角ｍ等）を防ぐため NFKC で半角化＋前後空白除去して保存。
+  if (parsed.data.loginEmail) {
+    parsed.data.loginEmail = parsed.data.loginEmail.normalize('NFKC').trim();
+  }
+
   // Sprint Y-8: PC ログイン情報の事前バリデーション
   const wantsLogin = parsed.data.pcLoginEnabled === true;
   if (wantsLogin && !parsed.data.loginEmail) {

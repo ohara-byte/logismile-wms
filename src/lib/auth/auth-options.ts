@@ -47,8 +47,11 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
+        // 全角混入（IME ON で入力した全角ｍ等）で照合が外れないよう NFKC で半角化＋前後空白除去。
+        const email = credentials.email.normalize('NFKC').trim();
+
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
+          where: { email },
           select: {
             id: true,
             email: true,
