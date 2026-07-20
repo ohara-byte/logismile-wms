@@ -151,6 +151,19 @@ export function AnnPane() {
               reload();
             }
           }}
+          onDelete={async (id) => {
+            // ②現場要望(2026-07-20)：過去分が全件たまるため、1件ずつ任意に削除できるように。
+            //   論理削除（DELETE /api/notices/[id] → active=false）。inbox は active=true のみ取得するため一覧から消える（復元可）。
+            if (!confirm('この本部連絡を一覧から削除しますか？（復元は管理者対応）')) return;
+            // 楽観更新：先に一覧から除去
+            setInboxItems((prev) => prev.filter((it) => it.id !== id));
+            try {
+              await fetch(`/api/notices/${id}`, { method: 'DELETE' });
+              refreshBadges();
+            } catch {
+              reload();
+            }
+          }}
         />
       )}
     </div>
@@ -478,9 +491,11 @@ function AnnounceCard({ notice }: { notice: Notice }) {
 function AnnRecvPanel({
   items,
   onMarkRead,
+  onDelete,
 }: {
   items: Notice[];
   onMarkRead: (id: number) => Promise<void>;
+  onDelete: (id: number) => Promise<void>;
 }) {
   const [filter, setFilter] = useState<IncFilter>('all');
 
@@ -522,7 +537,12 @@ function AnnRecvPanel({
         </div>
       ) : (
         filtered.map((n) => (
-          <InboxCard key={n.id} notice={n} onMarkRead={() => onMarkRead(n.id)} />
+          <InboxCard
+            key={n.id}
+            notice={n}
+            onMarkRead={() => onMarkRead(n.id)}
+            onDelete={() => onDelete(n.id)}
+          />
         ))
       )}
     </div>
@@ -532,9 +552,11 @@ function AnnRecvPanel({
 function InboxCard({
   notice,
   onMarkRead,
+  onDelete,
 }: {
   notice: Notice;
   onMarkRead: () => void;
+  onDelete: () => void;
 }) {
   const isUnread = !notice.readAt;
   const catIcon = categoryIcon(notice.category);
@@ -557,7 +579,14 @@ function InboxCard({
       {notice.body && (
         <div className="text-2xs text-ink-subtle mt-0.5 leading-snug">{notice.body}</div>
       )}
-      <div className="flex justify-end mt-1">
+      <div className="flex justify-between items-center mt-1">
+        {/* ②現場要望(2026-07-20)：1件ずつ任意に削除（論理削除・一覧から消える） */}
+        <button
+          onClick={onDelete}
+          className="text-[10px] px-2 py-0.5 rounded border border-status-error/50 text-status-error hover:bg-red-900/30"
+        >
+          🗑 削除
+        </button>
         {isUnread ? (
           <button
             onClick={onMarkRead}
