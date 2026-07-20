@@ -316,15 +316,19 @@ export function ReceivingInspectClient() {
             >
               <div className="flex justify-between items-start gap-2">
                 <div className="min-w-0">
-                  <div className="text-xs text-ink-strong truncate">{it.productName ?? '—'}</div>
+                  {/* ①現場要望(2026-07-20)：商品名 12px→14px */}
+                  <div className="text-sm text-ink-strong truncate">{it.productName ?? '—'}</div>
+                  {/* 品番・取引先は補助情報のため 9px 据え置き */}
                   <div className="text-3xs text-ink-muted tabular-nums">
                     {it.productCode}
                     {it.productionDeptName ? `／${it.productionDeptName}` : ''}
                   </div>
                 </div>
-                {done && <span className="text-3xs text-emerald-300 font-bold shrink-0">検品済 {it.inspectedQty}</span>}
+                {/* ①検品済バッジ 9px→14px（太字・緑は維持） */}
+                {done && <span className="text-sm text-emerald-300 font-bold shrink-0">検品済 {it.inspectedQty}</span>}
               </div>
-              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-3xs text-ink-subtle tabular-nums">
+              {/* ①予定・確定・納品＋使用期限を 9px→14px（横並びのまま・入りきらなければ折返し） */}
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-ink-subtle tabular-nums">
                 <span>予定 <b className="text-ink-strong">{it.plannedQty}</b></span>
                 <span>確定 <b className="text-ink-strong">{it.confirmedQty ?? '—'}</b></span>
                 <span>納品 <b className="text-ink-strong">{it.deliveredQty}</b></span>
