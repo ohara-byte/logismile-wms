@@ -7,6 +7,11 @@ import { prisma } from '@/lib/db';
  * 未認証で叩けるため、内部例外メッセージは返さない。
  * 死活監視用に最小限の情報のみ。
  */
+// 死活監視は常に「今」の状態を返す必要があるため prerender/キャッシュを禁止。
+// 指定が無いと next build 時に静的評価され、DB 未接続のビルド環境で
+// prisma:error がログに出る（ビルド自体は成功するがノイズになる）。
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     await prisma.$queryRaw`SELECT 1`;
