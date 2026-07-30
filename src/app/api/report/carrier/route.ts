@@ -14,11 +14,12 @@ export async function GET(req: Request) {
 
   const range = parsePeriodFromUrl(req);
   if ('error' in range) return range.error;
-  const { from, to } = range;
+  // shipDate は @db.Date のため UTC 暦日境界（fromDate/toDateExclusive）を使う
+  const { fromDate, toDateExclusive } = range;
 
   const orders = await prisma.shippingOrder.findMany({
     where: {
-      shipDate: { gte: from, lte: to },
+      shipDate: { gte: fromDate, lt: toDateExclusive },
       deletedAt: null,
     },
     select: {
