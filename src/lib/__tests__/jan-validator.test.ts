@@ -1,11 +1,11 @@
 /**
- * JAN validator 動作確認スクリプト（node:test ベース）
+ * JAN validator 動作確認スクリプト
  *
- * 実行: npm run test:lib
- * （Node 20+ 標準の test runner を使用）
+ * 実行: npm test
+ * アサーションは node:assert/strict のまま（vitest は Node 上で動くため互換）。
  */
 
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { validateJan, calcCheckDigit } from '../jan-validator';
 
