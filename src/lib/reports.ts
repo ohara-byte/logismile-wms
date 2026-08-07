@@ -10,6 +10,8 @@
  */
 
 import { prisma } from './db';
+import { addDaysUTC, formatDateYmd, jstYmd } from './date-utils';
+import type { PeriodRange } from './report-period';
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'] as const;
 
@@ -37,17 +39,19 @@ function endOf(d: Date) {
  *     worst: { date, shipped },
  *   }
  */
-export async function summaryReport(from: Date, to: Date) {
-  const sFrom = startOf(from);
-  const sTo = endOf(to);
-
-  // 期間内の出荷指示 + 検品セッションを一気に取得
+export async function summaryReport(period: PeriodRange) {
+  // shipDate は @db.Date（UTC 真夜中）。setHours 由来の境界を使うと前日1日分を
+  //   余計に拾う（2026-08-07 是正）。UTC 暦日の [fromDate, toDateExclusive) を使う。
+  // completedAt は @db.Timestamptz なので従来どおり JST ローカル日の境界を使う。
   const orders = await prisma.shippingOrder.findMany({
-    where: { shipDate: { gte: sFrom, lte: sTo }, deletedAt: null },
+    where: {
+      shipDate: { gte: period.fromDate, lt: period.toDateExclusive },
+      deletedAt: null,
+    },
     select: { id: true, status: true, shipDate: true },
   });
   const sessions = await prisma.inspSession.findMany({
-    where: { completedAt: { gte: sFrom, lte: sTo, not: null } },
+    where: { completedAt: { gte: period.from, lte: period.to, not: null } },
     select: {
       staffCode: true,
       durationSec: true,
@@ -84,10 +88,12 @@ export async function summaryReport(from: Date, to: Date) {
     if (o.status === 'packed' || o.status === 'shipped') b.packed++;
   }
 
-  // 検品セッション → 完了日でカウント
+  // 検品セッション → 完了日でカウント。
+  //   completedAt はインスタントなので toISOString だと UTC 暦日になり、
+  //   JST 00:00〜08:59 完了分が前日に混ざる（2026-08-07 是正）。
   for (const s of sessions) {
     if (!s.completedAt) continue;
-    const key = s.completedAt.toISOString().slice(0, 10);
+    const key = jstYmd(s.completedAt);
     const b = get(key);
     b.packSec += s.durationSec ?? 0;
     b.forceOk += s.forceOkCount ?? 0;
@@ -105,16 +111,19 @@ export async function summaryReport(from: Date, to: Date) {
     forceOk: number;
     staffCount: number;
   }> = [];
+  // UTC 暦日で [fromDate, toDateExclusive) を走査する。
+  //   従来は JST 真夜中（= UTC 前日15:00）起点だったため、日付キーが1日前にずれ、
+  //   最終日のバケットが落ち、曜日ラベルも日付と食い違っていた（2026-08-07 是正）。
   for (
-    let d = new Date(sFrom);
-    d <= sTo;
-    d = new Date(d.getTime() + 24 * 60 * 60 * 1000)
+    let d = period.fromDate;
+    d < period.toDateExclusive;
+    d = addDaysUTC(d, 1)
   ) {
-    const key = d.toISOString().slice(0, 10);
+    const key = formatDateYmd(d);
     const b = byDay.get(key);
     daily.push({
       date: key,
-      weekday: WEEKDAYS[d.getDay()],
+      weekday: WEEKDAYS[d.getUTCDay()],
       shipped: b?.shipped ?? 0,
       packed: b?.packed ?? 0,
       packMin: b ? Math.round((b.packSec / 60) * 10) / 10 : 0,
@@ -144,8 +153,8 @@ export async function summaryReport(from: Date, to: Date) {
     sessions.length > 0 ? Math.round(totalDurationSec / sessions.length) : null;
 
   return {
-    from: sFrom.toISOString().slice(0, 10),
-    to: endOf(to).toISOString().slice(0, 10),
+    from: formatDateYmd(period.fromDate),
+    to: formatDateYmd(addDaysUTC(period.toDateExclusive, -1)),
     daily,
     total: {
       shipped: totalShipped,
@@ -252,11 +261,15 @@ export async function groupMhReport(from: Date, to: Date) {
   }));
 }
 
-export async function productAbcReport(from: Date, to: Date, top = 30) {
+export async function productAbcReport(period: PeriodRange, top = 30) {
   const items = await prisma.shippingOrderItem.groupBy({
     by: ['productCode'],
     where: {
-      order: { shipDate: { gte: startOf(from), lte: endOf(to) }, deletedAt: null },
+      // shipDate は @db.Date。UTC 暦日の半開区間で絞る（2026-08-07 是正）
+      order: {
+        shipDate: { gte: period.fromDate, lt: period.toDateExclusive },
+        deletedAt: null,
+      },
     },
     _sum: { qty: true },
     _count: { _all: true },

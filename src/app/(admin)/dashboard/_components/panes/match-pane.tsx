@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useBadges } from '@/components/admin/badge-context';
 import { useOrderDetailModal } from '@/components/admin/order-detail-context';
+import { jstYmd } from '@/lib/date-utils';
 
 interface MatchRow {
   pkNo: string;
@@ -74,7 +75,9 @@ const ACTION_DEFS: { kind: ActionKind; icon: string; title: string; desc: string
 ];
 
 export function MatchPane() {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  // JST の暦日を既定にする。toISOString は UTC 日なので、JST 00:00〜08:59 に開くと
+  //   前日が既定になり、一覧・一括処理が前日の伝票を対象にしてしまう（2026-08-07 是正）。
+  const todayIso = jstYmd(new Date());
   const [date, setDate] = useState(todayIso);
   const [data, setData] = useState<{ stats: Stats; items: MatchRow[] } | null>(null);
   const [scanInput, setScanInput] = useState('');

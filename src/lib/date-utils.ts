@@ -79,6 +79,24 @@ export function formatDateJa(d: Date): string {
   return `${y}/${m}/${day}(${wd})`;
 }
 
+/** JST は UTC+9（日本は夏時間が無いため固定オフセットでよい）。 */
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+/**
+ * インスタント（`@db.Timestamptz` 由来の Date）を **JST の暦日** "YYYY-MM-DD" にする。
+ *
+ * 2026-08-07：レポートの日別集計が `completedAt.toISOString().slice(0,10)` で
+ * バケットキーを作っており、これは **UTC の暦日**だった。JST 00:00〜08:59 に完了した
+ * 検品セッションが前日に振り分けられ、日別グラフ・MH が1日ずれていた。
+ * 一方 `shipDate` は `@db.Date`（UTC 真夜中）なので toISOString でも正しく、
+ * 同じ集計の中で2種類のキーが混在していた。
+ *
+ * サーバのタイムゾーン設定に依存しないよう UTC 演算だけで求める。
+ */
+export function jstYmd(d: Date): string {
+  return formatDateYmd(new Date(d.getTime() + JST_OFFSET_MS));
+}
+
 /**
  * UTC 真夜中の Date を N 日進めて新しい UTC 真夜中 Date を返す。
  */

@@ -102,10 +102,14 @@ test('バリデーションは従来どおり（必須・形式・順序・上�
 // 3. 回帰防止: shipDate を from/to で絞っていないこと
 // ───────────────────────────────────────────────
 
+// 2026-08-07：本ガードが `src/lib/reports.ts` を見ていなかったため、
+//   KPI「総出荷数」だけが前日1日分を過大計上したままドリルダウンと食い違う、という
+//   最大の適用漏れがすり抜けていた。集計ロジック本体も対象に含める。
 const SHIPDATE_REPORT_ROUTES = [
   'src/app/api/report/carrier/route.ts',
   'src/app/api/report/drill/total-ship/route.ts',
   'src/app/api/report/force/route.ts',
+  'src/lib/reports.ts',
 ];
 
 test('shipDate を絞るレポート API は from/to ではなく fromDate/toDateExclusive を使う', () => {
@@ -117,6 +121,47 @@ test('shipDate を絞るレポート API は from/to ではなく fromDate/toDat
     if (m.some((s) => /\bgte:\s*from\b/.test(s) || /\blte:\s*to\b/.test(s))) {
       offenders.push(rel);
     }
+  }
+  expect(offenders).toEqual([]);
+});
+
+// ── @db.Date に setHours 由来の境界を流用していないか（2026-08-07 追加）──
+//   `shipDate` / `targetDate` / `date`（いずれも @db.Date）を startOf()/endOf() や
+//   setHours(0,0,0,0) の Date で絞ると、JST では前日1日分がずれて混ざる。
+const DATE_COLUMN_FILES = [
+  'src/lib/reports.ts',
+  'src/lib/dashboard/badges.ts',
+];
+
+test('@db.Date 列を startOf/endOf の境界で絞っていない', () => {
+  const offenders: string[] = [];
+  for (const rel of DATE_COLUMN_FILES) {
+    const src = readFileSync(path.join(process.cwd(), rel), 'utf8');
+    const blocks = src.match(/shipDate:\s*\{[^}]*\}/g) ?? [];
+    if (blocks.some((b) => /startOf\(|endOf\(/.test(b))) offenders.push(rel);
+  }
+  expect(offenders).toEqual([]);
+});
+
+test('日別集計のバケットキーは JST 暦日（jstYmd）で作る', () => {
+  // completedAt は @db.Timestamptz。toISOString().slice(0,10) だと UTC 暦日になり
+  // JST 00:00〜08:59 完了分が前日に混ざる（2026-08-07 是正）。
+  const src = readFileSync(path.join(process.cwd(), 'src/lib/reports.ts'), 'utf8');
+  expect(src).toContain('jstYmd');
+  expect(src).not.toMatch(/completedAt\.toISOString\(\)\.slice\(0,\s*10\)/);
+});
+
+test('管理画面の既定日は UTC 日ではなく JST 暦日で作る', () => {
+  // JST 早朝に開くと前日が既定になり、一括処理が前日の伝票を対象にしてしまう
+  const files = [
+    'src/app/(admin)/dashboard/_components/panes/match-pane.tsx',
+    'src/app/(admin)/dashboard/_components/panes/report/report-period-context.tsx',
+  ];
+  const offenders: string[] = [];
+  for (const rel of files) {
+    const src = readFileSync(path.join(process.cwd(), rel), 'utf8');
+    if (/new Date\(\)\.toISOString\(\)\.slice\(0,\s*10\)/.test(src)) offenders.push(rel);
+    if (/today\.setHours\(0,\s*0,\s*0,\s*0\)/.test(src)) offenders.push(rel);
   }
   expect(offenders).toEqual([]);
 });

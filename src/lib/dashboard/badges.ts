@@ -16,14 +16,15 @@ import { prisma } from '@/lib/db';
 import { type BadgeCounts } from './badges-types';
 import { EXCLUDED_REASON_PREFIXES } from '@/lib/force-ok';
 import type { Prisma } from '@prisma/client';
+import { todayJstAsUTC, addDaysUTC } from '@/lib/date-utils';
 
 export { type BadgeCounts, ZERO_BADGES, badgesEqual } from './badges-types';
 
 export async function getBadgeCounts(): Promise<BadgeCounts> {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  // shipDate は @db.Date（UTC 真夜中）。setHours 由来の境界だと前日を数えてしまい、
+  //   照合バッジの件数が /api/orders/match の一覧と食い違う（2026-08-07 是正）。
+  const today = todayJstAsUTC();
+  const tomorrow = addDaysUTC(today, 1);
 
   const [alerts, forcePending, annUnread, matchPending, linkUnmap] = await Promise.all([
     // alerts: 未解決アラート（Sprint Y-3 / Y-4）
