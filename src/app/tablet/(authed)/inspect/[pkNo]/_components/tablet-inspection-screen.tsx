@@ -14,6 +14,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/cn';
 import { NoticesModal } from '@/components/inspection/notices-modal';
+import { useNoticePoll } from '@/lib/use-notice-poll';
 import { BoxSuggestion } from '@/components/inspection/box-suggestion';
 import { FinalCheckModal } from '@/components/inspection/final-check-modal';
 import { ForceOkModal } from '@/components/inspection/force-ok-modal';
@@ -155,7 +156,8 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
   //   モック準拠（タブレット検品モック_v0.18.html L1453-1499 koudokuModal）:
   //   のし☑ + 同梱物☑ + 商品検品サマリー + 納品書スキャンを 1 モーダルに集約
   // ※ 連絡事項は idle 画面で既に確認済みのため、検品画面では既定 false。
-  //    F1 押下時に再表示する。
+  //    2026-08-09: タブレットは F1 が「商品スキャン」で塞がっているため、
+  //    ヘッダの 📢 ボタン（未読バッジ付き）から再表示する。
   const [showNotices, setShowNotices] = useState(false);
   const [showFinalCheck, setShowFinalCheck] = useState(false);
   const [forceTarget, setForceTarget] = useState<InspectionItem | null>(null);
@@ -174,6 +176,23 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
     enabled: soundEnabled,
     setEnabled: setSoundEnabled,
   } = useScanSound();
+
+  // 検品中の新着連絡（2026-08-09）。
+  //   priority >= 90（管理 PC で「検品中でも即時に割り込む」を ON にした連絡＝保留指示・中止）
+  //   だけをモーダルで割り込ませ、通常連絡はヘッダの 📢 バッジに件数を出すだけにする。
+  //   スキャン中に画面を奪うのは緊急時に限る、という現場判断（2026-08-09 小原様）。
+  const { urgent: urgentNotices, unreadCount } = useNoticePoll({
+    enabled: !showNotices,
+  });
+  /** 既に割り込み表示した緊急連絡 ID（同じ連絡で再度画面を奪わない） */
+  const interruptedIds = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (showNotices || urgentNotices.length === 0) return;
+    const hasNew = urgentNotices.some((n) => !interruptedIds.current.has(n.id));
+    urgentNotices.forEach((n) => interruptedIds.current.add(n.id));
+    if (hasNew) setShowNotices(true);
+  }, [urgentNotices, showNotices]);
 
   const scanInputRef = useRef<HTMLInputElement>(null);
   // 自動展開の二重発火防止（モック L2167 と同等）
@@ -762,6 +781,8 @@ export function TabletInspectionScreen({ order: initialOrder, employee }: Props)
           onExit={() => router.push('/tablet')}
           soundEnabled={soundEnabled}
           onToggleSound={() => setSoundEnabled(!soundEnabled)}
+          unreadCount={unreadCount}
+          onOpenNotices={() => setShowNotices(true)}
           durationSec={inspectDurationSec}
         />
 
@@ -1135,6 +1156,8 @@ function Header({
   onExit,
   soundEnabled,
   onToggleSound,
+  unreadCount,
+  onOpenNotices,
   durationSec,
 }: {
   order: InspectionOrder;
@@ -1144,6 +1167,9 @@ function Header({
   onExit: () => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
+  /** 未読連絡の件数（📢 バッジ用） */
+  unreadCount: number;
+  onOpenNotices: () => void;
   /** ③ 検品所要時間（秒・全件完了時のみ）。終了ボタンに ●分●秒 表示。 */
   durationSec?: number | null;
 }) {
@@ -1210,6 +1236,49 @@ function Header({
         </span>
       )}
       <span style={{ flex: 1 }} />
+      {/* 📢 連絡（2026-08-09 追加）。未読があれば件数バッジ。
+          緊急連絡は自動で開くが、通常連絡はここから任意のタイミングで開く。 */}
+      <button
+        onClick={onOpenNotices}
+        title={
+          unreadCount > 0
+            ? `未読の連絡 ${unreadCount} 件`
+            : '本日の連絡事項を表示'
+        }
+        style={{
+          position: 'relative',
+          background: unreadCount > 0 ? '#b45309' : '#334155',
+          color: unreadCount > 0 ? '#fff' : '#cbd5e1',
+          padding: '4px 10px',
+          borderRadius: 6,
+          fontSize: 12,
+          fontWeight: unreadCount > 0 ? 'bold' : 'normal',
+        }}
+      >
+        📢 連絡
+        {unreadCount > 0 && (
+          <span
+            style={{
+              position: 'absolute',
+              top: -6,
+              right: -6,
+              minWidth: 18,
+              height: 18,
+              padding: '0 4px',
+              borderRadius: 9,
+              background: '#dc2626',
+              color: '#fff',
+              fontSize: 11,
+              fontWeight: 'bold',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {unreadCount}
+          </span>
+        )}
+      </button>
       {/* 検品スキャン音 ON/OFF（2026-05-23 追加） */}
       <SoundToggle enabled={soundEnabled} onToggle={onToggleSound} variant="tablet" />
       <button

@@ -24,6 +24,7 @@ import { ReprintModal } from '@/components/inspection/reprint-modal';
 import { useStickyForceOk } from '@/lib/use-sticky-force-ok';
 import { useHardwareKeys } from '@/lib/use-hardware-keys';
 import { useScanSound } from '@/lib/use-scan-sound';
+import { useNoticePoll } from '@/lib/use-notice-poll';
 import { usePerfDisplay } from '@/lib/use-perf-display';
 import { SoundToggle } from '@/components/inspection/sound-toggle';
 
@@ -148,6 +149,22 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
 
   // ⑤計測表示（2026-06-17）：検品開始画面でONにすると、前回スキャンの所要時間を画面に表示。
   const { enabled: perfEnabled } = usePerfDisplay();
+
+  // 検品中の新着連絡（2026-08-09）。タブレット検品画面と同一方針。
+  //   緊急（priority >= 90 ＝ 保留指示・中止）のみ割り込み表示、
+  //   通常連絡は F1「連絡」ボタンの未読バッジで知らせるにとどめる。
+  const { urgent: urgentNotices, unreadCount } = useNoticePoll({
+    enabled: !showNotices,
+  });
+  /** 既に割り込み表示した緊急連絡 ID（同じ連絡で再度画面を奪わない） */
+  const interruptedIds = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (showNotices || urgentNotices.length === 0) return;
+    const hasNew = urgentNotices.some((n) => !interruptedIds.current.has(n.id));
+    urgentNotices.forEach((n) => interruptedIds.current.add(n.id));
+    if (hasNew) setShowNotices(true);
+  }, [urgentNotices, showNotices]);
   const [lastTiming, setLastTiming] = useState<{ total: number; server: number | null } | null>(null);
   // fetch のレスポンスから Server-Timing(scan;dur) と総時間を記録する。
   const recordTiming = (t0: number, res: Response) => {
@@ -1117,7 +1134,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
           モック準拠：footer 高さ 62px（タップしやすさ確保） */}
       <footer className="bg-surface-panel border-t border-surface-border h-[62px] grid grid-cols-5 gap-1 p-1 shrink-0">
         <HandyFkeyBtn
-          label="連絡"
+          label={unreadCount > 0 ? `連絡(${unreadCount})` : '連絡'}
           sub="F1"
           tone="amber"
           disabled={busy}

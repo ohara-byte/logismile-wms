@@ -8,6 +8,7 @@ import { CancelWarningModal } from '@/components/inspection/cancel-warning-modal
 import { TakeoverConfirmModal } from '@/components/inspection/takeover-confirm-modal';
 import { ReprintModal } from '@/components/inspection/reprint-modal';
 import { NoticesModal } from '@/components/inspection/notices-modal';
+import { useNoticePoll } from '@/lib/use-notice-poll';
 import { useHardwareKeys } from '@/lib/use-hardware-keys';
 import { usePerfDisplay } from '@/lib/use-perf-display';
 
@@ -64,6 +65,18 @@ export function PickingNoScanForm({ currentStaffCode }: Props = {}) {
   const noticesAutoShownRef = useRef(true);
   // ⑤計測表示の切替（端末ごと・localStorage 保持）。ONにすると検品画面でスキャン所要時間を表示。
   const { enabled: perfEnabled, setEnabled: setPerfEnabled } = usePerfDisplay();
+
+  // 待機中も新着連絡を拾う（2026-08-09）。タブレット待機画面と同一の扱い。
+  const { notices: polledNotices } = useNoticePoll({ enabled: !showNotices });
+  /** 一度自動表示した連絡 ID。「あとで確認」で閉じた分を鳴らし直さないため。 */
+  const seenNoticeIds = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (showNotices || polledNotices.length === 0) return;
+    const hasNew = polledNotices.some((n) => !seenNoticeIds.current.has(n.id));
+    polledNotices.forEach((n) => seenNoticeIds.current.add(n.id));
+    if (hasNew) setShowNotices(true);
+  }, [polledNotices, showNotices]);
 
   // モーダルが何かしら開いているか
   const anyModalOpen =

@@ -11,7 +11,12 @@
  *   3. 親商品ヘッダ（構成品マスタ逆引き ─ 該当時のみ）※将来
  *   4. 明細表（商品コード / 名 / 数 / 状態）
  *   5. 処理アクション 5 種: 編集 / 前倒し / 繰越 / 再印刷 / キャンセル
- *   6. 作業テーブルへメッセージ送信（テンプレ + 本文 + 送信）
+ *   6. 作業テーブルへメッセージ送信（宛先 2 段 + テンプレ + 本文 + 送信）
+ *      2026-08-09 改訂: 宛先を「作業テーブル」→「テーブル全員 / 当日担当者」の 2 段にした。
+ *        旧実装は「担当グループ全員」が targetId='group'（文字列リテラル）、
+ *        「担当者」が検品セッション依存で未着手だと targetId=null となり、
+ *        いずれも受信側の判定に一致せず送信成功表示のまま誰にも届いていなかった。
+ *        宛先が確定しない場合は送信ボタンを無効化して構造的に防いでいる。
  *   7. タイムライン（CSV 取込 / 印刷 / 着手 / 完了 / 強制OK / 監査ログ）
  *
  * 操作:
@@ -29,7 +34,7 @@ import {
   reasonBadgeClass,
   type ForceReasonCode,
 } from '@/lib/force-ok';
-import { pkNoPrefix } from '@/lib/pk-no';
+import { pkNoPrefix, parseTableLetter } from '@/lib/pk-no';
 
 interface OrderItem {
   id: number;
@@ -103,6 +108,22 @@ interface Props {
  *           対応する処理アクション（保留 / キャンセル）のダイアログを開き、本文を理由欄に転記する。
  *  - action 未指定はメッセージ送信用テンプレ（本文セットのみ）。
  */
+/** 宛先ピッカー（GET /api/notices/recipients）の 1 行。 */
+interface TableRecipient {
+  code: string;
+  groupId: string;
+  groupName: string;
+  staff: { code: string; name: string; startTime: string; endTime: string }[];
+}
+
+/**
+ * 「検品中でも割り込む」連絡の priority。
+ * 端末側は priority >= URGENT_PRIORITY を即ポップアップの条件にしている
+ * （src/lib/use-notice-poll.ts と対応）。
+ */
+const URGENT_PRIORITY = 90;
+const NORMAL_PRIORITY = 70;
+
 const MSG_TEMPLATES: {
   label: string;
   text: string;
@@ -132,11 +153,23 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
   const [actionPromptInitial, setActionPromptInitial] = useState('');
 
   // メッセージ送信フォーム
-  const [msgTo, setMsgTo] = useState<'table' | 'group' | 'tablet' | 'all'>('table');
+  /**
+   * 宛先は 2 段構成（2026-08-09 改訂）:
+   *   msgTable … 作業テーブル記号。'' = テーブル指定なし
+   *   msgTo    … テーブル選択時は 'table'（テーブル全員）か `staff:<code>`。
+   *              未選択時は 'all' / 'tablet' / 'handy'。
+   */
+  const [msgTable, setMsgTable] = useState<string>('');
+  // 既定は「テーブル指定なし → 全員」。伝票のテーブルが候補に見つかれば下の effect で上書きする。
+  //   （テーブル未設定の環境でも宛先が必ず成立するようにするため）
+  const [msgTo, setMsgTo] = useState<string>('all');
   const [msgBody, setMsgBody] = useState('');
   const [msgAck, setMsgAck] = useState(true);
+  /** 検品中でも割り込ませるか（priority 90 で送る）。処理付きテンプレで自動 ON。 */
+  const [msgUrgent, setMsgUrgent] = useState(false);
   const [msgBusy, setMsgBusy] = useState(false);
   const [msgFlash, setMsgFlash] = useState<string | null>(null);
+  const [recipients, setRecipients] = useState<TableRecipient[] | null>(null);
 
   const { refresh: refreshBadges } = useBadges();
 
@@ -163,6 +196,25 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  // 宛先候補（作業テーブル + 当日担当者）を取得
+  useEffect(() => {
+    fetch('/api/notices/recipients')
+      .then((r) => r.json())
+      .then((j) => setRecipients(j.data?.tables ?? []))
+      .catch(() => setRecipients([]));
+  }, []);
+
+  // 伝票のテーブル記号を宛先の初期値にする（SF0123… → 'F'）。
+  //   候補に無いテーブルなら「指定なし」のままにする。
+  useEffect(() => {
+    if (!order || !recipients) return;
+    const letter = parseTableLetter(order.pkNo);
+    if (letter && recipients.some((t) => t.code === letter)) {
+      setMsgTable(letter);
+      setMsgTo('table');
+    }
+  }, [order, recipients]);
 
   // Esc キーで閉じる
   useEffect(() => {
@@ -263,30 +315,64 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
     }
   }
 
+  /**
+   * 現在の 2 段選択から実際の宛先を解決する。
+   *
+   * ★ 2026-08-09 是正: 旧実装は
+   *     - 「担当グループ全員」を targetType='staff' / targetId='group'（文字列）で送っていた
+   *     - 「担当者」を検品セッション依存にしており、未着手伝票では targetId=null で送っていた
+   *   いずれも受信側の判定に一致せず、送信は成功表示なのに誰にも届いていなかった。
+   *   宛先が確定できない場合は null を返し、送信ボタン自体を無効化する。
+   */
+  function resolveTarget():
+    | { targetType: string; targetId: string | null; label: string }
+    | null {
+    if (msgTable) {
+      const table = recipients?.find((t) => t.code === msgTable) ?? null;
+      if (msgTo === 'table') {
+        return {
+          targetType: 'table',
+          targetId: msgTable,
+          label: `${msgTable} テーブル全員`,
+        };
+      }
+      if (msgTo.startsWith('staff:')) {
+        const code = msgTo.slice('staff:'.length);
+        const name = table?.staff.find((s) => s.code === code)?.name ?? code;
+        return { targetType: 'staff', targetId: code, label: name };
+      }
+      return null;
+    }
+    if (msgTo === 'all') return { targetType: 'all', targetId: null, label: '全員' };
+    if (msgTo === 'tablet')
+      return { targetType: 'tablet', targetId: null, label: 'タブレット全体' };
+    if (msgTo === 'handy')
+      return { targetType: 'handy', targetId: null, label: 'ハンディ全体' };
+    return null;
+  }
+
   async function onSendMessage() {
     if (!order || !msgBody.trim()) return;
+    const target = resolveTarget();
+    if (!target) {
+      setMsgFlash('宛先を選んでください');
+      return;
+    }
     setMsgBusy(true);
     setMsgFlash(null);
     try {
-      const target = msgTo === 'all' ? 'all' : msgTo === 'tablet' ? 'tablet' : 'staff';
-      const targetId =
-        msgTo === 'group'
-          ? 'group' // TODO: グループ ID を組み立てる仕組みが要件次第（現状は staff_code 直指定の代替）
-          : msgTo === 'table' && order.inspSession?.staff?.code
-            ? order.inspSession.staff.code
-            : null;
       const r = await fetch('/api/notices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           kind: 'announce',
           date: new Date().toISOString().slice(0, 10),
-          targetType: target,
-          targetId,
+          targetType: target.targetType,
+          targetId: target.targetId,
           title: `📨 ${order.pkNo}`,
           body: msgBody.trim(),
           ackRequired: msgAck,
-          priority: 70,
+          priority: msgUrgent ? URGENT_PRIORITY : NORMAL_PRIORITY,
         }),
       });
       if (!r.ok) {
@@ -294,7 +380,8 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
         setMsgFlash(j?.message ?? `エラー: HTTP ${r.status}`);
       } else {
         setMsgBody('');
-        setMsgFlash('✅ 送信しました');
+        // 誰に届いたかを明示する（旧実装は宛先不成立でも「送信しました」と出ていた）
+        setMsgFlash(`✅ ${target.label} へ送信しました`);
         setTimeout(() => setMsgFlash(null), 2500);
       }
     } catch (e) {
@@ -303,6 +390,13 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
       setMsgBusy(false);
     }
   }
+
+  /** 選択中の作業テーブル（当日担当者の一覧を引くため） */
+  const selectedTable = msgTable
+    ? (recipients?.find((t) => t.code === msgTable) ?? null)
+    : null;
+  /** 宛先が確定しているか。未確定なら送信させない。 */
+  const sendTarget = resolveTarget();
 
   return (
     <div
@@ -614,18 +708,53 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
               <Section title="💬 作業テーブル（この伝票の担当）へメッセージ送信">
                 <div className="space-y-2 text-sm">
                   <div className="grid grid-cols-[68px_1fr] gap-2 items-center">
+                    <label className="text-2xs text-ink-subtle">作業テーブル</label>
+                    <select
+                      value={msgTable}
+                      onChange={(e) => {
+                        setMsgTable(e.target.value);
+                        // テーブルを変えたら宛先は「テーブル全員」に戻す
+                        setMsgTo(e.target.value ? 'table' : 'all');
+                      }}
+                      className="bg-surface-base border border-surface-border rounded px-2 py-1 text-xs text-ink"
+                    >
+                      <option value="">（テーブル指定なし）</option>
+                      {(recipients ?? []).map((t) => (
+                        <option key={t.code} value={t.code}>
+                          {t.code} テーブル（{t.groupName}／当日 {t.staff.length} 名）
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-[68px_1fr] gap-2 items-center">
                     <label className="text-2xs text-ink-subtle">宛先</label>
                     <select
                       value={msgTo}
-                      onChange={(e) => setMsgTo(e.target.value as typeof msgTo)}
+                      onChange={(e) => setMsgTo(e.target.value)}
                       className="bg-surface-base border border-surface-border rounded px-2 py-1 text-xs text-ink"
                     >
-                      <option value="table">
-                        担当者（{order.inspSession?.staff?.name ?? '—'}）
-                      </option>
-                      <option value="group">担当グループ全員</option>
-                      <option value="tablet">タブレット全体</option>
-                      <option value="all">全員</option>
+                      {msgTable ? (
+                        <>
+                          <option value="table">▸ {msgTable} テーブル全員</option>
+                          {selectedTable && selectedTable.staff.length > 0 ? (
+                            selectedTable.staff.map((s) => (
+                              <option key={s.code} value={`staff:${s.code}`}>
+                                {s.name}（{s.startTime}〜{s.endTime}）
+                              </option>
+                            ))
+                          ) : (
+                            <option value="" disabled>
+                              当日の割当がありません
+                            </option>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <option value="all">全員</option>
+                          <option value="tablet">タブレット全体</option>
+                          <option value="handy">ハンディ全体</option>
+                        </>
+                      )}
                     </select>
                   </div>
                   <div className="grid grid-cols-[68px_1fr] gap-2">
@@ -637,6 +766,8 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
                           onClick={() => {
                             // メッセージ本文は常に反映
                             setMsgBody(t.text);
+                            // 処理付き（保留・中止）は現場を止める必要があるため即時割り込みを既定 ON
+                            if (t.action) setMsgUrgent(true);
                             // アクション付きテンプレは対応する処理ダイアログを開く
                             if (t.action === 'hold') {
                               setActionPromptInitial(t.text);
@@ -680,22 +811,43 @@ export function OrderDetailModal({ pkNo, onClose }: Props) {
                       className="w-full bg-surface-base border border-surface-border rounded px-2 py-1 text-xs text-ink resize-none"
                     />
                   </div>
-                  <div className="flex justify-between items-center">
-                    <label className="text-2xs text-ink flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={msgAck}
-                        onChange={(e) => setMsgAck(e.target.checked)}
-                      />
-                      「了解」タップを必須にする
-                    </label>
+                  <div className="flex justify-between items-center gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-2xs text-ink flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={msgAck}
+                          onChange={(e) => setMsgAck(e.target.checked)}
+                        />
+                        「了解」タップを必須にする
+                      </label>
+                      <label
+                        className="text-2xs text-ink flex items-center gap-1.5 cursor-pointer"
+                        title="ON: 検品中でも即座にポップアップ + 通知音／OFF: 次の伝票に移ったときにまとめて表示"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={msgUrgent}
+                          onChange={(e) => setMsgUrgent(e.target.checked)}
+                        />
+                        検品中でも即時に割り込む
+                      </label>
+                    </div>
                     <div className="flex items-center gap-2">
                       {msgFlash && (
                         <span className="text-2xs text-status-ok">{msgFlash}</span>
                       )}
+                      {!sendTarget && (
+                        <span className="text-2xs text-status-warn">宛先未選択</span>
+                      )}
                       <button
                         onClick={onSendMessage}
-                        disabled={msgBusy || !msgBody.trim()}
+                        disabled={msgBusy || !msgBody.trim() || !sendTarget}
+                        title={
+                          !sendTarget
+                            ? '宛先が確定していないため送信できません'
+                            : `${sendTarget.label} へ送信`
+                        }
                         className="px-3 py-1 rounded bg-brand-primary text-white text-xs font-bold hover:bg-blue-600 disabled:opacity-50"
                       >
                         {msgBusy ? '送信中…' : '💬 送信'}

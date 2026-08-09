@@ -17,6 +17,7 @@
  *   playBeep    : matched / already_done 用。レジ風 "ピッ"
  *   playError   : over_scan / not_found 用。低音 "ブーッ"
  *   playSuccess : 検品完了時。C-E-G-C 上昇アルペジオ（達成感）
+ *   playChime   : 管理 PC からの連絡到着時。"ピンポン"（2026-08-09 追加）
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -30,6 +31,8 @@ export interface ScanSound {
   playError: () => void;
   /** 検品完了時の C-E-G-C 上昇アルペジオ */
   playSuccess: () => void;
+  /** 連絡事項の到着を知らせる "ピンポン" 2 音チャイム */
+  playChime: () => void;
   /** 現在の ON/OFF 状態 */
   enabled: boolean;
   /** ON/OFF を切り替え（localStorage に保存） */
@@ -165,5 +168,14 @@ export function useScanSound(): ScanSound {
     });
   }, [enabled, getCtx, playTone]);
 
-  return { playBeep, playError, playSuccess, enabled, setEnabled };
+  const playChime = useCallback(() => {
+    if (!enabled) return;
+    // 玄関チャイム風 "ピンポン"：E5 → C5 の下降 2 音。
+    //   スキャン音（1200Hz square）/ 完了音（上昇アルペジオ）と音色・向きが被らないため、
+    //   倉庫内でも「連絡が来た」と即座に聞き分けられる。
+    playTone(659.25, 0.18, 'sine', 0.28); // ピン
+    playTone(523.25, 0.3, 'sine', 0.28, 0.16); // ポン
+  }, [enabled, playTone]);
+
+  return { playBeep, playError, playSuccess, playChime, enabled, setEnabled };
 }

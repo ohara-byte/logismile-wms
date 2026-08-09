@@ -20,6 +20,8 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
 import { parseDateAsUTC, todayJstAsUTC } from '@/lib/date-utils';
+import { matchesNoticeTarget } from '@/lib/notice-target';
+import { resolveRecipientCtx } from '@/lib/notice-recipients';
 
 export async function GET(req: Request) {
   const guard = await requireRole('admin', 'manager', 'staff');
@@ -103,46 +105,24 @@ export async function GET(req: Request) {
     senderName: n.senderCode ? nameByCode.get(n.senderCode) ?? null : null,
   }))
 
-  // ── モバイルの宛先フィルタ配信（2026-06-06）──
+  // ── モバイルの宛先フィルタ配信（2026-06-06 / 2026-08-09 改訂）──
   //   targetType ごとに「この端末/担当者が対象か」を判定して配信する。
   //   旧実装は target を無視して全 announce を返していたため、
   //   「タブレット指定」がハンディにも、「担当者指定」が全員に届いていた。
+  //
+  //   2026-08-09: 判定を `matchesNoticeTarget`（純関数・テスト済）へ移設し、
+  //     - 作業テーブル宛（targetType='table'）を追加
+  //     - グループ判定を当日の割当ガント（member_assignments）ベースの複数対応に
+  //   の 2 点を是正した。従来は 'table' が default に落ちて全員配信になっていた。
   let filtered = itemsWithSender;
   if (isMobile) {
-    // 端末種別（tablet/handy）と所属グループを取得して照合
-    const dev = guard.auth.deviceCode
-      ? await prisma.device.findUnique({
-          where: { code: guard.auth.deviceCode },
-          select: { type: true },
-        })
-      : null;
-    const deviceType = dev?.type ?? null;
-    const st = mobileStaffCode
-      ? await prisma.staff.findUnique({
-          where: { code: mobileStaffCode },
-          select: { groupId: true },
-        })
-      : null;
-    const myGroupId = st?.groupId ?? null;
+    const ctx = await resolveRecipientCtx(
+      guard.auth.deviceCode ?? null,
+      mobileStaffCode,
+      effectiveDate ?? todayJstAsUTC(),
+    );
 
-    const matchesTarget = (n: { targetType: string; targetId: string | null }) => {
-      switch (n.targetType) {
-        case 'all':
-          return true;
-        case 'tablet':
-          return deviceType === 'tablet';
-        case 'handy':
-          return deviceType === 'handy';
-        case 'group':
-          return !!myGroupId && n.targetId === myGroupId;
-        case 'staff':
-          return n.targetId === mobileStaffCode;
-        default:
-          return true; // 'table' 等レガシーは配信（取りこぼし防止）
-      }
-    };
-
-    filtered = filtered.filter(matchesTarget);
+    filtered = filtered.filter((n) => matchesNoticeTarget(n, ctx));
     if (unread && ackedIds) {
       filtered = filtered.filter((n) => !ackedIds.has(n.id));
     }

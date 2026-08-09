@@ -8,6 +8,7 @@ import { CancelWarningModal } from '@/components/inspection/cancel-warning-modal
 import { TakeoverConfirmModal } from '@/components/inspection/takeover-confirm-modal';
 import { ReprintModal } from '@/components/inspection/reprint-modal';
 import { NoticesModal } from '@/components/inspection/notices-modal';
+import { useNoticePoll } from '@/lib/use-notice-poll';
 
 interface ScannedOrder {
   pkNo: string;
@@ -47,6 +48,20 @@ export function PickingNoScanForm({ currentStaffCode }: Props = {}) {
   //   タブレットはハードキー（F1）が無いため、再表示は画面右上のボタンで行う。
   const [showNotices, setShowNotices] = useState(true);
   const noticesAutoShownRef = useRef(true);
+
+  // 待機中も新着連絡を拾う（2026-08-09）。
+  //   従来は画面マウント時の 1 回しか取得しておらず、待機画面に留まっている端末には
+  //   管理 PC からの連絡が届かなかった。モーダル表示中はポーリングを止める。
+  const { notices: polledNotices } = useNoticePoll({ enabled: !showNotices });
+  /** 一度自動表示した連絡 ID。「あとで確認」で閉じた分を鳴らし直さないため。 */
+  const seenNoticeIds = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (showNotices || polledNotices.length === 0) return;
+    const hasNew = polledNotices.some((n) => !seenNoticeIds.current.has(n.id));
+    polledNotices.forEach((n) => seenNoticeIds.current.add(n.id));
+    if (hasNew) setShowNotices(true);
+  }, [polledNotices, showNotices]);
 
   // モーダルが何かしら開いているか
   const anyModalOpen =
