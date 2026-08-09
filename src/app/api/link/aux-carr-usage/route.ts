@@ -7,17 +7,24 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { addDaysUTC, todayJstAsUTC } from '@/lib/date-utils';
 
 export async function GET() {
   const guard = await requireRole('admin', 'manager');
   if (!guard.ok) return guard.response;
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+  // 日付根治（2026-07-30）: shipDate は @db.Date なので UTC 真夜中で範囲を作る。
+  //   旧実装は new Date() + setHours(0,0,0,0)（ローカル真夜中）と
+  //   new Date(y, m, 1)（ローカル月初）を使っており、JST では暦日が 1 日ズレて
+  //   「本日件数」が前日、「当月件数」が前月末起点になっていた。
+  const today = todayJstAsUTC();
+  const tomorrow = addDaysUTC(today, 1);
+  const monthStart = new Date(
+    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1),
+  );
+  const monthEnd = new Date(
+    Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 1),
+  );
 
   const [todayGroups, monthGroups] = await Promise.all([
     prisma.shippingOrder.groupBy({

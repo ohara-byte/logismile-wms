@@ -56,7 +56,7 @@ export async function GET(req: Request) {
   const filename = `report-${type}-${searchParams.get('from')}-${searchParams.get('to')}.csv`;
 
   if (type === 'summary') {
-    const r = await summaryReport(from, to);
+    const r = await summaryReport(range);
     rows = [r as unknown as Record<string, unknown>];
   } else if (type === 'staff-mh') {
     rows = (await staffMhReport(from, to)) as unknown as Record<string, unknown>[];
@@ -72,7 +72,7 @@ export async function GET(req: Request) {
       })),
     );
   } else if (type === 'product-abc') {
-    rows = (await productAbcReport(from, to, 1000)) as unknown as Record<
+    rows = (await productAbcReport(range, 1000)) as unknown as Record<
       string,
       unknown
     >[];

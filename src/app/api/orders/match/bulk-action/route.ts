@@ -20,6 +20,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { parseDateAsUTC, addDaysUTC, todayJstAsUTC, formatDateYmd } from '@/lib/date-utils';
 
 const Body = z.object({
   date: z
@@ -48,11 +49,15 @@ export async function POST(req: Request) {
 
   const { action, reason } = parsed.data;
 
-  const dateStr = parsed.data.date ?? new Date().toISOString().slice(0, 10);
-  const date = new Date(dateStr);
-  date.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(date);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  // 日付根治（2026-07-30）: @db.Date と揃うよう UTC 真夜中で扱う（setHours は JST でズレる）。
+  //   旧実装は new Date(dateStr) の後 setHours(0,0,0,0) でローカル真夜中へ移動させており、
+  //   JST 環境では範囲が 1 日前へズレて対象 0 件になっていた（一括処理が動かない不具合）。
+  //   一覧 API /api/orders/match および carryover と同一の導出に統一する。
+  const date = parsed.data.date
+    ? (parseDateAsUTC(parsed.data.date) ?? todayJstAsUTC())
+    : todayJstAsUTC();
+  const tomorrow = addDaysUTC(date, 1);
+  const dateStr = formatDateYmd(date);
 
   // 対象抽出（照合済 × 未検品）
   const targets = await prisma.shippingOrder.findMany({

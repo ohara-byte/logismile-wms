@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # DB は不要：next build は Prisma Client の生成のみを要求し、
+    # 実 DB 接続を伴うページが無いため（Dockerfile の builder 段も env を渡していない）。
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        # Dockerfile（node:20-bookworm-slim）／CLAUDE.md §2（Node.js 20.x LTS）と揃える
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Prisma Client が無いと typecheck / build が落ちる（Dockerfile builder 段と同順）
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

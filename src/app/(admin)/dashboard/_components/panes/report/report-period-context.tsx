@@ -10,6 +10,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { addDaysUTC, formatDateYmd, jstYmd, parseDateAsUTC } from '@/lib/date-utils';
 
 export type Granularity = 'day' | 'week' | 'month' | 'custom';
 export type Comparison = 'prev_period' | 'prev_year' | 'none';
@@ -32,15 +33,17 @@ interface PeriodValue {
 const Ctx = createContext<PeriodValue | null>(null);
 
 function defaultRange(g: Granularity): { from: string; to: string } {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const to = today.toISOString().slice(0, 10);
-  const from = new Date(today);
-  if (g === 'day') from.setDate(from.getDate() - 6);
-  else if (g === 'week') from.setDate(from.getDate() - 27);
-  else if (g === 'month') from.setMonth(from.getMonth() - 3);
-  else from.setDate(from.getDate() - 13);
-  return { from: from.toISOString().slice(0, 10), to };
+  // JST の暦日を基準にする。従来は setHours + toISOString で UTC 日になり、
+  //   JST 00:00〜08:59 に開くと既定期間が丸ごと1日前倒しになっていた（2026-08-07 是正）。
+  const today = parseDateAsUTC(jstYmd(new Date()))!;
+  const to = formatDateYmd(today);
+  const from =
+    g === 'month'
+      ? new Date(
+          Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 3, today.getUTCDate()),
+        )
+      : addDaysUTC(today, g === 'day' ? -6 : g === 'week' ? -27 : -13);
+  return { from: formatDateYmd(from), to };
 }
 
 export function ReportPeriodProvider({ children }: { children: React.ReactNode }) {

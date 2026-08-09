@@ -17,7 +17,8 @@ export async function GET(req: Request) {
 
   const range = parsePeriodFromUrl(req);
   if ('error' in range) return range.error;
-  const { from, to } = range;
+  // shipDate は @db.Date のため UTC 暦日境界（fromDate/toDateExclusive）を使う
+  const { fromDate, toDateExclusive } = range;
 
   const { searchParams } = new URL(req.url);
   const limit = Math.min(
@@ -27,7 +28,7 @@ export async function GET(req: Request) {
 
   const orders = await prisma.shippingOrder.findMany({
     where: {
-      shipDate: { gte: from, lte: to },
+      shipDate: { gte: fromDate, lt: toDateExclusive },
       deletedAt: null,
     },
     include: {
@@ -41,7 +42,7 @@ export async function GET(req: Request) {
   // 期間内総件数（KPI と整合確認用）
   const total = await prisma.shippingOrder.count({
     where: {
-      shipDate: { gte: from, lte: to },
+      shipDate: { gte: fromDate, lt: toDateExclusive },
       deletedAt: null,
     },
   });

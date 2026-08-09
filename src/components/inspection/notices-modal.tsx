@@ -11,9 +11,12 @@
  * - 既読化された項目は即座にビューから消える（hide-on-check）
  * - 全件確認したら「▶ 全て確認して作業開始」ボタンが有効化
  * - 「あとで確認」ですぐ閉じる
+ * - 2026-08-09: 未読が 1 件以上あるときに "ピンポン" を 1 回鳴らす
+ *   （既存のスキャン音 ON/OFF に連動。localStorage: inspect:sound-enabled）
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useScanSound } from '@/lib/use-scan-sound';
 
 export interface Notice {
   id: number;
@@ -39,6 +42,9 @@ export function NoticesModal({ variant, onClose }: Props) {
   /** チェック済 ID セット — クリックでマーク、確認時に commit。 */
   const [checkedSet, setCheckedSet] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
+  const { playChime } = useScanSound();
+  /** チャイムの二重再生防止（再レンダで鳴り直さないように） */
+  const chimedRef = useRef(false);
 
   // 未読のみ初回取得
   useEffect(() => {
@@ -47,6 +53,14 @@ export function NoticesModal({ variant, onClose }: Props) {
       .then((j) => setNotices(j.data?.items ?? []))
       .catch(() => setNotices([]));
   }, []);
+
+  // 未読があれば "ピンポン" を 1 回だけ鳴らす
+  useEffect(() => {
+    if (chimedRef.current) return;
+    if (!notices || notices.length === 0) return;
+    chimedRef.current = true;
+    playChime();
+  }, [notices, playChime]);
 
   // モック L2701-2710 準拠: Enter キーで未チェックを順次☑、全チェック後は作業開始
   useEffect(() => {

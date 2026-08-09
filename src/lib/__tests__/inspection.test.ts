@@ -1,9 +1,9 @@
 /**
- * judgeScan 動作確認（JAN プール方式 / node:test ベース）
- * 実行: npm run test:lib
+ * judgeScan 動作確認（JAN プール方式）
+ * 実行: npm test
  */
 
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { judgeScan, isAllInspected, type OrderItem } from '../inspection';
 

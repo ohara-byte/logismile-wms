@@ -13,6 +13,6 @@ export async function GET(req: Request) {
     Math.max(parseInt(searchParams.get('top') ?? '30', 10) || 30, 1),
     500,
   );
-  const data = await productAbcReport(range.from, range.to, top);
+  const data = await productAbcReport(range, top);
   return NextResponse.json({ data: { items: data }, message: 'OK' });
 }

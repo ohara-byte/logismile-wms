@@ -18,7 +18,9 @@ export async function GET(req: Request) {
 
   const range = parsePeriodFromUrl(req);
   if ('error' in range) return range.error;
-  const { from, to } = range;
+  // createdAt（@db.Timestamptz）は JST ローカル日境界の from/to、
+  // shipDate（@db.Date）は UTC 暦日境界の fromDate/toDateExclusive を使う。
+  const { from, to, fromDate, toDateExclusive } = range;
 
   // 強制OK イベントは insp_logs (type='force_ok') が一次ソース
   const logs = await prisma.inspLog.findMany({
@@ -64,7 +66,7 @@ export async function GET(req: Request) {
       forceApprovalStatus: null,
       order: {
         deletedAt: null,
-        shipDate: { gte: from, lte: to },
+        shipDate: { gte: fromDate, lt: toDateExclusive },
       },
     },
     _count: { _all: true },

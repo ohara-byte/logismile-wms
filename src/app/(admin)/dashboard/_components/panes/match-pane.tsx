@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useBadges } from '@/components/admin/badge-context';
 import { useOrderDetailModal } from '@/components/admin/order-detail-context';
+import { jstYmd } from '@/lib/date-utils';
 
 interface MatchRow {
   pkNo: string;
@@ -74,7 +75,9 @@ const ACTION_DEFS: { kind: ActionKind; icon: string; title: string; desc: string
 ];
 
 export function MatchPane() {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  // JST の暦日を既定にする。toISOString は UTC 日なので、JST 00:00〜08:59 に開くと
+  //   前日が既定になり、一覧・一括処理が前日の伝票を対象にしてしまう（2026-08-07 是正）。
+  const todayIso = jstYmd(new Date());
   const [date, setDate] = useState(todayIso);
   const [data, setData] = useState<{ stats: Stats; items: MatchRow[] } | null>(null);
   const [scanInput, setScanInput] = useState('');
@@ -86,6 +89,14 @@ export function MatchPane() {
   const [bulkDialog, setBulkDialog] = useState<null | 'carry' | 'complete' | 'cancel'>(
     null,
   );
+  // 全目視☑ / 全クリア の確認ダイアログ（true=目視☑ / false=クリア）。
+  // ブラウザ標準 confirm() はスタイルが当たらないため ConfirmDialog に統一。
+  const [visualDialog, setVisualDialog] = useState<null | boolean>(null);
+  // 処理結果の通知（ブラウザ標準 alert() の置き換え）。
+  const [notice, setNotice] = useState<{
+    tone: 'ok' | 'error' | 'info';
+    text: string;
+  } | null>(null);
   const [allocFilter, setAllocFilter] = useState<AllocFilterKey>('all');
   // 検品状態フィルタ（未検品の抽出用）。既定は全て。カードのクリックでも切替。
   const [inspectFilter, setInspectFilter] = useState<InspectFilterKey>('all');
@@ -182,11 +193,15 @@ export function MatchPane() {
     handleScan(candidate.invoiceNo ?? '');
   }
 
+  /** 全目視☑ / 全クリアの対象（未検品かつバーコード照合済でないもの） */
+  function visualTargets(): MatchRow[] {
+    if (!data) return [];
+    return data.items.filter((it) => !it.inspected && it.matchStatus !== 'barcode');
+  }
+
   async function checkAllVisual(checked: boolean) {
-    if (!data) return;
-    const targets = data.items.filter((it) => !it.inspected && it.matchStatus !== 'barcode');
+    const targets = visualTargets();
     if (targets.length === 0) return;
-    if (!confirm(`${targets.length} 件の未検品伝票を ${checked ? '目視☑' : 'クリア'} します。よろしいですか？`)) return;
     setBusy(true);
     try {
       await Promise.all(
@@ -198,17 +213,24 @@ export function MatchPane() {
           }),
         ),
       );
+      setNotice({
+        tone: 'ok',
+        text: `${targets.length} 件を ${checked ? '目視☑' : 'クリア'} しました`,
+      });
       refreshBadges();
       reload();
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy(false);
+      setVisualDialog(null);
     }
   }
 
   async function executeBulk(action: 'carry' | 'complete' | 'cancel', reason: string) {
     setBusy(true);
+    const verb =
+      action === 'carry' ? '翌日繰越' : action === 'complete' ? '強制完了' : 'キャンセル';
     try {
       const r = await fetch('/api/orders/match/bulk-action', {
         method: 'POST',
@@ -217,12 +239,21 @@ export function MatchPane() {
       });
       const j = await r.json();
       if (!r.ok) {
-        alert(j?.message ?? `HTTP ${r.status}`);
+        setNotice({ tone: 'error', text: j?.message ?? `HTTP ${r.status}` });
         return;
       }
-      const verb =
-        action === 'carry' ? '翌日繰越' : action === 'complete' ? '強制完了' : 'キャンセル';
-      alert(`✅ ${j.data.affected} 件を一括${verb}しました`);
+      const affected = j?.data?.affected ?? 0;
+      // 0 件は「成功」ではなく注意喚起として出す（対象が無い＝操作の意図と食い違っている）
+      setNotice(
+        affected > 0
+          ? { tone: 'ok', text: `${affected} 件を一括${verb}しました` }
+          : {
+              tone: 'error',
+              text: `対象が 0 件でした（一括${verb}は実行されていません）。${
+                j?.message ?? ''
+              }`.trim(),
+            },
+      );
       refreshBadges();
       reload();
     } catch (e) {
@@ -269,16 +300,18 @@ export function MatchPane() {
         </button>
         <div className="w-full flex flex-wrap gap-1.5 mt-1">
           <button
-            onClick={() => checkAllVisual(true)}
-            disabled={busy}
-            className="px-2 py-0.5 rounded border border-surface-border bg-surface-panel text-ink-subtle hover:text-ink hover:border-accent-amber text-[10px]"
+            onClick={() => setVisualDialog(true)}
+            disabled={busy || visualTargets().length === 0}
+            title="未検品かつバーコード未照合の伝票を一括で目視☑にします"
+            className="px-2 py-0.5 rounded border border-surface-border bg-surface-panel text-ink-subtle hover:text-ink hover:border-accent-amber text-[10px] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             全て目視☑
           </button>
           <button
-            onClick={() => checkAllVisual(false)}
-            disabled={busy}
-            className="px-2 py-0.5 rounded border border-surface-border bg-surface-panel text-ink-subtle hover:text-ink text-[10px]"
+            onClick={() => setVisualDialog(false)}
+            disabled={busy || visualTargets().length === 0}
+            title="目視☑を一括でクリアします"
+            className="px-2 py-0.5 rounded border border-surface-border bg-surface-panel text-ink-subtle hover:text-ink text-[10px] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             全クリア
           </button>
@@ -299,7 +332,9 @@ export function MatchPane() {
           </label>
           <div className="flex-1" />
           <button
-            onClick={() => alert('CSV 出力は将来ブロックで実装予定です')}
+            onClick={() =>
+              setNotice({ tone: 'info', text: 'CSV 出力は将来ブロックで実装予定です' })
+            }
             className="px-2 py-0.5 rounded border border-status-warn/40 bg-amber-950/30 text-amber-200 text-[10px] hover:bg-amber-900"
           >
             ⬇ CSV
@@ -313,6 +348,33 @@ export function MatchPane() {
       {error && (
         <div className="mb-2 p-2 text-2xs bg-status-error-bg text-status-error border border-status-error rounded">
           {error}
+        </div>
+      )}
+
+      {/* 処理結果の通知（ブラウザ標準 alert() の置き換え）。閉じるまで残す。 */}
+      {notice && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`mb-2 p-2 rounded border flex items-start justify-between gap-2 text-2xs ${
+            notice.tone === 'ok'
+              ? 'bg-status-ok-bg text-status-ok border-status-ok'
+              : notice.tone === 'error'
+                ? 'bg-status-error-bg text-status-error border-status-error'
+                : 'bg-surface-panel text-ink-subtle border-surface-border'
+          }`}
+        >
+          <span className="min-w-0">
+            {notice.tone === 'ok' ? '✅ ' : notice.tone === 'error' ? '⚠ ' : 'ℹ '}
+            {notice.text}
+          </span>
+          <button
+            onClick={() => setNotice(null)}
+            aria-label="通知を閉じる"
+            className="shrink-0 px-1 leading-none opacity-70 hover:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-current rounded"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -509,6 +571,27 @@ export function MatchPane() {
           </div>
         );
       })()}
+
+      {/* 全目視☑ / 全クリア 確認ダイアログ（旧: ブラウザ標準 confirm） */}
+      <ConfirmDialog
+        open={visualDialog !== null}
+        title={visualDialog ? '未検品伝票を全て目視☑しますか？' : '目視☑を全てクリアしますか？'}
+        body={
+          <div className="text-2xs">
+            対象は<b className="text-accent-amber">{visualTargets().length}件</b>
+            （未検品かつバーコード未照合の伝票）です。
+            {visualDialog
+              ? ' 目視☑すると「照合済」となり、一括処理の対象になります。'
+              : ' クリアすると「照合済」から外れ、一括処理の対象外になります。'}
+          </div>
+        }
+        confirmLabel={visualDialog ? '☑ 全て目視☑' : '全クリア'}
+        variant={visualDialog ? 'primary' : 'warn'}
+        onConfirm={() => {
+          if (visualDialog !== null) checkAllVisual(visualDialog);
+        }}
+        onCancel={() => setVisualDialog(null)}
+      />
 
       {/* 一括処理 確認ダイアログ — action 別に文言と色を切替 */}
       <ConfirmDialog
