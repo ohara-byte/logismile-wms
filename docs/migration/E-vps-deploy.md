@@ -104,6 +104,52 @@ docker compose -f docker-compose.vps.yml exec -T db \
 > FK 順で失敗する場合は full dump（スキーマ込み）に切替も可。テーブル名は schema の @@map で確認済。
 > 投入後 `staff`↔`users` の staffCode リンクを必ず確認（未リンクだと削除/保留/検品戻し/監査が 403/500）。
 
+---
+
+## 日常の更新デプロイ（2 回目以降・2026-08-09 追加）
+
+初回構築後にコードを本番へ反映する手順。**`main` へマージしただけでは本番は変わらない。**
+CI（`.github/workflows/ci.yml`）は lint / typecheck / test / build を回すだけで、
+デプロイのステップを持たないため。
+
+さらに Next.js は**ビルド成果物**なので、`git pull` だけでも反映されない。
+**イメージの再ビルドが必須**。
+
+```bash
+ssh deploy@85.131.250.41
+cd /var/www/logismile
+./scripts/deploy-vps.sh
+```
+
+スクリプトが以下を通しで実行する:
+
+| 手順 | 内容 |
+|---|---|
+| 1 | 事前チェック（`docker-compose.vps.yml` / `.env` の存在、未コミット変更の有無） |
+| 2 | `git pull --ff-only origin main` |
+| 3 | 今回反映されるコミットを一覧表示（更新が無ければここで正常終了） |
+| 4 | `docker compose -f docker-compose.vps.yml up -d --build` |
+| 5 | `/api/integration/factory/health` へ疎通確認（最大 60 秒リトライ） |
+| 6 | `docker compose ps` の表示 |
+
+オプション:
+
+```bash
+./scripts/deploy-vps.sh --prune   # 宙ぶらりんイメージも掃除（ディスク逼迫時）
+DEPLOY_BRANCH=xxx ./scripts/deploy-vps.sh   # main 以外を取得（既定 main）
+```
+
+### 注意
+
+- **ビルドに数分かかる。** 業務時間中は避けるのが無難
+- **反映後、タブレット / ハンディは画面を再読込する。** 古い JavaScript がブラウザの
+  キャッシュに残るため、再読込しないと変更が見えない
+- DB スキーマ変更を含む場合、コンテナ起動時に `prisma migrate deploy` が自動で走る。
+  スキーマ変更が無ければ空振りするだけなので、事前作業は不要
+- 失敗時はスクリプトが**戻し方（`git reset --hard <直前のコミット>` + 再ビルド）を表示**する
+- VPS 上で直接ファイルを編集していると手順 1 で中断する。
+  意図的な変更なら退避（`git stash`）してから再実行する
+
 ## Phase 2-E：本番前チェックリスト
 
 - [ ] `INTRANET_CIDR_LIST` に事務所固定グローバルIP（未設定=全許可）

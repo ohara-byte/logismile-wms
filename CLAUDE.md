@@ -340,6 +340,17 @@ Phase 6-10 は実装スキップ。
 - **設計メモ_v2.1.md**：基幹連携 IF認識合わせ
 - **管理用PCモック_v0.22.html / タブレット検品モック_v0.18.html / ハンディ検品モック_v0.14.html**：UI参考
 - **docs/integration/WMS回答_連携修正依頼_2026-06-01.md**：CraftSmile 連携契約の合意内容
+- **docs/migration/E-vps-deploy.md**：VPS 本番デプロイ（初回構築 + 日常の更新手順）
+
+### ★ 本番反映のフロー（2026-08-09 確定）
+
+1. 作業ブランチにコミット → push → **GitHub で PR を作成**（CI が lint/typecheck/test/build を実行）
+2. 小原様が内容を確認して `main` へマージ
+3. 小原様が VPS で `./scripts/deploy-vps.sh` を実行
+
+**★ `main` へのマージだけでは本番は変わらない。** CI にデプロイのステップは無く、
+Next.js はビルド成果物のため `git pull` だけでも反映されない（要イメージ再ビルド）。
+手順 3 が必須。詳細は `docs/migration/E-vps-deploy.md`「日常の更新デプロイ」。
 
 ### ★ CraftSmile（製造管理システム）との判断規則
 
