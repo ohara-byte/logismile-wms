@@ -125,9 +125,9 @@ cd /var/www/logismile
 
 | 手順 | 内容 |
 |---|---|
-| 1 | 事前チェック（`docker-compose.vps.yml` / `.env` の存在、未コミット変更の有無） |
+| 1 | 事前チェック（`docker-compose.vps.yml` / `.env` の存在、**追跡中ファイル**の未コミット変更の有無） |
 | 2 | `git pull --ff-only origin main` |
-| 3 | 今回反映されるコミットを一覧表示（更新が無ければここで正常終了） |
+| 3 | 今回反映されるコミットを一覧表示 |
 | 4 | `docker compose -f docker-compose.vps.yml up -d --build` |
 | 5 | `/api/integration/factory/health` へ疎通確認（最大 60 秒リトライ） |
 | 6 | `docker compose ps` の表示 |
@@ -147,8 +147,13 @@ DEPLOY_BRANCH=xxx ./scripts/deploy-vps.sh   # main 以外を取得（既定 main
 - DB スキーマ変更を含む場合、コンテナ起動時に `prisma migrate deploy` が自動で走る。
   スキーマ変更が無ければ空振りするだけなので、事前作業は不要
 - 失敗時はスクリプトが**戻し方（`git reset --hard <直前のコミット>` + 再ビルド）を表示**する
-- VPS 上で直接ファイルを編集していると手順 1 で中断する。
-  意図的な変更なら退避（`git stash`）してから再実行する
+- **新しいコミットが無くても再ビルドまで実行する。**
+  「コードは pull 済みだがイメージが古い」状態が実際に起きたため
+  （2026-08-09。`git pull` だけ実行して `--build` を忘れると発生する）。
+  変更が無ければ Docker のレイヤキャッシュが効くので数秒で終わる
+- 中断するのは**追跡中ファイル**に未コミット変更がある場合のみ。
+  `masters.sql` など運用でデプロイ先に置いた Git 管理外のファイルは中断理由にならない
+  （意図的にコードを編集していた場合は `git stash` で退避してから再実行）
 
 ## Phase 2-E：本番前チェックリスト
 

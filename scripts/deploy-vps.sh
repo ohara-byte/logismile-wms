@@ -51,11 +51,15 @@ if [ ! -f .env ]; then
   echo "        初回構築は docs/migration/E-vps-deploy.md を参照してください。" >&2
   exit 1
 fi
-# VPS 上で直接編集した内容を pull で壊さない（.env は .gitignore 済みなので出てこない）
-if [ -n "$(git status --porcelain)" ]; then
-  echo "[ERROR] コミットされていない変更があります。デプロイを中止しました。" >&2
-  echo "        内容を確認してください:" >&2
-  git status --short >&2
+# VPS 上で直接編集した内容を pull で壊さないための確認。
+#   ★ 対象は「追跡中ファイルの変更」だけ（--untracked-files=no）。
+#     masters.sql / バックアップ等、運用でデプロイ先に置かれる Git 管理外の
+#     ファイルは pull を妨げないため、中断の理由にしない。
+#     （untracked が pull で上書きされる場合は git 自身が止めてくれる）
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo "[ERROR] 追跡中ファイルに未コミットの変更があります。デプロイを中止しました。" >&2
+  echo "        退避する場合: git stash" >&2
+  git status --short --untracked-files=no >&2
   exit 1
 fi
 
@@ -69,14 +73,23 @@ AFTER="$(git rev-parse HEAD)"
 # ---- [3/6] 差分の表示 ---------------------------------------------------
 echo "[3/6] 今回反映される変更 ..."
 if [ "$BEFORE" = "$AFTER" ]; then
-  echo "  更新はありません（既に最新です）。"
-  echo
-  echo "  ※ コードは最新でも、前回のデプロイが未完了の可能性はあります。"
-  echo "     強制的に再ビルドする場合: docker compose -f ${COMPOSE_FILE} up -d --build"
-  exit 0
+  # ★ ここで終了しない。
+  #   「コードは最新だがイメージが古い」状態（pull だけして再ビルドし忘れた等）が
+  #   実際に起きたため、更新が無くても必ず再ビルドまで通す。
+  #   変更が無ければ Docker のレイヤキャッシュが効くので数秒で終わる。
+  echo "  新しいコミットはありません（コードは既に最新）。"
+  echo "  イメージが最新かは別問題のため、このまま再ビルドまで実行します。"
+else
+  git --no-pager log --oneline "${BEFORE}..${AFTER}"
 fi
-git --no-pager log --oneline "${BEFORE}..${AFTER}"
 echo
+
+# 失敗時の案内。更新が無い実行では同じコミットへの reset になり無意味なので出さない。
+if [ "$BEFORE" = "$AFTER" ]; then
+  ROLLBACK_HINT=''
+else
+  ROLLBACK_HINT="        戻す  : git reset --hard ${BEFORE:0:7} && docker compose -f ${COMPOSE_FILE} up -d --build"
+fi
 
 # ---- [4/6] 再ビルド & 起動 ---------------------------------------------
 echo "[4/6] イメージを再ビルドして起動（数分かかります）..."
@@ -84,7 +97,7 @@ if ! docker compose -f "$COMPOSE_FILE" up -d --build; then
   echo >&2
   echo "[ERROR] ビルドまたは起動に失敗しました。" >&2
   echo "        ログ  : docker compose -f ${COMPOSE_FILE} logs --tail=100 app" >&2
-  echo "        戻す  : git reset --hard ${BEFORE} && docker compose -f ${COMPOSE_FILE} up -d --build" >&2
+  if [ -n "$ROLLBACK_HINT" ]; then echo "$ROLLBACK_HINT" >&2; fi
   exit 1
 fi
 
@@ -104,7 +117,7 @@ if [ "$healthy" -ne 1 ]; then
   echo >&2
   echo "[ERROR] ${HEALTH_TIMEOUT_SEC} 秒待っても応答がありません（最後の HTTP: ${code:-なし}）。" >&2
   echo "        ログ  : docker compose -f ${COMPOSE_FILE} logs --tail=100 app" >&2
-  echo "        戻す  : git reset --hard ${BEFORE} && docker compose -f ${COMPOSE_FILE} up -d --build" >&2
+  if [ -n "$ROLLBACK_HINT" ]; then echo "$ROLLBACK_HINT" >&2; fi
   exit 1
 fi
 echo "  OK（HTTP 200）"
@@ -118,11 +131,16 @@ if [ "$PRUNE" -eq 1 ]; then
 fi
 docker compose -f "$COMPOSE_FILE" ps
 
+if [ "$BEFORE" = "$AFTER" ]; then
+  COMMIT_LINE="  コミット: ${AFTER:0:7}（変更なし・再ビルドのみ）"
+else
+  COMMIT_LINE="  コミット: ${BEFORE:0:7} → ${AFTER:0:7}"
+fi
+
 cat <<EOF
 
 === デプロイ完了 ===
-  反映前: ${BEFORE:0:7}
-  反映後: ${AFTER:0:7}
+${COMMIT_LINE}
   URL   : https://logismile.oenosato.net
 
   ★ タブレット / ハンディは画面を再読込してください
