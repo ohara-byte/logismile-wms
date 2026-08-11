@@ -15,6 +15,11 @@ import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/cn';
 import { NoticesModal } from '@/components/inspection/notices-modal';
 import { useNoticePoll } from '@/lib/use-notice-poll';
+import { ErrorNoticeBar } from '@/components/inspection/error-notice';
+// 2026-08-11 現場要望：エラーは日本語で大きく出す（ErrorNoticeBar）。
+//   setErrorMsg の呼び出しは文字列のまま触らず、描画の直前で toFriendlyError に通す。
+//   `エラー: HTTP 500` のような既存文言もコードを切り離して日本語にできる。
+import { toFriendlyError } from '@/lib/error-message';
 import { BoxSuggestion } from '@/components/inspection/box-suggestion';
 import { FinalCheckModal } from '@/components/inspection/final-check-modal';
 import { ForceOkModal } from '@/components/inspection/force-ok-modal';
@@ -1114,17 +1119,12 @@ function CompleteScreen({
       </p>
 
       {errorMsg && (
-        <div
-          style={{
-            background: 'rgba(127, 29, 29, 0.7)',
-            color: '#fecaca',
-            padding: '8px 14px',
-            borderRadius: 6,
-            fontSize: 13,
-          }}
-        >
-          ⚠ {errorMsg}
-        </div>
+        <ErrorNoticeBar
+          error={toFriendlyError(errorMsg, {
+            fallbackTitle: '検品中にエラーが発生しました',
+          })}
+          variant="tablet"
+        />
       )}
     </main>
 
@@ -1631,9 +1631,12 @@ function CenterPane({
           }}
         >
           {errorMsg && (
-            <div style={{ color: '#fca5a5', fontSize: 13, fontWeight: 'bold' }}>
-              ⚠ {errorMsg}
-            </div>
+            <ErrorNoticeBar
+              error={toFriendlyError(errorMsg, {
+                fallbackTitle: '検品中にエラーが発生しました',
+              })}
+              variant="tablet"
+            />
           )}
           {!errorMsg && lastResult && <ScanResultBanner result={lastResult.result} />}
         </div>
