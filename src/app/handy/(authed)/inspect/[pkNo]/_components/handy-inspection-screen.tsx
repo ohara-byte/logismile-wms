@@ -25,6 +25,11 @@ import { useStickyForceOk } from '@/lib/use-sticky-force-ok';
 import { useHardwareKeys } from '@/lib/use-hardware-keys';
 import { useScanSound } from '@/lib/use-scan-sound';
 import { useNoticePoll } from '@/lib/use-notice-poll';
+import { ErrorNoticeBar } from '@/components/inspection/error-notice';
+// 2026-08-11 現場要望：エラーは日本語で大きく出す（ErrorNoticeBar）。
+//   setErrorMsg の呼び出しは文字列のまま触らず、描画の直前で toFriendlyError に通す。
+//   `エラー: HTTP 500` のような既存文言もコードを切り離して日本語にできる。
+import { toFriendlyError } from '@/lib/error-message';
 import { usePerfDisplay } from '@/lib/use-perf-display';
 import { SoundToggle } from '@/components/inspection/sound-toggle';
 
@@ -1057,7 +1062,14 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
       {/* スキャン結果バナー / エラー */}
       {(lastResult || errorMsg) && (
         <div className="px-2 py-1 border-t border-surface-border bg-surface-panel shrink-0">
-          {errorMsg && <div className="text-2xs text-status-error">⚠ {errorMsg}</div>}
+          {errorMsg && (
+            <ErrorNoticeBar
+              error={toFriendlyError(errorMsg, {
+                fallbackTitle: '検品中にエラーが発生しました',
+              })}
+              variant="handy"
+            />
+          )}
           {!errorMsg && lastResult && <ScanResultBanner result={lastResult.result} />}
         </div>
       )}
@@ -1627,17 +1639,12 @@ function HandyCompleteScreen({
         次の伝票をスキャンしてください
       </p>
       {errorMsg && (
-        <div
-          style={{
-            background: 'rgba(127, 29, 29, 0.7)',
-            color: '#fecaca',
-            padding: '6px 10px',
-            borderRadius: 6,
-            fontSize: 12,
-          }}
-        >
-          ⚠ {errorMsg}
-        </div>
+        <ErrorNoticeBar
+          error={toFriendlyError(errorMsg, {
+            fallbackTitle: '検品中にエラーが発生しました',
+          })}
+          variant="handy"
+        />
       )}
     </main>
 

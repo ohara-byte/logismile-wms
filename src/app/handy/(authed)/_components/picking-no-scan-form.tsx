@@ -9,6 +9,8 @@ import { TakeoverConfirmModal } from '@/components/inspection/takeover-confirm-m
 import { ReprintModal } from '@/components/inspection/reprint-modal';
 import { NoticesModal } from '@/components/inspection/notices-modal';
 import { useNoticePoll } from '@/lib/use-notice-poll';
+import { ErrorNoticeModal } from '@/components/inspection/error-notice';
+import { toFriendlyError, friendlyErrorFromResponse, type FriendlyError } from '@/lib/error-message';
 import { useHardwareKeys } from '@/lib/use-hardware-keys';
 import { usePerfDisplay } from '@/lib/use-perf-display';
 
@@ -52,7 +54,8 @@ export function PickingNoScanForm({ currentStaffCode }: Props = {}) {
   const router = useRouter();
   const [pkNo, setPkNo] = useState('');
   const [busy, setBusy] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // 2026-08-11 現場要望：英語・コードのままではなく、日本語で大きく出す（error-notice.tsx）
+  const [errorMsg, setErrorMsg] = useState<FriendlyError | null>(null);
   const [heldOrder, setHeldOrder] = useState<ScannedOrder | null>(null);
   const [completedOrder, setCompletedOrder] = useState<ScannedOrder | null>(null);
   const [cancelOrder, setCancelOrder] = useState<ScannedOrder | null>(null);
@@ -122,11 +125,14 @@ export function PickingNoScanForm({ currentStaffCode }: Props = {}) {
     try {
       const res = await fetch(`/api/orders/${encodeURIComponent(pkNo.trim())}`);
       if (res.status === 404) {
-        setErrorMsg('該当する出荷指示が見つかりません');
+        setErrorMsg({
+          title: '該当する出荷指示が見つかりません',
+          hint: 'ピッキング№を読み直してください。それでも出ない場合は取込漏れの可能性があります。',
+        });
         return;
       }
       if (!res.ok) {
-        setErrorMsg(`エラー: HTTP ${res.status}`);
+        setErrorMsg(await friendlyErrorFromResponse(res));
         return;
       }
       const j = await res.json();
@@ -158,7 +164,7 @@ export function PickingNoScanForm({ currentStaffCode }: Props = {}) {
       }
       router.push(`/handy/inspect/${encodeURIComponent(order.pkNo)}`);
     } catch (e) {
-      setErrorMsg(String(e));
+      setErrorMsg(toFriendlyError(e, { fallbackTitle: '出荷指示を読み込めませんでした' }));
     } finally {
       setBusy(false);
     }
@@ -224,6 +230,10 @@ export function PickingNoScanForm({ currentStaffCode }: Props = {}) {
 
   return (
     <>
+      {/* エラー表示（2026-08-11 現場要望：日本語で大きく）。
+          英語・コードのままだと現場で判断できないため error-message.ts で日本語化して渡す。 */}
+      <ErrorNoticeModal error={errorMsg} onClose={() => setErrorMsg(null)} variant="handy" />
+
       {showNotices && (
         <NoticesModal
           variant="handy-launch"
@@ -239,11 +249,7 @@ export function PickingNoScanForm({ currentStaffCode }: Props = {}) {
           className="w-full bg-surface-panel border-2 border-accent-amber/50 rounded-lg px-3 py-3 text-lg font-mono text-ink-strong text-center tabular-nums focus:outline-none focus:border-accent-amber focus:ring-2 focus:ring-accent-amber/20"
           placeholder="SA01208680006"
         />
-        {errorMsg && (
-          <div className="text-3xs text-status-error bg-status-error-bg border border-status-error/40 rounded p-2 text-center">
-            {errorMsg}
-          </div>
-        )}
+
         {/* 検品開始ボタン — 本番はバーコードスキャン即発火だが、確認用の手動ボタンを残す。
             QR ラベル再発行は機能キー F2（モック準拠）で起動するため、画面上のボタンは無し。 */}
         <button
