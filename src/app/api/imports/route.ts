@@ -24,6 +24,10 @@ export async function GET(req: NextRequest) {
       janErrorCount: true,
       unmapCount: true,
       importedBy: true,
+      // 2026-08-19（現場要望）：取込エラーの理由を画面から追えるようにする。
+      //   従来は note に日本語で保存していたが select されておらず、
+      //   どの画面からも見られないため「取込エラーの理由が不明」になっていた。
+      note: true,
     },
   });
 

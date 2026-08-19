@@ -12,6 +12,7 @@
 import { prisma } from '../db';
 import { validateJan } from '../jan-validator';
 import { parseCsv, detectFileType } from './csv-parser';
+import { mergeDuplicateItems } from './merge-items';
 import {
   PRODUCT_CSV_COLUMNS as P,
   ORDER_CSV_COLUMNS as O,
@@ -28,6 +29,24 @@ import type {
 } from './types';
 
 const DEFAULT_CARRIER_CODE = 'YMT-N';
+
+/**
+ * 取込エラーの理由コード → 日本語ラベル（2026-08-19 現場要望）。
+ *   取込ログ（thomas_imports.note）と取込結果画面は現場・管理者が読むため、
+ *   `product_not_found` のようなコードではなく日本語で残す。
+ */
+const REASON_LABEL_JA: Record<string, string> = {
+  validation_error: '入力値が不正',
+  product_not_found: '商品マスタに未登録',
+  duplicate_pk_no: 'ピッキング№が重複',
+  parse_error: '取込処理でエラー',
+  jan_12_digit: 'JANが12桁（要修正）',
+};
+
+function reasonLabelJa(reason: string): string {
+  return REASON_LABEL_JA[reason] ?? reason;
+}
+
 
 /**
  * CSV 取込のサイズ/行数上限（2026-06-01 バグレビュー C-2）。
@@ -294,6 +313,8 @@ export class CsvAdapter implements IntegrationAdapter {
     const unmappedCodesSet = new Set<string>();
     let duplicatePkNoCount = 0;
     // 未登録商品で丸ごとスキップした伝票（是正対策：後から追えるよう詳細を残す）
+    // 同一商品の複数行を合算した記録（取込ログに残して後から追えるようにする）
+    const mergedItemLogs: string[] = [];
     const droppedUnmapped: {
       pkNo: string;
       invoiceNo?: string;
@@ -468,6 +489,17 @@ export class CsvAdapter implements IntegrationAdapter {
         continue;
       }
 
+      // 2026-08-19（現場報告）：基幹CSVは同じ商品を複数行で出すことがある。
+      //   ShippingOrderItem は @@unique([orderId, productCode]) を持つため、そのまま
+      //   nested create すると制約違反で **伝票の作成ごと失敗** し、伝票が丸ごと落ちていた
+      //   （例: SG01235120666 冨岡様 = 10-36 ×1 が 2 行）。数量を合算して 1 明細にする。
+      const { items: mergedItems, merged } = mergeDuplicateItems(group.items);
+      for (const m of merged) {
+        mergedItemLogs.push(
+          `- PkNo=${pkNo} 商品=${m.productCode} ${m.rows}行→1明細(数量合計=${m.totalQty}) ／ ${m.productName}`,
+        );
+      }
+
       try {
         await prisma.shippingOrder.create({
           data: {
@@ -486,7 +518,7 @@ export class CsvAdapter implements IntegrationAdapter {
             customerCode: group.header.customerCode,
             orderNo: group.header.orderNo,
             items: {
-              create: group.items.map((it) => ({
+              create: mergedItems.map((it) => ({
                 productCode: it.productCode,
                 productName: it.productName,
                 qty: it.qty,
@@ -498,11 +530,29 @@ export class CsvAdapter implements IntegrationAdapter {
         successCount++;
       } catch (e) {
         console.error('[csv-adapter orders row]', { pkNo }, e);
+        // 2026-08-19：従来は「DB書込失敗（詳細はサーバログ）」としか出さず、
+        //   現場・管理PCのどちらからも原因が追えなかった。Prisma のエラーコードを
+        //   業務の言葉に置き換えて、取込結果の画面だけで判断できるようにする。
+        const code =
+          typeof e === 'object' && e !== null && 'code' in e
+            ? String((e as { code?: unknown }).code ?? '')
+            : '';
+        const detail =
+          code === 'P2002'
+            ? '同一伝票内で商品コードが重複しています'
+            : code === 'P2003'
+              ? '参照先（商品・運送会社など）がマスタに存在しません'
+              : code
+                ? `DB エラー (${code})`
+                : e instanceof Error
+                  ? e.message
+                  : '不明なエラー';
         errors.push({
           rowIndex: group.items[0]?.rowIndex ?? 0,
           pkNo,
+          invoiceNo: group.header.invoiceNo,
           reason: 'parse_error',
-          message: 'DB書込失敗（詳細はサーバログ）',
+          message: `伝票を登録できませんでした: ${detail}`,
         });
       }
     }
@@ -555,7 +605,7 @@ export class CsvAdapter implements IntegrationAdapter {
     // 是正対策②：この取込で落ちた/エラーになった全明細を thomas_imports.note に構造化保存（後から取込単位で追える）。
     const noteLines = errors.map((e) => {
       const parts = [
-        `理由=${e.reason}`,
+        `理由=${reasonLabelJa(e.reason)}`,
         e.invoiceNo ? `納品書=${e.invoiceNo}` : null,
         e.pkNo ? `PkNo=${e.pkNo}` : null,
         e.productCode ? `商品=${e.productCode}` : null,
@@ -563,13 +613,27 @@ export class CsvAdapter implements IntegrationAdapter {
       ].filter(Boolean);
       return `- ${parts.join(' ')} ／ ${e.message}`;
     });
+    const mergedNote =
+      mergedItemLogs.length === 0
+        ? []
+        : [
+            `【同一商品の行を合算 ${mergedItemLogs.length}件】ファイル: ${source.filename}`,
+            ...mergedItemLogs.slice(0, 200),
+            mergedItemLogs.length > 200
+              ? `…ほか ${mergedItemLogs.length - 200} 件`
+              : null,
+          ].filter((v): v is string => v !== null);
+
     const noteBody =
-      errors.length === 0
+      errors.length === 0 && mergedNote.length === 0
         ? null
         : [
-            `[取込エラー ${errors.length}件・${source.filename}]`,
+            errors.length > 0
+              ? `【取込エラー ${errors.length}件】ファイル: ${source.filename}`
+              : null,
             ...noteLines.slice(0, 500),
             noteLines.length > 500 ? `…ほか ${noteLines.length - 500} 件` : null,
+            ...mergedNote,
           ]
             .filter(Boolean)
             .join('\n');
