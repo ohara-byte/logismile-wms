@@ -11,7 +11,7 @@
  *  - モック準拠（管理用PCモック_v0.22.html L1975-2054 csvi-modal）
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { Panel, PanelHeader, PanelBody } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
 import { StatCard } from '@/components/ui/stat-card';
@@ -29,6 +29,8 @@ interface ImportRecord {
   errorCount: number;
   janErrorCount: number;
   unmapCount: number;
+  /** 取込エラー・合算の詳細（日本語）。2026-08-19 現場要望で画面から追えるようにした */
+  note: string | null;
 }
 
 interface ImportResultPayload {
@@ -88,6 +90,8 @@ export default function ImportsPage() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState<ImportRecord[]>([]);
+  /** 詳細を開いている取込 ID（取込エラーの理由を日本語で表示する） */
+  const [openNoteId, setOpenNoteId] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -451,11 +455,13 @@ export default function ImportsPage() {
             <TH align="right">エラー</TH>
             <TH align="right">JAN不備</TH>
             <TH align="right">未マップ</TH>
+            <TH>詳細</TH>
           </THead>
           <TBody>
-            {history.length === 0 && <EmptyRow colSpan={9} message="取込履歴はまだありません" />}
+            {history.length === 0 && <EmptyRow colSpan={10} message="取込履歴はまだありません" />}
             {history.map((h) => (
-              <TR key={h.id}>
+              <Fragment key={h.id}>
+              <TR>
                 <TD mono>{h.id}</TD>
                 <TD className="text-2xs">{new Date(h.importedAt).toLocaleString('ja-JP')}</TD>
                 <TD>
@@ -491,7 +497,32 @@ export default function ImportsPage() {
                 >
                   {h.unmapCount}
                 </TD>
+                <TD>
+                  {h.note ? (
+                    <button
+                      type="button"
+                      onClick={() => setOpenNoteId(openNoteId === h.id ? null : h.id)}
+                      className="text-2xs px-2 py-0.5 rounded border border-surface-border bg-surface-base text-ink-subtle hover:text-ink hover:border-accent-amber"
+                    >
+                      {openNoteId === h.id ? '▲ 閉じる' : '▼ 理由を見る'}
+                    </button>
+                  ) : (
+                    <span className="text-3xs text-ink-muted">—</span>
+                  )}
+                </TD>
               </TR>
+              {/* 2026-08-19（現場要望）：取込エラーの理由を日本語でその場に表示する。
+                  従来は thomas_imports.note に保存済みだったが画面が無く追えなかった。 */}
+              {openNoteId === h.id && h.note && (
+                <TR>
+                  <TD colSpan={10}>
+                    <pre className="whitespace-pre-wrap break-all text-3xs leading-relaxed text-ink-subtle bg-surface-base border border-surface-border rounded p-3 max-h-80 overflow-y-auto">
+                      {h.note}
+                    </pre>
+                  </TD>
+                </TR>
+              )}
+              </Fragment>
             ))}
           </TBody>
         </Table>

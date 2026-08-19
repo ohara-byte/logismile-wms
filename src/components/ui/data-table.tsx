@@ -110,6 +110,8 @@ interface CellProps {
   align?: 'left' | 'center' | 'right';
   mono?: boolean;
   className?: string;
+  /** 展開行など、複数列にまたがるセル用（2026-08-19 取込ログ表示で追加） */
+  colSpan?: number;
 }
 
 export function TH({ children, align = 'left', className }: CellProps) {
@@ -128,11 +130,12 @@ export function TH({ children, align = 'left', className }: CellProps) {
   );
 }
 
-export function TD({ children, align = 'left', mono, className }: CellProps) {
+export function TD({ children, align = 'left', mono, className, colSpan }: CellProps) {
   const alignCls =
     align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left';
   return (
     <td
+      colSpan={colSpan}
       className={cn(
         'px-3 py-2 text-ink',
         alignCls,
