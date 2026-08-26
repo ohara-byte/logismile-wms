@@ -8,13 +8,31 @@
  *
  *  基本フロー（現場の運用に合わせスキャン主導）:
  *    ① バーコード（JAN or 商品コード）をスキャン → 一覧内の該当商品を自動特定
- *    ② 該当行へスクロール＆ハイライト、検品数欄に「納品数」を初期表示しフォーカス
- *    ③ 数量を確認/修正して「記録」（Enter でも可）→ スキャン入力へフォーカス復帰
+ *    ② 該当行へスクロール＆ハイライト、検品数欄へフォーカス
+ *    ③ 今回数えた数を入力して「追加」（Enter でも可）→ スキャン入力へフォーカス復帰
  *  ※ スキャンせず目視で探して手入力する従来操作も併用可。
+ *
+ *  ★ 2026-08-26（現場要望「改修要望書」B案）: 上書き → 加算へ変更
+ *    旧仕様は「記録／修正」の1ボタンで、既に検品済みの商品へ再登録すると
+ *    **先の検品数を単純に上書き**していた。そのため
+ *      ・複数ハンディで同一商品を検品すると先の分が消える
+ *      ・不足分の追加運搬のたびに、画面の数を目視で足してから入力する必要がある
+ *    という事故と手間が発生していた。
+ *
+ *    そこで操作を2つに分離した。
+ *      「追加」… 常に加算（日常運用）。入力欄は毎回空で始める。
+ *      「訂正」… 既存値を上書き（誤入力を正すときだけ・確認ダイアログあり）。
+ *
+ *    ※ 入力欄に検品済み数を初期表示しないのは、加算では二重計上になるため。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useScanSound } from '@/lib/use-scan-sound';
+import {
+  resolveQtyPrefill,
+  validateInspectInput,
+  type InspectMode,
+} from '@/lib/receiving-inspect';
 
 type PickItem = {
   productCode: string;
@@ -139,15 +157,23 @@ export function ReceivingInspectClient() {
     }
     playBeep();
     setSelectedCode(hit.productCode);
-    // 検品数の初期値＝納品数（未入力の場合のみ。誤入力・二重入力を避ける）
+    // 検品数の初期値（未入力の場合のみ。編集中の値は尊重する）
+    //   ・未検品          → 納品数を初期表示（全数検品が通常のため）
+    //   ・既に検品済み    → **空**。「追加」は加算なので納品数を入れると二重計上になる
+    //                       （2026-08-26 B案。今回運ばれてきた分だけを入力させる）
     setInputs((prev) => ({
       ...prev,
-      [hit.productCode]:
-        prev[hit.productCode] != null && prev[hit.productCode] !== ''
-          ? prev[hit.productCode]
-          : String(hit.deliveredQty),
+      [hit.productCode]: resolveQtyPrefill({
+        current: prev[hit.productCode],
+        inspectedQty: hit.inspectedQty,
+        deliveredQty: hit.deliveredQty,
+      }),
     }));
-    setFlash(`▶ ${hit.productName ?? hit.productCode}：数量を確認して記録`);
+    setFlash(
+      hit.inspectedQty > 0
+        ? `▶ ${hit.productName ?? hit.productCode}：検品済み ${hit.inspectedQty}。今回数えた数を入力して追加`
+        : `▶ ${hit.productName ?? hit.productCode}：数量を確認して追加`,
+    );
     // 該当行へスクロール＆数量欄へフォーカス
     requestAnimationFrame(() => {
       const el = qtyRefs.current[hit.productCode];
@@ -157,20 +183,37 @@ export function ReceivingInspectClient() {
     });
   };
 
-  const record = async (it: PickItem) => {
-    const raw = inputs[it.productCode];
-    const qty = Number(raw);
-    if (raw == null || raw === '' || !Number.isInteger(qty) || qty < 0) {
+  /**
+   * 検品数を記録する。
+   * @param mode 'add'=加算（追加ボタン・Enter）／'set'=上書き（訂正ボタン）
+   */
+  const record = async (it: PickItem, mode: InspectMode) => {
+    const v = validateInspectInput({ raw: inputs[it.productCode], mode });
+    if (!v.ok) {
       playError();
-      setFlash(`⚠ ${it.productName ?? it.productCode}: 数量を入力してください`);
+      setFlash(`⚠ ${it.productName ?? it.productCode}: ${v.message}`);
       return;
+    }
+    const qty = v.qty;
+    // 訂正は既存値を書き換える操作なので、取り違え防止に確認を挟む
+    if (mode === 'set') {
+      const name = it.productName ?? it.productCode;
+      if (!confirm(`${name}\n\n検品済み ${it.inspectedQty} → ${qty} に訂正します。\nよろしいですか？`)) {
+        return;
+      }
     }
     setSavingCode(it.productCode);
     try {
       const r = await fetch('/api/handy/receiving-inspect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shipDate: date, productCode: it.productCode, inspectedQty: qty, pattern }),
+        body: JSON.stringify({
+          shipDate: date,
+          productCode: it.productCode,
+          inspectedQty: qty,
+          pattern,
+          mode,
+        }),
       });
       const j = await r.json();
       if (!r.ok) {
@@ -178,13 +221,18 @@ export function ReceivingInspectClient() {
         setFlash(`⚠ ${j?.message ?? `HTTP ${r.status}`}`);
         return;
       }
-      // ローカル反映
+      // 反映後の合計はサーバが返す（加算の計算を画面側で持たない）
+      const total: number = typeof j?.data?.totalQty === 'number' ? j.data.totalQty : qty;
       setItems((prev) =>
-        prev.map((p) => (p.productCode === it.productCode ? { ...p, inspectedQty: qty } : p)),
+        prev.map((p) => (p.productCode === it.productCode ? { ...p, inspectedQty: total } : p)),
       );
       setInputs((prev) => ({ ...prev, [it.productCode]: '' }));
       setSelectedCode(null);
-      setFlash(`✓ ${it.productName ?? it.productCode}: 検品 ${qty} を記録`);
+      setFlash(
+        mode === 'add'
+          ? `✓ ${it.productName ?? it.productCode}: +${qty} → 検品済み ${total}`
+          : `✎ ${it.productName ?? it.productCode}: 検品済み ${total} に訂正`,
+      );
       // 次のスキャンへ待受を戻す
       focusScan();
     } catch (e) {
@@ -347,26 +395,41 @@ export function ReceivingInspectClient() {
                   type="number"
                   inputMode="numeric"
                   min={0}
-                  placeholder="検品数"
-                  // ③修正：検品済みは現在値を初期表示（誤入力を上書き修正しやすく）。編集中は入力値を優先。
-                  value={inputs[it.productCode] ?? (done ? String(it.inspectedQty) : '')}
+                  placeholder={done ? '今回数えた数' : '検品数'}
+                  // 2026-08-26（B案）: 検品済み数を初期表示しない。
+                  //   「追加」は加算なので、現在値を入れておくと二重計上になる。
+                  value={inputs[it.productCode] ?? ''}
                   onChange={(e) => setInputs((prev) => ({ ...prev, [it.productCode]: e.target.value }))}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      void record(it);
+                      // Enter は日常フロー＝加算
+                      void record(it, 'add');
                     }
                   }}
                   className="flex-1 bg-surface-base border border-surface-border rounded px-2 py-1.5 text-sm text-ink tabular-nums"
                 />
                 <button
                   type="button"
-                  onClick={() => record(it)}
+                  onClick={() => record(it, 'add')}
                   disabled={savingCode === it.productCode}
+                  title={done ? `検品済み ${it.inspectedQty} に加算します` : '検品数を記録します'}
                   className="px-3 py-1.5 rounded bg-accent-amber text-surface-base text-xs font-bold disabled:opacity-50"
                 >
-                  {done ? '修正' : '記録'}
+                  追加
                 </button>
+                {/* 訂正＝既存値の上書き。誤入力を正すときだけ使うため、検品済みがある行にのみ出す。 */}
+                {done && (
+                  <button
+                    type="button"
+                    onClick={() => record(it, 'set')}
+                    disabled={savingCode === it.productCode}
+                    title={`検品済み ${it.inspectedQty} を入力値で置き換えます（誤入力の訂正用）`}
+                    className="px-2.5 py-1.5 rounded border border-surface-border bg-surface-base text-ink-subtle text-xs font-bold disabled:opacity-50"
+                  >
+                    訂正
+                  </button>
+                )}
               </div>
             </div>
           );
