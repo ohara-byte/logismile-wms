@@ -23,6 +23,7 @@ import { signWmsRequest, buildIdempotencyKey, notifyInspectionDiff } from '../in
 import { fetchLiveShipPlan } from '../integration/factory-ship-plan-pull';
 import { verifyFactoryRequest } from '../integration/factory-auth';
 import { parseQrPrintFlag } from '../integration/mapping';
+import { parseFactoryLabelQr, FACTORY_LABEL_QR_VERSION } from '../receiving-scan';
 
 /** テスト用シークレット（16 文字以上でないと factory-mode が null を返す） */
 const SECRET = 'test-shared-secret-32bytes-longer';
@@ -409,4 +410,73 @@ test('契約: 熨斗フラグ → QR 印刷フラグの読み替え', () => {
   expect(parseQrPrintFlag('')).toBe(false);
   expect(parseQrPrintFlag(null)).toBe(false);
   expect(parseQrPrintFlag(undefined)).toBe(false);
+});
+
+// ───────────────────────────────────────────────────────────
+// 7. ★ 納品ラベルQR（CraftSmile スマホ納品送信 → WMS 受入検品）
+//
+//   CraftSmile はスマホから納品送信するとき、1商品1枚のラベル（62×29mm）を刷る。
+//   そのQRを WMS のハンディで読んで受入検品を通す。
+//
+//   ラベルは**物理的な連携面**なので、片側だけ書式が変わると
+//   現場で「読めないラベル」が出る。ここで機械的に固定する。
+//
+//   ★ 送信側の実装は CraftSmile リポジトリの
+//     `src/lib/wms/mobile-send.ts`（buildLabelQr / parseLabelQr）。
+//     下の EXPECTED は**そこが生成する実際の文字列**。
+//     書式を変えるときは両リポジトリのテストを必ず更新する。
+//
+//   判断記録：CraftSmile `docs/decisions/ADR-032-mobile-wms-send.md`
+// ───────────────────────────────────────────────────────────
+
+/**
+ * CraftSmile 側 buildLabelQr が出す文字列（実物）。
+ *   CS1|発送日8桁|商品コード|数量|連番3桁
+ */
+const FACTORY_LABEL_SAMPLES = [
+  {
+    raw: 'CS1|20260828|5203-1|24|001',
+    parsed: { shipDate: '2026-08-28', productCode: '5203-1', qty: 24, serial: 1 },
+  },
+  {
+    raw: 'CS1|20260101|10-36|1|999',
+    parsed: { shipDate: '2026-01-01', productCode: '10-36', qty: 1, serial: 999 },
+  },
+  {
+    raw: 'CS1|20261231|ABCDEF-123456-XYZ|9999|042',
+    parsed: { shipDate: '2026-12-31', productCode: 'ABCDEF-123456-XYZ', qty: 9999, serial: 42 },
+  },
+] as const;
+
+test('契約: CraftSmile が刷るラベルQR を WMS が解釈できる', () => {
+  for (const s of FACTORY_LABEL_SAMPLES) {
+    expect(parseFactoryLabelQr(s.raw)).toEqual(s.parsed);
+  }
+});
+
+test('契約: 書式の版は CS1（接頭辞でラベルと判別する）', () => {
+  expect(FACTORY_LABEL_QR_VERSION).toBe('CS1');
+  // 版が違うラベルは読まない（将来 CS2 を出すときに誤読しない）
+  expect(parseFactoryLabelQr('CS2|20260828|5203-1|24|001')).toBeNull();
+});
+
+test('契約: 区切りは | で 5 項目（項目数が変わったら読まない）', () => {
+  expect(parseFactoryLabelQr('CS1|20260828|5203-1|24')).toBeNull();
+  expect(parseFactoryLabelQr('CS1|20260828|5203-1|24|001|6')).toBeNull();
+});
+
+test('契約: 発送日はハイフン無しの8桁（YYYYMMDD）', () => {
+  expect(parseFactoryLabelQr('CS1|2026-08-28|5203-1|24|001')).toBeNull();
+  expect(parseFactoryLabelQr('CS1|202608|5203-1|24|001')).toBeNull();
+});
+
+test('契約: 連番は 1 以上（0 は無効）。同一ラベルの二度読み検知に使う', () => {
+  expect(parseFactoryLabelQr('CS1|20260828|5203-1|24|000')).toBeNull();
+  expect(parseFactoryLabelQr('CS1|20260828|5203-1|24|001')?.serial).toBe(1);
+});
+
+test('契約: ラベルQR でない値は null（従来の JAN／商品コード運用を壊さない）', () => {
+  // 基幹の商品バーコードは今までどおり JAN／商品コードとして扱われる必要がある
+  expect(parseFactoryLabelQr('2800022130529')).toBeNull();
+  expect(parseFactoryLabelQr('5203-1')).toBeNull();
 });

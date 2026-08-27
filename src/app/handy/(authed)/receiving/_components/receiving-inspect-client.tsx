@@ -24,6 +24,16 @@
  *      「訂正」… 既存値を上書き（誤入力を正すときだけ・確認ダイアログあり）。
  *
  *    ※ 入力欄に検品済み数を初期表示しないのは、加算では二重計上になるため。
+ *
+ *  ★ 2026-08-27（CraftSmile スマホ納品送信との連携）: ラベルQR に対応
+ *    CraftSmile がスマホから納品送信すると、1商品1枚のラベルを印刷する。
+ *    そのQR（`CS1|発送日|商品コード|数量|連番`）を読むと、
+ *      ・商品を特定する（JAN が無い商品でも特定できる）
+ *      ・**検品数の初期値をラベルの数量で埋める**（今回運ばれてきた分が分かる）
+ *    ため、現場は「読む→追加」だけで済む。手入力の必要がなくなる。
+ *
+ *    同じラベルを二度読んだ場合は連番で検知して警告する（二重計上の防止）。
+ *    従来の JAN／商品コードのスキャンはそのまま使える。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -33,6 +43,11 @@ import {
   validateInspectInput,
   type InspectMode,
 } from '@/lib/receiving-inspect';
+import {
+  resolveScan,
+  labelKey,
+  resolveQtyPrefillFromLabel,
+} from '@/lib/receiving-scan';
 
 type PickItem = {
   productCode: string;
@@ -82,6 +97,8 @@ export function ReceivingInspectClient() {
   const [flash, setFlash] = useState<string | null>(null);
   const [scanInput, setScanInput] = useState('');
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  // 読んだラベルの記録（発送日|商品|連番）。同じラベルの二度読みを検知して二重計上を防ぐ。
+  const scannedLabelsRef = useRef<Set<string>>(new Set());
   // 納品パターン：'prev'=前日納品分(④) / 'today'=当日納品分(⑧)。既定 prev（当日納品を検品する時だけ切替）。
   const [pattern, setPattern] = useState<'prev' | 'today'>('prev');
 
@@ -117,6 +134,8 @@ export function ReceivingInspectClient() {
     void reload();
     setInputs({});
     setSelectedCode(null);
+    // 発送日・パターンを変えたら別の納品なので、読み込み済みラベルの記録も捨てる
+    scannedLabelsRef.current = new Set();
   }, [reload]);
 
   // 一覧読込後はスキャン待受にフォーカス
@@ -124,20 +143,16 @@ export function ReceivingInspectClient() {
     if (!busy && items.length > 0) focusScan();
   }, [busy, items.length, focusScan]);
 
-  // スキャン値 → 該当商品を特定（JAN 優先、次に商品コード。大小/前後空白は無視）
-  const findByScan = useCallback(
-    (raw: string): PickItem | null => {
-      const v = raw.trim();
-      if (!v) return null;
-      const lower = v.toLowerCase();
-      return (
-        items.find((it) => it.jan && it.jan === v) ??
-        items.find((it) => it.productCode.toLowerCase() === lower) ??
-        null
-      );
-    },
-    [items],
-  );
+
+  /** 該当行へスクロールし、数量欄へフォーカスする。 */
+  const focusRow = (productCode: string) => {
+    requestAnimationFrame(() => {
+      const el = qtyRefs.current[productCode];
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el?.focus();
+      el?.select();
+    });
+  };
 
   const onScan = (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,14 +162,60 @@ export function ReceivingInspectClient() {
       focusScan();
       return;
     }
-    const hit = findByScan(raw);
-    if (!hit) {
+
+    const res = resolveScan(raw, items);
+
+    // ── CraftSmile のラベルQR ──
+    if (res.kind === 'label_not_in_list') {
+      playError();
+      setSelectedCode(null);
+      setFlash(
+        `⚠ この発送日の予定に無い商品です: ${res.label.productCode}（ラベルの発送日 ${res.label.shipDate}）`,
+      );
+      focusScan();
+      return;
+    }
+    if (res.kind === 'label') {
+      const { item, label } = res;
+      const key = labelKey(label);
+      // ★ 同じラベルの二度読みは弾く。「追加」は加算なので、読むたびに足されてしまう。
+      if (scannedLabelsRef.current.has(key)) {
+        playError();
+        setSelectedCode(item.productCode);
+        setFlash(
+          `⚠ このラベルは既に読み込み済みです（${item.productName ?? item.productCode} ${label.qty}／連番${label.serial}）。別のラベルをお読みください`,
+        );
+        focusScan();
+        return;
+      }
+      scannedLabelsRef.current.add(key);
+      playBeep();
+      setSelectedCode(item.productCode);
+      // ★ ラベルは「今回運ばれてきた分」が分かるので、その数量を初期値にする。
+      //   手入力時に空欄にしていたのは今回分が不明だったためで、ラベルなら不要。
+      setInputs((prev) => ({
+        ...prev,
+        [item.productCode]: resolveQtyPrefillFromLabel({
+          current: prev[item.productCode],
+          label,
+        }),
+      }));
+      setFlash(
+        `▶ ${item.productName ?? item.productCode}：ラベル ${label.qty} を読み取りました。「追加」で確定してください`,
+      );
+      focusRow(item.productCode);
+      return;
+    }
+
+    // ── 従来のバーコード（JAN／商品コード）──
+    if (res.kind === 'unknown') {
       playError();
       setSelectedCode(null);
       setFlash(`⚠ 予定外/未登録のバーコード: ${raw}`);
       focusScan();
       return;
     }
+    const hit = res.item;
     playBeep();
     setSelectedCode(hit.productCode);
     // 検品数の初期値（未入力の場合のみ。編集中の値は尊重する）
@@ -174,13 +235,7 @@ export function ReceivingInspectClient() {
         ? `▶ ${hit.productName ?? hit.productCode}：検品済み ${hit.inspectedQty}。今回数えた数を入力して追加`
         : `▶ ${hit.productName ?? hit.productCode}：数量を確認して追加`,
     );
-    // 該当行へスクロール＆数量欄へフォーカス
-    requestAnimationFrame(() => {
-      const el = qtyRefs.current[hit.productCode];
-      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      el?.focus();
-      el?.select();
-    });
+    focusRow(hit.productCode);
   };
 
   /**
