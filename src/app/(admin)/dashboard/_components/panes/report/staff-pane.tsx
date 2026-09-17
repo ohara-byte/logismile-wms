@@ -4,6 +4,11 @@
  * 👥 担当者別MH サブタブ（A-Rep3）
  *
  * 既存 /api/report/staff-mh を活用。担当者ごとの件数・MH・平均秒・スキル係数。
+ *
+ * ★ 2026-09-17（小原様）：MH に加えて **MHT**（テーブル配置時間ベース）を並べる。
+ *   MH  = 検品着手〜完了の合計（手を動かしていた時間）
+ *   MHT = メンバー割当ガントの配置時間の合計（テーブルに居た時間）
+ *   件/MH・件/MHT は 1 人時あたりの梱包件数。配置が未登録なら MHT は 0 で「—」。
  */
 
 import { useEffect, useState } from 'react';
@@ -15,6 +20,12 @@ interface StaffRow {
   count: number;
   durationSec: number;
   mhHours: number;
+  /** MHT：テーブル配置時間の合計（人時） */
+  mhtHours: number;
+  /** 件/MH。MH が 0 なら null */
+  perMh: number | null;
+  /** 件/MHT。配置が無ければ null */
+  perMht: number | null;
   avgSec: number;
 }
 
@@ -50,15 +61,22 @@ export function StaffPane() {
 
   const total = items.reduce((s, i) => s + i.count, 0);
   const totalMh = items.reduce((s, i) => s + i.mhHours, 0);
+  const totalMht = items.reduce((s, i) => s + i.mhtHours, 0);
   const max = Math.max(...items.map((i) => i.count), 1);
 
   return (
     <div className="p-1 space-y-3">
-      <div className="bg-surface-base border border-surface-border rounded p-2 grid grid-cols-3 gap-2 text-2xs">
+      <div className="bg-surface-base border border-surface-border rounded p-2 grid grid-cols-4 gap-2 text-2xs">
         <Stat label="担当者数" value={`${items.length}`} />
         <Stat label="総件数" value={`${total.toLocaleString()} 件`} />
-        <Stat label="総MH" value={`${totalMh.toFixed(1)} 人時`} />
+        <Stat label="総MH（検品時間）" value={`${totalMh.toFixed(1)} 人時`} />
+        <Stat label="総MHT（配置時間）" value={`${totalMht.toFixed(1)} 人時`} />
       </div>
+      <p className="text-3xs text-ink-muted leading-relaxed">
+        MH＝検品着手〜完了の合計／MHT＝メンバー割当ガントの配置時間の合計。
+        「件/MH」「件/MHT」は 1 人時あたりの梱包件数です。
+        その期間に配置が登録されていない担当者は MHT が 0 になり「—」と出ます。
+      </p>
 
       {items.length === 0 ? (
         <div className="p-4 text-2xs text-ink-muted text-center">
@@ -75,6 +93,9 @@ export function StaffPane() {
                 <th className="px-1.5 py-1 text-right text-3xs uppercase text-ink-subtle">件数</th>
                 <th className="px-1.5 py-1 text-left text-3xs uppercase text-ink-subtle">分布</th>
                 <th className="px-1.5 py-1 text-right text-3xs uppercase text-ink-subtle">MH (人時)</th>
+                <th className="px-1.5 py-1 text-right text-3xs uppercase text-ink-subtle">件/MH</th>
+                <th className="px-1.5 py-1 text-right text-3xs uppercase text-ink-subtle">MHT (人時)</th>
+                <th className="px-1.5 py-1 text-right text-3xs uppercase text-ink-subtle">件/MHT</th>
                 <th className="px-1.5 py-1 text-right text-3xs uppercase text-ink-subtle">平均(秒)</th>
                 <th className="px-1.5 py-1 text-right text-3xs uppercase text-ink-subtle">スキル</th>
               </tr>
@@ -103,6 +124,13 @@ export function StaffPane() {
                       </div>
                     </td>
                     <td className="px-1.5 py-1 text-right tabular-nums text-violet-300">{row.mhHours.toFixed(1)}</td>
+                    <td className="px-1.5 py-1 text-right tabular-nums text-violet-200">
+                      {row.perMh == null ? '—' : row.perMh.toFixed(1)}
+                    </td>
+                    <td className="px-1.5 py-1 text-right tabular-nums text-cyan-300">{row.mhtHours.toFixed(1)}</td>
+                    <td className="px-1.5 py-1 text-right tabular-nums text-cyan-200">
+                      {row.perMht == null ? '—' : row.perMht.toFixed(1)}
+                    </td>
                     <td className="px-1.5 py-1 text-right tabular-nums">{row.avgSec}</td>
                     <td className={`px-1.5 py-1 text-right tabular-nums ${skillCls}`}>
                       {skill !== undefined ? skill.toFixed(3) : '—'}

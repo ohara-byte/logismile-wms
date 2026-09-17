@@ -50,7 +50,6 @@ export async function GET(req: Request) {
 
   const range = parsePeriod(searchParams.get('from'), searchParams.get('to'));
   if ('error' in range) return range.error;
-  const { from, to } = range;
 
   let rows: Array<Record<string, unknown>> = [];
   const filename = `report-${type}-${searchParams.get('from')}-${searchParams.get('to')}.csv`;
@@ -59,18 +58,43 @@ export async function GET(req: Request) {
     const r = await summaryReport(range);
     rows = [r as unknown as Record<string, unknown>];
   } else if (type === 'staff-mh') {
-    rows = (await staffMhReport(from, to)) as unknown as Record<string, unknown>[];
+    rows = (await staffMhReport(range)) as unknown as Record<string, unknown>[];
   } else if (type === 'group-mh') {
-    const items = await groupMhReport(from, to);
-    rows = items.flatMap((g) =>
-      g.hourly.map((h) => ({
+    const items = await groupMhReport(range);
+    // 1時間ごとの行に、グループ合計と MHT（配置時間ベース）を添える。
+    //   mhtHours / mhtCount / perMht はグループ単位の値なので各行で同じ値になる
+    //   （Excel でピボットしたときに拾えるよう、あえて各行に持たせる）。
+    rows = items.flatMap((g) => {
+      const totals = {
+        groupTotalCount: g.totalCount,
+        groupMhHours: g.totalMhHours,
+        groupMhtHours: g.mhtHours,
+        groupMhtCount: g.mhtCount,
+        groupPerMht: g.perMht ?? '',
+      };
+      // 配置はあるが検品が無かったグループは hourly が空。
+      // それでも MHT を落とさないよう、合計だけの行を1本出す。
+      if (g.hourly.length === 0) {
+        return [
+          {
+            groupId: g.groupId,
+            groupName: g.groupName,
+            hour: '',
+            count: 0,
+            mhHours: 0,
+            ...totals,
+          },
+        ];
+      }
+      return g.hourly.map((h) => ({
         groupId: g.groupId,
         groupName: g.groupName,
-        hour: h.hour,
+        hour: h.hour as number | string,
         count: h.count,
         mhHours: h.mhHours,
-      })),
-    );
+        ...totals,
+      }));
+    });
   } else if (type === 'product-abc') {
     rows = (await productAbcReport(range, 1000)) as unknown as Record<
       string,

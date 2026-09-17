@@ -8,6 +8,6 @@ export async function GET(req: Request) {
   if (!guard.ok) return guard.response;
   const range = parsePeriodFromUrl(req);
   if ('error' in range) return range.error;
-  const data = await groupMhReport(range.from, range.to);
+  const data = await groupMhReport(range);
   return NextResponse.json({ data: { items: data }, message: 'OK' });
 }
