@@ -577,8 +577,28 @@ Server-Sent Events（SSE）
 ### `GET /api/report/group-mh`
 **テーブルグループ別 MHレポート**
 
+**★ 2026-09-17 追加**：`mhtHours` / `mhtCount` / `perMht`（MHT＝テーブル配置時間ベース）
+
+| 項目 | 内容 |
+|---|---|
+| `totalCount` / `totalMhHours` | 従来どおり。**担当者マスタの所属グループ**（`staff.group_id`）で集計 |
+| `mhtHours` | そのグループへの**メンバー割当（ガント）配置時間**の合計（人時） |
+| `mhtCount` | 配置時間帯の中で完了した検品の件数（`perMht` の分子） |
+| `perMht` | `mhtCount ÷ mhtHours`。配置が未登録なら `null` |
+
+※ 配置は日ごとに動き、保存しても担当者マスタは書き換えないため、
+`totalCount` と `mhtCount` は一致しないことがある（意図的に別立て）。
+
 ### `GET /api/report/staff-mh`
 担当者別MH
+
+**★ 2026-09-17 追加**：`mhtHours` / `perMh` / `perMht`
+
+| 項目 | 内容 |
+|---|---|
+| `mhHours` | MH。Σ(検品完了 − 検品着手)。従来どおり |
+| `mhtHours` | MHT。その担当者の**配置時間**の合計（人時）。同日の重なりは1回だけ数える |
+| `perMh` / `perMht` | 1人時あたりの梱包件数。人時が 0 なら `null` |
 
 ### `GET /api/report/product-abc`
 商品ABC分析
@@ -604,6 +624,32 @@ Server-Sent Events（SSE）
 
 ### `GET /api/report/export?format=csv|pdf`
 レポートのCSV/PDF出力
+
+### ★ `GET /api/report/insp-timeline`（2026-09-17 新規）
+**検品タイムライン**の画面プレビュー（現場依頼）。
+
+**クエリパラメータ**
+
+| 名前 | 内容 |
+|---|---|
+| `from` / `to` | 期間（YYYY-MM-DD） |
+| `basis` | `ship`＝出荷日で絞る（既定）／ `start`＝検品着手日で絞る |
+| `limit` | 先頭何行を返すか（既定 100・最大 200） |
+
+**レスポンス**: `{ headers, rows, total, shown, basis, airpackKeyword }`
+（`rows` は `headers` と同じ並びの文字列配列）
+
+### ★ `GET /api/report/insp-timeline/export`（2026-09-17 新規）
+**検品タイムライン CSV**（全件）。権限は `csv_export`。
+
+- 1伝票 = 1行。**未検品・保留・削除済（キャンセル）も含む**
+  （絞り込みは受領後に現場側で行う方針のため、こちらで間引かない）
+- 列：出荷日／伝票No／担当者コード／担当者氏名／着手時刻／完了時刻／商品点数／
+  ステータス／のし有無／のし名称／のし氏名／エアパック
+- 時刻は **JST**。UTF-8 BOM 付き（Excel 対応）
+- エアパックは `pack.airpack_keyword`（全体設定）で判定。**未設定なら空欄**
+- 1日 2,000〜3,000 件 × 数か月＝数十万行になりうるため、
+  2,000 行ずつカーソルで取り出しながら**ストリーミング**で返す
 
 ---
 

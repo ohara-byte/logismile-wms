@@ -5,6 +5,13 @@
  *
  * モック準拠（管理用PCモック_v0.22.html L3700+ rp-pane-group）。
  * 既存 /api/report/group-mh を使ってグループ別の累計件数 + MH を表示。
+ *
+ * ★ 2026-09-17（小原様）：MH に加えて **MHT**（テーブル配置時間ベース）を並べる。
+ *   件数の数え方が MH と MHT で違う点に注意（画面にも注記を出す）。
+ *     MH  側の件数 … 担当者マスタの所属グループで集計（従来どおり）
+ *     MHT 側の件数 … その時刻に**実際に配置されていた**グループで集計
+ *   メンバー割当ガントは日ごとに動き、保存しても担当者マスタは書き換えないため、
+ *   両者はずれうる。既存の数字は変えず、MHT 側を別立てにしている。
  */
 
 import { useEffect, useState } from 'react';
@@ -15,6 +22,12 @@ interface GroupItem {
   groupName: string;
   totalCount: number;
   totalMhHours: number;
+  /** MHT：そのグループへの配置時間の合計（人時） */
+  mhtHours: number;
+  /** 配置時間帯の中で完了した検品の件数（件/MHT の分子） */
+  mhtCount: number;
+  /** 件/MHT。配置が無ければ null */
+  perMht: number | null;
   hourly: { hour: number; count: number; mhHours: number }[];
 }
 
@@ -42,12 +55,13 @@ export function GroupPane() {
 
   const grandCount = items.reduce((s, g) => s + g.totalCount, 0);
   const grandMh = items.reduce((s, g) => s + g.totalMhHours, 0);
+  const grandMht = items.reduce((s, g) => s + g.mhtHours, 0);
   const maxCount = Math.max(...items.map((g) => g.totalCount), 1);
 
   return (
     <div className="p-1 space-y-3">
       {/* 集計サマリ */}
-      <div className="bg-surface-base border border-surface-border rounded p-2 grid grid-cols-3 gap-2 text-2xs">
+      <div className="bg-surface-base border border-surface-border rounded p-2 grid grid-cols-4 gap-2 text-2xs">
         <div>
           <div className="text-3xs text-ink-muted">グループ数</div>
           <div className="text-base font-bold text-ink-strong tabular-nums">{items.length}</div>
@@ -59,12 +73,25 @@ export function GroupPane() {
           </div>
         </div>
         <div>
-          <div className="text-3xs text-ink-muted">総MH</div>
+          <div className="text-3xs text-ink-muted">総MH（検品時間）</div>
           <div className="text-base font-bold text-violet-300 tabular-nums">
             {grandMh.toFixed(1)}<span className="text-2xs text-ink-muted ml-1">人時</span>
           </div>
         </div>
+        <div>
+          <div className="text-3xs text-ink-muted">総MHT（配置時間）</div>
+          <div className="text-base font-bold text-cyan-300 tabular-nums">
+            {grandMht.toFixed(1)}<span className="text-2xs text-ink-muted ml-1">人時</span>
+          </div>
+        </div>
       </div>
+      <p className="text-3xs text-ink-muted leading-relaxed">
+        MH＝検品着手〜完了の合計／MHT＝メンバー割当ガントの配置時間の合計。
+        <b className="text-ink-subtle">件/MHT</b> は「配置されていた時間帯に完了した件数 ÷ 配置時間」で、
+        グループの割り当ては<b className="text-ink-subtle">その時刻のガント</b>で判定します
+        （左の「件数」は従来どおり担当者マスタの所属グループ基準のため、数が一致しないことがあります）。
+        配置が未登録の期間は「—」と出ます。
+      </p>
 
       {/* グループ別累計バー */}
       <div>
@@ -86,9 +113,13 @@ export function GroupPane() {
                       {g.groupName}
                     </span>
                     <span className="text-2xs text-ink-muted tabular-nums">
-                      <b className="text-ink">{g.totalCount.toLocaleString()}</b> 件 ／{' '}
-                      <b className="text-violet-300">{g.totalMhHours.toFixed(1)}</b> 人時 ／ 平均{' '}
-                      <b className="text-cyan-300">{avgMin.toFixed(1)}</b> 分/件
+                      <b className="text-ink">{g.totalCount.toLocaleString()}</b> 件 ／ MH{' '}
+                      <b className="text-violet-300">{g.totalMhHours.toFixed(1)}</b> 人時 ／ MHT{' '}
+                      <b className="text-cyan-300">{g.mhtHours.toFixed(1)}</b> 人時 ／{' '}
+                      <b className="text-cyan-200">
+                        {g.perMht == null ? '—' : g.perMht.toFixed(1)}
+                      </b>{' '}
+                      件/MHT ／ 平均 <b className="text-ink-subtle">{avgMin.toFixed(1)}</b> 分/件
                     </span>
                   </div>
                   <div className="h-2 bg-surface-panel rounded overflow-hidden">

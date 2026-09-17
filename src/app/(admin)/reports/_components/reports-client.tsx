@@ -21,14 +21,24 @@ const TABS = [
   { id: 'group-mh', label: 'グループMH' },
   { id: 'product-abc', label: '商品ABC' },
   { id: 'heatmap', label: 'ヒートマップ' },
+  { id: 'insp-timeline', label: '検品タイムライン' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
+
+/** 検品タイムラインの期間基準（小原様 2026-09-17「画面で選べるように」）。 */
+const BASES = [
+  { id: 'ship', label: '出荷日' },
+  { id: 'start', label: '検品着手日' },
+] as const;
+
+type Basis = (typeof BASES)[number]['id'];
 
 export function ReportsClient() {
   const [from, setFrom] = useState(addDays(todayIso(), -30));
   const [to, setTo] = useState(todayIso());
   const [tab, setTab] = useState<TabId>('summary');
+  const [basis, setBasis] = useState<Basis>('ship');
 
   return (
     <div className="space-y-3">
@@ -56,14 +66,41 @@ export function ReportsClient() {
               className="!w-auto"
             />
           </div>
+          {tab === 'insp-timeline' && (
+            <div>
+              <label className="text-3xs text-ink-subtle uppercase tracking-wider block mb-1">
+                期間の基準
+              </label>
+              <select
+                value={basis}
+                onChange={(e) => setBasis(e.target.value as Basis)}
+                className="px-2 py-1.5 border border-surface-border-strong rounded text-xs bg-surface-base text-ink"
+              >
+                {BASES.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex-1" />
-          {tab !== 'heatmap' && (
+          {tab === 'insp-timeline' ? (
             <a
-              href={`/api/report/export?type=${tab}&from=${from}&to=${to}`}
+              href={`/api/report/insp-timeline/export?from=${from}&to=${to}&basis=${basis}`}
               className="px-3 py-1.5 border border-surface-border-strong rounded text-xs bg-surface-base text-ink hover:bg-surface-raised"
             >
               📥 CSV出力
             </a>
+          ) : (
+            tab !== 'heatmap' && (
+              <a
+                href={`/api/report/export?type=${tab}&from=${from}&to=${to}`}
+                className="px-3 py-1.5 border border-surface-border-strong rounded text-xs bg-surface-base text-ink hover:bg-surface-raised"
+              >
+                📥 CSV出力
+              </a>
+            )
           )}
         </div>
       </Panel>
@@ -92,6 +129,7 @@ export function ReportsClient() {
         {tab === 'group-mh' && <GroupMhTab from={from} to={to} />}
         {tab === 'product-abc' && <ProductAbcTab from={from} to={to} />}
         {tab === 'heatmap' && <HeatmapTab from={from} to={to} />}
+        {tab === 'insp-timeline' && <InspTimelineTab from={from} to={to} basis={basis} />}
       </div>
     </div>
   );
@@ -142,6 +180,10 @@ interface StaffRow {
   count: number;
   durationSec: number;
   mhHours: number;
+  /** MHT：テーブル配置時間（人時）。2026-09-17 追加 */
+  mhtHours: number;
+  perMh: number | null;
+  perMht: number | null;
   avgSec: number;
 }
 function StaffMhTab({ from, to }: { from: string; to: string }) {
@@ -156,10 +198,13 @@ function StaffMhTab({ from, to }: { from: string; to: string }) {
         <TH align="right">件数</TH>
         <TH align="right">作業時間(秒)</TH>
         <TH align="right">MH(h)</TH>
+        <TH align="right">件/MH</TH>
+        <TH align="right">MHT(h)</TH>
+        <TH align="right">件/MHT</TH>
         <TH align="right">平均秒/件</TH>
       </THead>
       <TBody>
-        {data.items.length === 0 && <EmptyRow colSpan={5} />}
+        {data.items.length === 0 && <EmptyRow colSpan={8} />}
         {data.items.map((r) => (
           <TR key={r.staffCode}>
             <TD className="text-ink-strong font-bold">{r.staffName}</TD>
@@ -171,6 +216,15 @@ function StaffMhTab({ from, to }: { from: string; to: string }) {
             </TD>
             <TD align="right" mono className="text-accent-amber font-bold">
               {r.mhHours}
+            </TD>
+            <TD align="right" mono className="text-ink-subtle">
+              {r.perMh == null ? '—' : r.perMh}
+            </TD>
+            <TD align="right" mono className="text-ink font-bold">
+              {r.mhtHours}
+            </TD>
+            <TD align="right" mono className="text-ink-subtle">
+              {r.perMht == null ? '—' : r.perMht}
             </TD>
             <TD align="right" mono>
               {r.avgSec}
@@ -188,6 +242,11 @@ interface GroupRow {
   hourly: { hour: number; count: number; mhHours: number }[];
   totalCount: number;
   totalMhHours: number;
+  /** MHT：そのグループへの配置時間（人時）。2026-09-17 追加 */
+  mhtHours: number;
+  /** 配置時間帯に完了した件数（件/MHT の分子） */
+  mhtCount: number;
+  perMht: number | null;
 }
 function GroupMhTab({ from, to }: { from: string; to: string }) {
   const { data, busy } = useReport<{ items: GroupRow[] }>(
@@ -220,12 +279,18 @@ function GroupMhTab({ from, to }: { from: string; to: string }) {
               <th className="px-2 py-1.5 text-right text-3xs uppercase text-ink-subtle">
                 MH
               </th>
+              <th className="px-2 py-1.5 text-right text-3xs uppercase text-ink-subtle">
+                MHT
+              </th>
+              <th className="px-2 py-1.5 text-right text-3xs uppercase text-ink-subtle">
+                件/MHT
+              </th>
             </tr>
           </thead>
           <tbody>
             {data.items.length === 0 && (
               <tr>
-                <td colSpan={allHours.length + 3} className="text-center py-6 text-ink-muted">
+                <td colSpan={allHours.length + 5} className="text-center py-6 text-ink-muted">
                   データがありません
                 </td>
               </tr>
@@ -253,12 +318,22 @@ function GroupMhTab({ from, to }: { from: string; to: string }) {
                     {g.totalCount}
                   </td>
                   <td className="px-2 py-1 text-right tabular-nums text-ink">{g.totalMhHours}</td>
+                  <td className="px-2 py-1 text-right tabular-nums text-ink">{g.mhtHours}</td>
+                  <td className="px-2 py-1 text-right tabular-nums text-ink-subtle">
+                    {g.perMht == null ? '—' : g.perMht}
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+      <p className="px-2 pb-2 text-3xs text-ink-muted leading-relaxed">
+        MH＝検品着手〜完了の合計／MHT＝メンバー割当ガントの配置時間の合計。
+        件/MHT は「配置されていた時間帯に完了した件数 ÷ 配置時間」で、グループは
+        その時刻のガントで判定します（左の「合計」は担当者マスタの所属グループ基準のため、
+        数が一致しないことがあります）。配置が未登録の期間は「—」になります。
+      </p>
     </Panel>
   );
 }
@@ -421,6 +496,107 @@ function HeatmapTab({ from, to }: { from: string; to: string }) {
             ))}
           </TBody>
         </Table>
+      </Panel>
+    </div>
+  );
+}
+
+interface TimelineData {
+  headers: string[];
+  rows: string[][];
+  total: number;
+  shown: number;
+  basis: string;
+  airpackKeyword: string;
+}
+
+/**
+ * 🧾 検品タイムライン（現場依頼・2026-09-17）
+ *
+ * 1伝票 = 1行。検品の着手／完了、担当者、商品点数、ステータス、のし、エアパックを
+ * CSV で一括抽出する。保留・キャンセル（削除済）も含め、絞り込みは受領後に現場側で行う。
+ *
+ * 画面は**先頭 100 行の下見**だけ（数十万行になりうるため）。本体は CSV ボタンから。
+ */
+function InspTimelineTab({
+  from,
+  to,
+  basis,
+}: {
+  from: string;
+  to: string;
+  basis: string;
+}) {
+  const { data, busy } = useReport<TimelineData>(
+    `/api/report/insp-timeline?from=${from}&to=${to}&basis=${basis}&limit=100`,
+  );
+  if (busy || !data) return <Loading />;
+
+  return (
+    <div className="space-y-2">
+      <Panel>
+        <div className="p-3 text-xs text-ink leading-relaxed space-y-1">
+          <div>
+            <b className="text-accent-amber">{data.total.toLocaleString()} 件</b> が対象です（
+            {basis === 'start' ? '検品着手日' : '出荷日'} が {from} 〜 {to}）。
+            未検品・保留・削除済（キャンセル）も含みます。
+          </div>
+          <div className="text-ink-subtle">
+            この画面は先頭 {data.shown} 行の下見です。全件は「📥 CSV出力」から取得してください。
+          </div>
+          {data.airpackKeyword === '' && (
+            <div className="text-status-warn">
+              ⚠ エアパックの判定語（マスタ管理 → 全体設定 → pack.airpack_keyword）が未設定のため、
+              エアパック欄は空欄になります。
+            </div>
+          )}
+        </div>
+      </Panel>
+
+      <Panel>
+        <div className="overflow-x-auto">
+          <table className="text-xs w-full">
+            <thead className="bg-surface-base border-b border-surface-border">
+              <tr>
+                {data.headers.map((h) => (
+                  <th
+                    key={h}
+                    className="px-2 py-1.5 text-left text-3xs uppercase text-ink-subtle whitespace-nowrap"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={data.headers.length}
+                    className="text-center py-6 text-ink-muted"
+                  >
+                    データがありません
+                  </td>
+                </tr>
+              )}
+              {data.rows.map((row) => (
+                <tr key={row[1]} className="border-t border-surface-border">
+                  {row.map((cell, i) => (
+                    <td
+                      key={data.headers[i]}
+                      className={cn(
+                        'px-2 py-1 whitespace-nowrap',
+                        i === 1 ? 'font-mono text-ink-strong' : 'text-ink',
+                      )}
+                    >
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Panel>
     </div>
   );
