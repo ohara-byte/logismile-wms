@@ -106,20 +106,86 @@ docker compose -f docker-compose.vps.yml exec -T db \
 
 ---
 
-## 日常の更新デプロイ（2 回目以降・2026-08-09 追加）
+## 日常の更新デプロイ（2 回目以降・2026-09-18 改訂＝自動化）
 
-初回構築後にコードを本番へ反映する手順。**`main` へマージしただけでは本番は変わらない。**
-CI（`.github/workflows/ci.yml`）は lint / typecheck / test / build を回すだけで、
-デプロイのステップを持たないため。
+### ★ 現在の運用：GitHub でマージすれば本番へ反映される
 
-さらに Next.js は**ビルド成果物**なので、`git pull` だけでも反映されない。
-**イメージの再ビルドが必須**。
+小原様ご依頼（2026-09-18）により、CraftSmile と同じく**マージ起点の自動デプロイ**にした。
+
+```
+作業ブランチ → PR → CI green → main へマージ
+                                   ↓
+                        main の CI が green になる
+                                   ↓
+        .github/workflows/deploy.yml が VPS へ SSH して
+        ./scripts/deploy-vps.sh --prune を実行
+```
+
+**VPS にログインしての手作業は不要。** 結果は GitHub の **Actions タブ →
+「Deploy to VPS」** で確認する（成功すると URL と「端末を再読込」の注意が要約に出る）。
+
+| 論点 | 決めたこと |
+|---|---|
+| いつ動くか | **`main` の CI が成功したとき**（`workflow_run`）。CI が赤いときは本番を焼き直さない |
+| 何をするか | VPS 上で `./scripts/deploy-vps.sh --prune`（＝従来の手順そのもの） |
+| 手動実行 | Actions → Deploy to VPS → Run workflow |
+| 失敗したら | **本番は直前の状態のまま**。スクリプトが戻し方を表示する |
+| 同時実行 | `concurrency` で1本に直列化 |
+
+必要な GitHub Secrets（Settings → Secrets and variables → Actions）:
+
+| 名前 | 値 | 必須 |
+|---|---|---|
+| `VPS_HOST` | `85.131.250.41` | ✓ |
+| `VPS_USER` | `deploy` | ✓ |
+| `VPS_SSH_KEY` | `deploy` ユーザーの**秘密鍵**（`-----BEGIN` から末尾まで全文） | ✓ |
+| `VPS_PORT` | 既定 `22` | |
+| `VPS_DEPLOY_PATH` | 既定 `/var/www/logismile` | |
+
+**★ 秘密鍵は GitHub Secrets にのみ置く。** リポジトリ・Issue・PR・チャットに貼らない。
+GitHub Actions 用に専用の鍵を作り、`deploy` ユーザーの `~/.ssh/authorized_keys` に
+追加する運用が安全（漏れたときにその鍵だけ外せる）。
+
+```bash
+# 管理PCで（Actions 専用鍵を作る）
+ssh-keygen -t ed25519 -C "logismile-actions-deploy" -f ~/.ssh/logismile_actions -N ''
+# 公開鍵を VPS の deploy ユーザーへ追加
+ssh-copy-id -i ~/.ssh/logismile_actions.pub deploy@85.131.250.41
+# 秘密鍵の中身を GitHub Secrets の VPS_SSH_KEY に貼る（画面には表示されない）
+cat ~/.ssh/logismile_actions
+```
+
+### 手動で実行する場合（従来手順・切り戻しや緊急時）
+
+自動デプロイが使えないとき（Secrets 未設定・GitHub 障害・切り戻し）は従来どおり。
 
 ```bash
 ssh deploy@85.131.250.41
 cd /var/www/logismile
 ./scripts/deploy-vps.sh
 ```
+
+なお Next.js は**ビルド成果物**なので、`git pull` だけでは反映されない。
+**イメージの再ビルドが必須**（スクリプトがその付け忘れを防いでいる）。
+
+### ★ 本番に入っているかを確かめる
+
+「マージしたのに反映されていない気がする」ときの確認手順。
+
+```bash
+ssh deploy@85.131.250.41
+cd /var/www/logismile
+git log --oneline -1                                   # ① 配置先のコミット
+docker compose -f docker-compose.vps.yml ps            # ② コンテナの起動時刻
+docker compose -f docker-compose.vps.yml images        # ③ 動いているイメージ
+```
+
+- ① が GitHub の `main` の先頭と**同じなら pull は済んでいる**
+- ②の起動時刻が**マージより前**なら、pull しただけで**再ビルドしていない**
+  （＝画面は古いまま）。`./scripts/deploy-vps.sh` を実行する
+
+ブラウザだけで見るなら、**その版で増えた画面があるか**を見るのが早い
+（例：レポート画面に「検品タイムライン」タブがあれば 2026-09-17 の版が入っている）。
 
 スクリプトが以下を通しで実行する:
 
