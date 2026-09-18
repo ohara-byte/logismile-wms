@@ -1,0 +1,103 @@
+# =============================================================
+# LogiSmile WMS — 本番 自動デプロイ（2026-09-18・小原様ご依頼）
+#
+#   > 今後は CraftSmile と同じ方法で PR を出してもらって
+#   > GitHub でマージし本番反映に変更してもらえますか
+#
+# これまでは `main` マージ後に VPS で `./scripts/deploy-vps.sh` を
+# **手で**実行する運用だった。実行を忘れると「マージしたのに本番が古い」
+# 状態になる（2026-09-18 に実際に発生）。本ワークフローでその手順を自動化する。
+#
+# ★ CI（ci.yml）が green になってから動く（workflow_run）。
+#   push で直接走らせると、lint/test が落ちたコードでも本番を焼き直してしまう。
+#
+# ★ VPS 側の実処理は **リポジトリの scripts/deploy-vps.sh をそのまま呼ぶ**。
+#   手順をここに書き写すと二重管理になり、片方だけ直して食い違う。
+#   なお VPS 上のスクリプトは pull される前の版が動くため、
+#   スクリプト自体への変更が効くのは次回のデプロイから。
+#
+# 必要な GitHub Secrets（Settings → Secrets and variables → Actions）:
+#   VPS_HOST         例: 85.131.250.41
+#   VPS_USER         例: deploy
+#   VPS_SSH_KEY      deploy ユーザーの**秘密鍵**（-----BEGIN ... 全文）
+#   VPS_PORT         （任意）既定 22
+#   VPS_DEPLOY_PATH  （任意）既定 /var/www/logismile
+# =============================================================
+name: Deploy to VPS
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+  # 手動でも流せるようにする（CI をやり直したくないとき・切り戻し後など）
+  workflow_dispatch: {}
+
+# 同時に2本走らせない。後から来たものを優先し、走行中の古いものは止める。
+concurrency:
+  group: logismile-vps-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # workflow_run は CI が失敗しても届くので、成功時だけ通す。
+    # workflow_dispatch（手動）には conclusion が無いのでそのまま通す。
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      # 秘密が未登録のまま動くと ssh-action が分かりにくいエラーで落ちるため、
+      # 何が足りないかを先に名指しで示す。
+      - name: 必要な Secrets の確認
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          missing=''
+          [ -n "$VPS_HOST" ]    || missing="${missing} VPS_HOST"
+          [ -n "$VPS_USER" ]    || missing="${missing} VPS_USER"
+          [ -n "$VPS_SSH_KEY" ] || missing="${missing} VPS_SSH_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::GitHub Secrets が未登録です:${missing}"
+            echo "::error::Settings → Secrets and variables → Actions で登録してください。"
+            exit 1
+          fi
+          echo "OK"
+
+      - name: SSH でデプロイ
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          # 途中のコマンドが失敗したらそこで止める
+          script_stop: true
+          # 再ビルドに数分かかる（既定の 10 分では足りないことがある）
+          command_timeout: 25m
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.VPS_DEPLOY_PATH || '/var/www/logismile' }}"
+            # --prune: 宙ぶらりんイメージの掃除。毎回ビルドするとディスクを食うため。
+            #   使用中のイメージには触れない。
+            ./scripts/deploy-vps.sh --prune
+
+      - name: 結果
+        if: always()
+        run: |
+          if [ '${{ job.status }}' = 'success' ]; then
+            echo "### ✅ 本番へ反映しました" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "https://logismile.oenosato.net" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "★ タブレット / ハンディは画面を再読込してください（古い JavaScript がキャッシュに残るため）" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### ❌ デプロイに失敗しました" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "上のログを確認してください。**本番は直前の状態のまま**です" >> "$GITHUB_STEP_SUMMARY"
+            echo "（deploy-vps.sh は疎通確認に失敗すると戻し方を表示します）。" >> "$GITHUB_STEP_SUMMARY"
+          fi

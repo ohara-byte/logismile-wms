@@ -342,15 +342,24 @@ Phase 6-10 は実装スキップ。
 - **docs/integration/WMS回答_連携修正依頼_2026-06-01.md**：CraftSmile 連携契約の合意内容
 - **docs/migration/E-vps-deploy.md**：VPS 本番デプロイ（初回構築 + 日常の更新手順）
 
-### ★ 本番反映のフロー（2026-08-09 確定）
+### ★ 本番反映のフロー（2026-09-18 改訂・自動デプロイ）
 
 1. 作業ブランチにコミット → push → **GitHub で PR を作成**（CI が lint/typecheck/test/build を実行）
 2. 小原様が内容を確認して `main` へマージ
-3. 小原様が VPS で `./scripts/deploy-vps.sh` を実行
+3. **`main` の CI が green になると `.github/workflows/deploy.yml` が自動でデプロイする**
+   （VPS へ SSH → `./scripts/deploy-vps.sh --prune` を実行）
 
-**★ `main` へのマージだけでは本番は変わらない。** CI にデプロイのステップは無く、
-Next.js はビルド成果物のため `git pull` だけでも反映されない（要イメージ再ビルド）。
-手順 3 が必須。詳細は `docs/migration/E-vps-deploy.md`「日常の更新デプロイ」。
+**VPS での手作業は不要になった。** Actions タブの「Deploy to VPS」で結果を確認する。
+反映後、**タブレット / ハンディは画面を再読込**すること（古い JavaScript がキャッシュに残る）。
+
+- 自動デプロイは **CI 成功が前提**（`workflow_run`）。CI が赤いときは本番を焼き直さない
+- 手動で流したいときは Actions → Deploy to VPS → Run workflow
+- 失敗しても**本番は直前の状態のまま**（`deploy-vps.sh` が疎通確認に失敗すると戻し方を表示）
+- 必要な Secrets：`VPS_HOST` / `VPS_USER` / `VPS_SSH_KEY`（＋任意で `VPS_PORT` / `VPS_DEPLOY_PATH`）
+
+★ 2026-08-09〜2026-09-18 は手動運用だった（マージ後に VPS で `./scripts/deploy-vps.sh`）。
+実行を忘れて「マージしたのに本番が古い」状態が起きたため自動化した。
+詳細は `docs/migration/E-vps-deploy.md`「日常の更新デプロイ」。
 
 ### ★ CraftSmile（製造管理システム）との判断規則
 
