@@ -4,6 +4,7 @@ import { getEmployeeSession } from '@/lib/auth/employee-session';
 import { LogiSmileLogo } from '@/components/brand/logismile-logo';
 import { LogoutButton } from '@/components/employee-logout-button';
 import { PickingNoScanForm } from './_components/picking-no-scan-form';
+import { FieldProgressBar } from '@/components/field/field-progress';
 
 export default async function HandyHome() {
   const session = await getEmployeeSession();
@@ -20,6 +21,14 @@ export default async function HandyHome() {
         )}
         <LogoutButton variant="handy" />
       </header>
+
+      {/* ★ 本日の進捗カード（要望書 2026-09-27 要望②）。
+          ヘッダー直下に1枚追加するだけで、既存の要素（F2/F3ヒント・
+          スキャン速度・発送日別受入検品）は触らない。
+          ハンディは画面が小さいので文字を一回り大きくする（variant='handy'）。 */}
+      <div className="px-2 pt-2">
+        <FieldProgressBar variant="handy" />
+      </div>
 
       {/* idle スキャン待機 */}
       <div className="flex-1 flex flex-col items-center justify-center p-4">

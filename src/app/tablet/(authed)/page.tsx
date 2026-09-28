@@ -4,6 +4,7 @@ import { getEmployeeSession } from '@/lib/auth/employee-session';
 import { LogiSmileLogo } from '@/components/brand/logismile-logo';
 import { LogoutButton } from '@/components/employee-logout-button';
 import { PickingNoScanForm } from './_components/picking-no-scan-form';
+import { FieldProgressBar } from '@/components/field/field-progress';
 
 export default async function TabletHome() {
   const session = await getEmployeeSession();
@@ -26,6 +27,12 @@ export default async function TabletHome() {
         )}
         <LogoutButton variant="tablet" />
       </header>
+
+      {/* ★ 常時表示バー（要望書 2026-09-27 要望①）。
+          待受け画面の最上部だけに出す。検品作業中の画面には出さない。 */}
+      <div className="px-3 pt-3">
+        <FieldProgressBar variant="tablet" />
+      </div>
 
       {/* idle スキャン待機（モック L1158-1166 .idle-screen 準拠 — relative で右上 QR ボタン基準） */}
       <div className="flex-1 flex flex-col items-center justify-center p-8 relative">

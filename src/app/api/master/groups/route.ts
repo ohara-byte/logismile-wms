@@ -19,6 +19,11 @@ const Body = z.object({
   needStaff: z.number().int().min(0).default(1),
   // Sprint Y-10: ダッシュボード表示順（小さい順）
   sortOrder: z.number().int().min(0).default(100),
+  // 作業ペースの目標値（要望書 2026-09-27 要望③）。
+  //   コードに固定せずマスタで持つ（現場が人員構成・繁忙期に応じて調整する）。
+  //   空欄なら判定しない＝バッジを出さない。
+  paceYellowMin: z.number().int().min(0).max(9999).nullable().optional(),
+  paceGreenMin: z.number().int().min(0).max(9999).nullable().optional(),
   note: z.string().nullable().optional(),
 });
 
