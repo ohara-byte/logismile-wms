@@ -625,6 +625,105 @@ Server-Sent Events（SSE）
 ### `GET /api/report/export?format=csv|pdf`
 レポートのCSV/PDF出力
 
+### ★ `GET /api/field/progress`（2026-09-28 新規）
+
+**現場端末（タブレット・ハンディ）向けの進捗**（要望書 2026-09-27 要望①②③）。
+
+認証は**社員番号ログイン**。担当者・端末はセッションから取り、クエリでは受け取らない
+（他人の件数を覗ける口にしない）。
+
+**レスポンス**
+
+| 項目 | 内容 |
+|---|---|
+| `overall` | 当日の `total` / `done` / `remaining` / `rate`(0-100) |
+| `groups[]` | グループ別の `plan` / `done` / `remaining` / `rate` と **配送業者別 残件**（残0の業者は載せない） |
+| `me` | 自分の `groupId`（直近スキャンから動的判定）・`count`（**伝票枚数**）・`workedMin`（配置時間）・`perHour`・`badge` |
+
+- 「自分のテーブル」は**全端末とも動的判定**（その日最後に検品した伝票の2文字目）。
+  今日まだ読んでいなければ `Device.location` で補い、それも無ければ null
+- 作業ペースの分母は**メンバー割当ガントの配置時間**（休憩は配置の隙間）。
+  配置が未登録なら `perHour: null`（「0 件/時」と区別する）
+- 目標値は `InspectionGroup.paceYellowMin` / `paceGreenMin`。未設定ならバッジを出さない
+
+### ★ `GET /api/carriers/table-matrix?date=YYYY-MM-DD`（2026-09-28 新規）
+
+**テーブルグループ × 配送業者 の残件数マトリクス**（要望書 要望④）。
+
+- 残件＝まだ梱包が終わっていない伝票（`packed` / `shipped` 以外）
+- 合計行は運送タブのカードと一致する（同じ定義を使うため）
+- **伝票単位の一覧は返さない**（要望書：サマリのみで充分）
+- グループは残0でも行を残す（「終わった」ことが分かるように）
+
+### ★ `POST /api/integration/factory/delivery/correction`（2026-09-28 新規）
+
+**工場納品の訂正**（数量修正・取り戻し）。CraftSmile の「納品済み修正」から呼ばれる。
+
+元の `POST /api/integration/factory/delivery` は `qty` が **1 以上の正の数**しか
+受け取れず、減らす口が無かった。訂正はこの口を使う。
+
+**認証・モード**：元の納品と同じ（HMAC `X-Factory-*` ／ `Idempotency-Key` ／
+`FACTORY_INTEGRATION_MODE=factory_api` のみ有効）。
+
+**リクエスト**
+
+```json
+{
+  "correctionNo": "C-20260928-0001",
+  "originalDeliveryNo": "D20260928-0001",
+  "correctedAt": "2026-09-28T10:00:00.000Z",
+  "reason": "return",
+  "items": [{ "productCode": "5760-1", "qtyDelta": -5, "note": "取り戻し" }],
+  "remarks": null
+}
+```
+
+| 項目 | 内容 |
+|---|---|
+| `correctionNo` | 訂正の一意キー。在庫増減ログの `refId` になる |
+| `originalDeliveryNo` | 訂正対象の元の納品No（追跡用。WMS 側で存在チェックはしない） |
+| `reason` | `qty_fix`（数量修正）／ `return`（取り戻し）。**計算は変えず表示にのみ使う** |
+| `qtyDelta` | 増減。**＋は加算・−は減算**。0 は 422 |
+
+**在庫の扱い（小原様確定 2026-09-28）**
+
+- **0 未満にしない。** 引ける分だけ引き、引ききれなかった数は `shortfall` で返す
+- 引当済み（`allocatedQty`）は見ない（2026-07-01 に撤去されたガードと同じ方針）
+- 増減は必ず `StockMovement`（`type='factory_correction'` /
+  `refType='factory_delivery_correction'`）に残る
+- 在庫が**増えた**商品のみ、元の納品と同じ条件（`AUTO_INSPECT_OK`）で再引当する
+
+**レスポンス**
+
+```json
+{
+  "data": {
+    "correctionNo": "C-20260928-0001",
+    "originalDeliveryNo": "D20260928-0001",
+    "reason": "return",
+    "appliedAt": "2026-09-28T10:00:01.000Z",
+    "results": [
+      {
+        "productCode": "5760-1",
+        "requestedDelta": -5,
+        "appliedDelta": -3,
+        "shortfall": 2,
+        "stockQtyAfter": 0,
+        "allocated": 0,
+        "shortage": 0
+      }
+    ]
+  },
+  "message": "OK",
+  "error": null
+}
+```
+
+★ `appliedDelta` が `requestedDelta` と違うときは**在庫が足りず一部しか引けていない**。
+CraftSmile 側はこの値で納品済み数を訂正すること（要求値で訂正すると両者がずれる）。
+
+連携契約は `src/lib/__tests__/factory-contract.test.ts` で固定している。
+
 ### ★ `GET /api/report/insp-timeline`（2026-09-17 新規）
 **検品タイムライン**の画面プレビュー（現場依頼）。
 

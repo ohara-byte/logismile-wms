@@ -24,6 +24,7 @@ import { fetchLiveShipPlan } from '../integration/factory-ship-plan-pull';
 import { verifyFactoryRequest } from '../integration/factory-auth';
 import { parseQrPrintFlag } from '../integration/mapping';
 import { parseFactoryLabelQr, FACTORY_LABEL_QR_VERSION } from '../receiving-scan';
+import { applicableDelta, parseCorrectionReason } from '../integration/delivery-correction';
 
 /** テスト用シークレット（16 文字以上でないと factory-mode が null を返す） */
 const SECRET = 'test-shared-secret-32bytes-longer';
@@ -479,4 +480,64 @@ test('契約: ラベルQR でない値は null（従来の JAN／商品コード
   // 基幹の商品バーコードは今までどおり JAN／商品コードとして扱われる必要がある
   expect(parseFactoryLabelQr('2800022130529')).toBeNull();
   expect(parseFactoryLabelQr('5203-1')).toBeNull();
+});
+
+// ───────────────────────────────────────────────────────────
+// 納品訂正（数量修正・取り戻し）— 小原様ご依頼 2026-09-28
+//
+// 元の納品 API は qty が 1 以上の正の数しか受け取れず、減らす口が無かった。
+// 訂正用の口を追加したので、**CraftSmile が送る形**をここで固定する。
+// 送信側（CraftSmile src/lib/wms/real-client.ts sendDeliveryCorrection）と
+// 受信側（WMS app/api/integration/factory/delivery/correction）の両方が
+// これに従う。片方だけ直したらこのテストが落ちる。
+// ───────────────────────────────────────────────────────────
+
+/** CraftSmile が訂正で送る payload（oracle：相手実装と同じキー名で再現） */
+function craftsmileCorrectionBody(): string {
+  return JSON.stringify({
+    correctionNo: 'C-20260928-0001',
+    originalDeliveryNo: 'D20260928-0001',
+    correctedAt: '2026-09-28T10:00:00.000Z',
+    reason: 'return',
+    items: [{ productCode: '5760-1', qtyDelta: -5, note: '取り戻し' }],
+    remarks: null,
+  });
+}
+
+test('契約: 納品訂正の payload キー名（片方だけ変えたら落ちる）', () => {
+  const body = JSON.parse(craftsmileCorrectionBody());
+
+  expect(Object.keys(body).sort()).toEqual(
+    ['correctedAt', 'correctionNo', 'items', 'originalDeliveryNo', 'reason', 'remarks'].sort(),
+  );
+  expect(Object.keys(body.items[0]).sort()).toEqual(['note', 'productCode', 'qtyDelta'].sort());
+});
+
+test('契約: 訂正の区分は qty_fix / return の2つ', () => {
+  // 「数量修正」と「取り戻し」。計算は同じで、ログと画面の表示だけが変わる
+  expect(parseCorrectionReason('qty_fix')).toBe('qty_fix');
+  expect(parseCorrectionReason('return')).toBe('return');
+});
+
+test('契約: ★ qtyDelta は負値を取れる（この API の存在意義）', () => {
+  const body = JSON.parse(craftsmileCorrectionBody());
+  expect(body.items[0].qtyDelta).toBeLessThan(0);
+  // 元の納品 API は qty: z.number().int().min(1) で負値を受け取れない。
+  // 訂正はこちらの口を使う。
+});
+
+test('契約: 訂正リクエストも X-Factory-* で署名され WMS が受理する', () => {
+  vi.stubEnv('FACTORY_INBOUND_HMAC_SECRET', SECRET);
+  const body = craftsmileCorrectionBody();
+  const ts = Math.floor(Date.now() / 1000);
+
+  const result = verifyFactoryRequest(craftsmileDeliveryRequest(body, ts), body);
+
+  expect(result.ok).toBe(true);
+});
+
+test('契約: 在庫は 0 未満にしない（引ける分だけ引き、残りを返す）', () => {
+  // 小原様確定 2026-09-28。倉庫の実在庫がマイナスになることは有り得ない。
+  expect(applicableDelta(3, -5)).toEqual({ applied: -3, shortfall: 2 });
+  expect(applicableDelta(10, -5)).toEqual({ applied: -5, shortfall: 0 });
 });

@@ -42,6 +42,9 @@ interface ApiResp {
 export function CarrPane() {
   const [data, setData] = useState<ApiResp | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // ★ 要望書 2026-09-27 要望④：テーブルグループ×配送業者の残件マトリクス。
+  //   既存のカードは一切変えず、ヘッダー行にリンクを1つ足して別画面で出す。
+  const [matrixOpen, setMatrixOpen] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -72,10 +75,27 @@ export function CarrPane() {
 
   return (
     <div className="p-3">
-      <div className="text-2xs text-ink-subtle mb-2">
-        本日出荷 <b className="text-accent-amber tabular-nums">{data.totalShipments.toLocaleString()}</b>
-        件 ／ 運送会社別 残件数と集荷時刻
+      <div className="flex items-center gap-2 mb-2">
+        <div className="text-2xs text-ink-subtle">
+          本日出荷{' '}
+          <b className="text-accent-amber tabular-nums">
+            {data.totalShipments.toLocaleString()}
+          </b>
+          件 ／ 運送会社別 残件数と集荷時刻
+        </div>
+        <div className="flex-1" />
+        {/* ★ 要望書 要望④：集荷が迫ったとき「どのテーブルに何件残っているか」を
+            PC画面ひとつで見るための入口。カード側は現行のまま。 */}
+        <button
+          type="button"
+          onClick={() => setMatrixOpen(true)}
+          className="shrink-0 px-3 py-1.5 text-2xs rounded bg-sky-700 text-white hover:bg-sky-600"
+        >
+          📍 テーブルごとの残り件数を見る ›
+        </button>
       </div>
+
+      {matrixOpen && <TableCarrierMatrix onClose={() => setMatrixOpen(false)} />}
 
       {error && (
         <div className="mb-2 p-2 text-2xs bg-status-error-bg text-status-error border border-status-error rounded">
@@ -232,4 +252,147 @@ function carrierVisual(c: CarrierStat['carrier']): { icon: string; color: string
 
 function pad(n: number): string {
   return String(n).padStart(2, '0');
+}
+
+/**
+ * テーブルグループ × 配送業者 の残件数マトリクス（要望書 2026-09-27 要望④）。
+ *
+ * ★ 新規のトップレベルタブにはしない。運送タブ内の別画面として重ねる。
+ * ★ 伝票単位の一覧は出さない（未検品伝票の確認は伝票一覧で足りる）。
+ * ★ 最下段の合計は運送タブのカードと一致する（同じ「残件」の定義を使うため）。
+ */
+interface MatrixResp {
+  date: string;
+  carriers: { code: string; name: string; short: string | null; cool: boolean }[];
+  rows: { groupId: string; groupName: string; total: number; byCarrier: Record<string, number> }[];
+  total: { total: number; byCarrier: Record<string, number> };
+}
+
+function TableCarrierMatrix({ onClose }: { onClose: () => void }) {
+  const [data, setData] = useState<MatrixResp | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const r = await fetch('/api/carriers/table-matrix');
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      setData(j.data);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    reload();
+    // 集荷が迫った局面で見る画面なので、運送タブと同じ 5 秒で追従させる
+    const id = setInterval(reload, 5000);
+    return () => clearInterval(id);
+  }, [reload]);
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-auto bg-surface-base/95 p-4">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-3 flex items-center gap-3">
+          <h2 className="text-sm font-bold text-ink-strong">
+            📍 テーブルグループ × 配送業者 残件数
+          </h2>
+          {data && <span className="text-2xs tabular-nums text-ink-muted">{data.date}</span>}
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded border border-surface-border bg-surface-panel px-3 py-1.5 text-xs text-ink hover:bg-surface-raised"
+          >
+            閉じる
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-2 rounded border border-status-error bg-status-error-bg p-2 text-2xs text-status-error">
+            {error}
+          </div>
+        )}
+
+        {!data ? (
+          <div className="py-8 text-center text-2xs text-ink-muted">読み込み中…</div>
+        ) : (
+          <div className="overflow-x-auto rounded border border-surface-border">
+            <table className="w-full text-2xs">
+              <thead className="border-b border-surface-border bg-surface-base">
+                <tr>
+                  <th className="px-2 py-1.5 text-left text-3xs uppercase text-ink-subtle">
+                    テーブルグループ
+                  </th>
+                  <th className="px-2 py-1.5 text-right text-3xs uppercase text-ink-subtle">
+                    残計
+                  </th>
+                  {data.carriers.map((c) => (
+                    <th
+                      key={c.code}
+                      className="px-2 py-1.5 text-right text-3xs uppercase text-ink-subtle whitespace-nowrap"
+                    >
+                      {c.short ?? c.name}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.map((r) => (
+                  <tr key={r.groupId} className="border-t border-surface-border">
+                    <td className="px-2 py-1 font-bold text-ink-strong">{r.groupName}</td>
+                    <td
+                      className={`px-2 py-1 text-right font-bold tabular-nums ${
+                        r.total > 0 ? 'text-accent-amber' : 'text-ink-muted'
+                      }`}
+                    >
+                      {r.total || '–'}
+                    </td>
+                    {data.carriers.map((c) => {
+                      const v = r.byCarrier[c.code] ?? 0;
+                      return (
+                        <td
+                          key={c.code}
+                          className={`px-2 py-1 text-right tabular-nums ${
+                            v > 0 ? 'text-ink' : 'text-ink-muted'
+                          }`}
+                        >
+                          {v || '–'}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-surface-border bg-surface-panel">
+                  <td className="px-2 py-1.5 font-bold text-ink-strong">全体 合計</td>
+                  <td className="px-2 py-1.5 text-right font-bold tabular-nums text-accent-amber">
+                    {data.total.total}
+                  </td>
+                  {data.carriers.map((c) => {
+                    const v = data.total.byCarrier[c.code] ?? 0;
+                    return (
+                      <td
+                        key={c.code}
+                        className={`px-2 py-1.5 text-right font-bold tabular-nums ${
+                          v > 0 ? 'text-accent-amber' : 'text-ink-muted'
+                        }`}
+                      >
+                        {v || 0}
+                      </td>
+                    );
+                  })}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p className="mt-2 text-3xs text-ink-muted">
+          残件＝まだ梱包が終わっていない伝票。合計は運送タブのカードと一致します。
+          伝票ごとの内訳は伝票一覧でご確認ください。
+        </p>
+      </div>
+    </div>
+  );
 }

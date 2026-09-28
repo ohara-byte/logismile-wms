@@ -3,7 +3,7 @@
 // 全27テーブル：マスタ16 + トランザクション9 + システム2
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   // 2026-06-06: 本番 VPS（Linux / node:20-bookworm-slim = Debian 12 / OpenSSL 3.x）用の
   //   クエリエンジンも生成する。これが無いと Linux コンテナ起動時に
   //   「Query engine library for current platform could not be found」で落ちる。
@@ -22,36 +22,36 @@ datasource db {
 
 /// 1. 構成商品マスタ
 model Product {
-  code      String   @id @db.VarChar(20)
-  jan       String?  @db.VarChar(13)
-  name      String   @db.VarChar(100)
-  cat       String   @db.VarChar(20)
-  pkg       String   @default("箱") @db.VarChar(20)
-  price     Int      @default(0)
-  leadDays  Int      @default(0) @map("lead_days")
-  stdSec    Int      @default(0) @map("std_sec")
-  frozen    Boolean  @default(false)
-  special   Boolean  @default(false)
-  noshi     Boolean  @default(false)
-  active    Boolean  @default(true)
-  note      String?  @db.Text
+  code                String   @id @db.VarChar(20)
+  jan                 String?  @db.VarChar(13)
+  name                String   @db.VarChar(100)
+  cat                 String   @db.VarChar(20)
+  pkg                 String   @default("箱") @db.VarChar(20)
+  price               Int      @default(0)
+  leadDays            Int      @default(0) @map("lead_days")
+  stdSec              Int      @default(0) @map("std_sec")
+  frozen              Boolean  @default(false)
+  special             Boolean  @default(false)
+  noshi               Boolean  @default(false)
+  active              Boolean  @default(true)
+  note                String?  @db.Text
   /// Sprint Z-1: 商品種別（'pass_through' = 通過型 / 'warehouse' = 倉庫在庫 / 'made_to_order' = 受注生産）
   /// Sprint Y-13: 大江ノ郷の基本運用が通過型のため既定を pass_through に変更
-  productType  String   @default("pass_through") @map("product_type") @db.VarChar(20)
+  productType         String   @default("pass_through") @map("product_type") @db.VarChar(20)
   /// 安全在庫（reorderPoint と組み合わせて補充タイミング判定）
-  safetyStock  Int      @default(0) @map("safety_stock")
-  reorderPoint Int?     @map("reorder_point")
+  safetyStock         Int      @default(0) @map("safety_stock")
+  reorderPoint        Int?     @map("reorder_point")
   /// 発送可能賞味期限（日数）。工場(/delivery)からの shippableExpiryDays を保存。
   /// 在庫検品の完了後バナーで「入庫日 + 日数 - 1」の発送可能日を算出（A・2026-06-12）。
-  shippableExpiryDays Int? @map("shippable_expiry_days")
+  shippableExpiryDays Int?     @map("shippable_expiry_days")
   /// カタログ商品番号（例 700-01）。構成商品サイズ一覧との突合キー（JAN軸ファイルで紐付け・2026-06-22）
-  catalogNo String? @map("catalog_no") @db.VarChar(30)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  catalogNo           String?  @map("catalog_no") @db.VarChar(30)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  auxAttr            ProductAuxAttr?
-  shippingOrderItems ShippingOrderItem[]
-  stock              Stock?
+  auxAttr                   ProductAuxAttr?
+  shippingOrderItems        ShippingOrderItem[]
+  stock                     Stock?
   manufacturingInstructions ManufacturingInstruction[]
 
   @@index([jan])
@@ -80,23 +80,23 @@ model Stock {
 /// 1-B. 在庫増減ログ（Sprint Z-1）
 ///   type: 'inbound' / 'outbound' / 'adjust' / 'inspection_count' / 'production_complete'
 model StockMovement {
-  id          Int      @id @default(autoincrement())
-  productCode String   @map("product_code") @db.VarChar(20)
-  type        String   @db.VarChar(20)
-  qtyDelta    Int      @map("qty_delta")
+  id           Int       @id @default(autoincrement())
+  productCode  String    @map("product_code") @db.VarChar(20)
+  type         String    @db.VarChar(20)
+  qtyDelta     Int       @map("qty_delta")
   /// 関連エンティティ種別（'order' / 'instruction' / 'session' / null）
-  refType     String?  @map("ref_type") @db.VarChar(20)
-  refId       String?  @map("ref_id") @db.VarChar(40)
-  note        String?  @db.Text
-  createdBy   String?  @map("created_by") @db.VarChar(10)
+  refType      String?   @map("ref_type") @db.VarChar(20)
+  refId        String?   @map("ref_id") @db.VarChar(40)
+  note         String?   @db.Text
+  createdBy    String?   @map("created_by") @db.VarChar(10)
   /// 発送日（出荷日）。工場納品(inbound)で CraftSmile が商品ごとに紐づけた発送予定日を保持し、
   ///   在庫を「発送日」で色分け表示する（③ Phase 1・2026-07-01）。null=未指定（従来分）。
-  shipDate    DateTime? @map("ship_date") @db.Date
+  shipDate     DateTime? @map("ship_date") @db.Date
   /// 検品実数（発送日別 受入検品・Phase 5・2026-07-02）。inspection_count で「その発送日ぶんを
   ///   何個検品したか」の実数を保持。qtyDelta は在庫調整量、inspectedQty は検品照合グリッド④⑧の
   ///   集計元。発送日別受入検品では qtyDelta=0（在庫プールは触らずサイレント）。null=旧経路/対象外。
-  inspectedQty Int?    @map("inspected_qty")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  inspectedQty Int?      @map("inspected_qty")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   stock Stock @relation(fields: [productCode], references: [productCode], onDelete: Cascade)
 
@@ -110,16 +110,16 @@ model StockMovement {
 ///   status: 'reserved'（引当済・未出荷）/ 'fulfilled'（出荷完了）/ 'released'（取消）
 ///   source: 'warehouse' / 'pass_through' / 'made_to_order'
 model Allocation {
-  id           Int      @id @default(autoincrement())
-  orderId      String   @map("order_id") @db.Uuid
-  pkNo         String   @map("pk_no") @db.VarChar(30)
-  productCode  String   @map("product_code") @db.VarChar(20)
-  qty          Int
-  status       String   @default("reserved") @db.VarChar(20)
-  source       String   @default("warehouse") @db.VarChar(20)
-  allocatedAt  DateTime @default(now()) @map("allocated_at") @db.Timestamptz
-  fulfilledAt  DateTime? @map("fulfilled_at") @db.Timestamptz
-  sessionId    String?  @map("session_id") @db.Uuid
+  id          Int       @id @default(autoincrement())
+  orderId     String    @map("order_id") @db.Uuid
+  pkNo        String    @map("pk_no") @db.VarChar(30)
+  productCode String    @map("product_code") @db.VarChar(20)
+  qty         Int
+  status      String    @default("reserved") @db.VarChar(20)
+  source      String    @default("warehouse") @db.VarChar(20)
+  allocatedAt DateTime  @default(now()) @map("allocated_at") @db.Timestamptz
+  fulfilledAt DateTime? @map("fulfilled_at") @db.Timestamptz
+  sessionId   String?   @map("session_id") @db.Uuid
 
   order ShippingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   stock Stock         @relation(fields: [productCode], references: [productCode])
@@ -134,22 +134,22 @@ model Allocation {
 ///   status: 'draft'（自動下書き）/ 'pending'（送信待ち）/ 'sent'（工場送信済）/
 ///           'producing'（生産中）/ 'completed'（完成）/ 'cancelled'（取消）
 model ManufacturingInstruction {
-  id            Int      @id @default(autoincrement())
-  instructionNo String   @unique @map("instruction_no") @db.VarChar(30)
-  productCode   String   @map("product_code") @db.VarChar(20)
+  id            Int       @id @default(autoincrement())
+  instructionNo String    @unique @map("instruction_no") @db.VarChar(30)
+  productCode   String    @map("product_code") @db.VarChar(20)
   qty           Int
-  shortageQty   Int      @default(0) @map("shortage_qty")
-  status        String   @default("draft") @db.VarChar(20)
+  shortageQty   Int       @default(0) @map("shortage_qty")
+  status        String    @default("draft") @db.VarChar(20)
   /// Sprint Z-4: 承認フラグ。true で「更新」ボタン押下時に一括で工場送信
-  approved      Boolean  @default(false) @map("approved")
-  targetDate    DateTime @map("target_date") @db.Date
-  requestedBy   String?  @map("requested_by") @db.VarChar(10)
-  factoryRef    String?  @map("factory_ref") @db.VarChar(60)
+  approved      Boolean   @default(false) @map("approved")
+  targetDate    DateTime  @map("target_date") @db.Date
+  requestedBy   String?   @map("requested_by") @db.VarChar(10)
+  factoryRef    String?   @map("factory_ref") @db.VarChar(60)
   sentAt        DateTime? @map("sent_at") @db.Timestamptz
   completedAt   DateTime? @map("completed_at") @db.Timestamptz
-  note          String?  @db.Text
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  note          String?   @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   product Product @relation(fields: [productCode], references: [code])
 
@@ -442,15 +442,22 @@ model Department {
 
 /// 9. 検品グループマスタ
 model InspectionGroup {
-  id        String   @id @db.VarChar(10)
-  name      String   @db.VarChar(20)
-  tables    String[] @default([])
-  category  String   @db.VarChar(20)
-  needStaff Int      @default(1) @map("need_staff")
+  id            String   @id @db.VarChar(10)
+  name          String   @db.VarChar(20)
+  tables        String[] @default([])
+  category      String   @db.VarChar(20)
+  needStaff     Int      @default(1) @map("need_staff")
   /// Sprint Y-10: ダッシュボード「テーブルグループ別 進捗」カードの表示順
   /// 小さい順に左上から並ぶ。同値の場合は id の辞書順。
-  sortOrder Int      @default(100) @map("sort_order")
-  note      String?  @db.Text
+  sortOrder     Int      @default(100) @map("sort_order")
+  /// 作業ペース（件/時）の目標値（2026-09-27 要望書・久保様／小原様確定 2026-09-28）。
+  ///   paceYellowMin … 🔴要注意 と 🟡標準 の境界（この値**以上**なら 🟡）
+  ///   paceGreenMin  … 🟡標準 と 🟢好調 の境界（この値**以上**なら 🟢）
+  /// 現場の自己確認用。人員構成や繁忙期に応じて現場で調整できるよう、
+  /// コードに固定せずマスタで持つ。null なら判定しない（バッジを出さない）。
+  paceYellowMin Int?     @map("pace_yellow_min")
+  paceGreenMin  Int?     @map("pace_green_min")
+  note          String?  @db.Text
 
   staff             Staff[]
   memberAssignments MemberAssignment[]
@@ -557,28 +564,28 @@ model DevicePrinterMap {
 
 /// 16. 連絡事項
 model Notice {
-  id         Int      @id @default(autoincrement())
-  date       DateTime @db.Date
+  id          Int       @id @default(autoincrement())
+  date        DateTime  @db.Date
   /// 'announce' = PC→現場 発信、'inbox' = 現場→PC 着信（A-06）
-  kind       String   @default("announce") @db.VarChar(10)
-  title      String   @db.VarChar(100)
-  body       String?  @db.Text
+  kind        String    @default("announce") @db.VarChar(10)
+  title       String    @db.VarChar(100)
+  body        String?   @db.Text
   /// 'all' | 'tablet' | 'handy' | 'group' | 'staff' | 'table'
-  targetType String   @default("all") @map("target_type") @db.VarChar(10)
+  targetType  String    @default("all") @map("target_type") @db.VarChar(10)
   /// targetType が group / staff / table のときの対象 ID
-  targetId   String?  @map("target_id") @db.VarChar(20)
+  targetId    String?   @map("target_id") @db.VarChar(20)
   /// inbox 分類: 'noshi' | 'product' | 'input' | 'web' | 'other'
-  category   String?  @db.VarChar(10)
+  category    String?   @db.VarChar(10)
   /// announce で「了解」タップを必須にするか
-  ackRequired Boolean @default(false) @map("ack_required")
+  ackRequired Boolean   @default(false) @map("ack_required")
   /// announce: 発信者 / inbox: 着信元の staff_code
-  senderCode String?  @map("sender_code") @db.VarChar(10)
-  priority   Int      @default(50)
-  active     Boolean  @default(true)
+  senderCode  String?   @map("sender_code") @db.VarChar(10)
+  priority    Int       @default(50)
+  active      Boolean   @default(true)
   /// inbox の既読タイムスタンプ（簡易版・全体 read 1 回）
-  readAt     DateTime? @map("read_at") @db.Timestamptz
-  readBy     String?  @map("read_by") @db.VarChar(10)
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  readAt      DateTime? @map("read_at") @db.Timestamptz
+  readBy      String?   @map("read_by") @db.VarChar(10)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   acks NoticeAck[]
 
@@ -655,14 +662,14 @@ model ShippingOrder {
 
 /// 18. 出荷指示明細
 model ShippingOrderItem {
-  id          Int     @id @default(autoincrement())
-  orderId     String  @map("order_id") @db.Uuid
-  productCode String  @map("product_code") @db.VarChar(20)
-  productName String  @map("product_name") @db.VarChar(100)
-  qty         Int
-  scannedQty  Int     @default(0) @map("scanned_qty")
-  forceOk     Boolean @default(false) @map("force_ok")
-  forceReason String? @map("force_reason") @db.Text
+  id                  Int       @id @default(autoincrement())
+  orderId             String    @map("order_id") @db.Uuid
+  productCode         String    @map("product_code") @db.VarChar(20)
+  productName         String    @map("product_name") @db.VarChar(100)
+  qty                 Int
+  scannedQty          Int       @default(0) @map("scanned_qty")
+  forceOk             Boolean   @default(false) @map("force_ok")
+  forceReason         String?   @map("force_reason") @db.Text
   /// 強制OK 理由コード: R01 / R02 / R03 / R04 / R99（A-05）
   forceReasonCode     String?   @map("force_reason_code") @db.VarChar(5)
   /// 強制OK 承認状態: null=未発生 or 未承認 / 'approved' / 'rejected'
@@ -855,17 +862,17 @@ model Session {
 ///   個人/企業/置き配/誤配多発 等、注意が必要な顧客の補助情報。
 ///   検品時のアラート・置き配判定・誤配警告などに将来連携。
 model CustomerAuxAttr {
-  id            Int      @id @default(autoincrement())
-  customerName  String   @map("customer_name") @db.VarChar(100)
-  customerKana  String?  @map("customer_kana") @db.VarChar(100)
+  id           Int      @id @default(autoincrement())
+  customerName String   @map("customer_name") @db.VarChar(100)
+  customerKana String?  @map("customer_kana") @db.VarChar(100)
   /// 'corp' = 企業 / 'personal' = 個人 / 'leave_at_door' = 置き配指定 /
   /// 'redelivery_alert' = 誤配・再配達多発 / 'attention' = 要注意 / 'note' = メモのみ
-  attrType      String   @default("note") @map("attr_type") @db.VarChar(20)
-  note          String?  @db.Text
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
-  createdBy     String?  @map("created_by") @db.VarChar(10)
+  attrType     String   @default("note") @map("attr_type") @db.VarChar(20)
+  note         String?  @db.Text
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  createdBy    String?  @map("created_by") @db.VarChar(10)
 
   @@index([customerName])
   @@index([active, attrType])

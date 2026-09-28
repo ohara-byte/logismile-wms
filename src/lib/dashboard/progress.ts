@@ -13,6 +13,7 @@
 
 import { prisma } from '../db';
 import { loadPackTimeCtx, orderExpectedSec } from './order-pack-time';
+import { UNCLASSIFIED, buildLetterToGroup, groupOfPkNo } from './group-map';
 
 export interface OverallProgress {
   date: string;
@@ -324,19 +325,10 @@ export async function getGroupProgresses(date: Date): Promise<GroupProgress[]> {
   }
 
   // テーブル文字 → groupId のマップ（groups は sortOrder, id 昇順）。
-  //   同一文字が複数群にある場合は先勝ち（id 昇順なので単品群 'K' が 'SAS' より先に確定）。
-  const UNCLASSIFIED = '__UNCLASSIFIED__';
-  const letterToGroup = new Map<string, string>();
-  for (const g of groups) {
-    for (const t of g.tables) {
-      const letter = (t ?? '').trim().toUpperCase();
-      if (letter && !letterToGroup.has(letter)) letterToGroup.set(letter, g.id);
-    }
-  }
-  const groupOfOrder = (pkNo: string): string => {
-    const letter = pkNo.length >= 2 ? pkNo[1].toUpperCase() : '';
-    return letterToGroup.get(letter) ?? UNCLASSIFIED;
-  };
+  //   規則は group-map.ts に1つだけ置いて、現場端末の進捗表示と共有する
+  //   （片方だけ直すと画面ごとにグループが食い違うため）。
+  const letterToGroup = buildLetterToGroup(groups);
+  const groupOfOrder = (pkNo: string): string => groupOfPkNo(letterToGroup, pkNo);
 
   // plan = 群に属する伝票数、done = うち packed|shipped 数（伝票自体のグループで集計）
   // remainingExpectedSec = 未完了伝票の「セット標準時間＋のし/エアパック加算」合計（ETA主軸）
