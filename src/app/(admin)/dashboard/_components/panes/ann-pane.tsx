@@ -675,9 +675,19 @@ function Chip({
   );
 }
 
+/**
+ * 連絡の日時表示。
+ *
+ * ★ 2026-09-28（小原様）：時刻だけだと**いつの連絡か分からない**。
+ *   着信は削除するまで残り、前日以前のものが並ぶため、日付を前に付ける。
+ *   幅を食わないよう月/日まで（年は当年ぶんしか並ばないため出さない）。
+ */
 function formatTime(iso: string): string {
   const d = new Date(iso);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return (
+    `${d.getMonth() + 1}/${d.getDate()} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  );
 }
 
 function pad(n: number): string {
