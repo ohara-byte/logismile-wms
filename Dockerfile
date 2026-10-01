@@ -34,8 +34,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 # 起動時の prisma migrate deploy / Prisma エンジンに openssl が必要
+# tzdata：compose の TZ=Asia/Tokyo を確実に効かせる（入っていないと黙って UTC になる）。
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get install -y --no-install-recommends openssl ca-certificates tzdata \
   && rm -rf /var/lib/apt/lists/*
 # 実行に必要なものだけ builder からコピー
 COPY --from=builder /app/node_modules ./node_modules

@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
 import { parsePeriodFromUrl } from '@/lib/report-period';
+import { jstHm } from '@/lib/date-utils';
 
 export async function GET(req: Request) {
   const guard = await requireRole('admin', 'manager');
@@ -44,7 +45,7 @@ export async function GET(req: Request) {
     .map(([day, v]) => ({
       date: day,
       weekday: WEEKDAYS[new Date(day).getDay()],
-      lastCompleted: `${String(v.last.getHours()).padStart(2, '0')}:${String(v.last.getMinutes()).padStart(2, '0')}`,
+      lastCompleted: jstHm(v.last),
       count: v.count,
     }));
 

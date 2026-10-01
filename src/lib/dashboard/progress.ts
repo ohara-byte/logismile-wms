@@ -12,6 +12,7 @@
  */
 
 import { prisma } from '../db';
+import { jstHm, jstHour, jstMinute } from '../date-utils';
 import { loadPackTimeCtx, orderExpectedSec } from './order-pack-time';
 import { UNCLASSIFIED, buildLetterToGroup, groupOfPkNo } from './group-map';
 
@@ -106,7 +107,8 @@ function endOfDay(d: Date): Date {
 }
 
 function fmtTime(d: Date): string {
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  // サーバ TZ に依存させない（jstHm が +9時間を明示して読む）
+  return jstHm(d);
 }
 
 /** 当日の全体進捗を集計 */
@@ -172,7 +174,7 @@ export async function getOverallProgress(date: Date): Promise<OverallProgress> {
     0,
     Math.min(
       WORK_END_HOUR - WORK_START_HOUR,
-      now.getHours() + now.getMinutes() / 60 - WORK_START_HOUR,
+      jstHour(now) + jstMinute(now) / 60 - WORK_START_HOUR,
     ),
   );
   const expectedRate = Math.round((elapsedHours / (WORK_END_HOUR - WORK_START_HOUR)) * 100);
@@ -200,8 +202,9 @@ export async function getOverallProgress(date: Date): Promise<OverallProgress> {
     const ratio = (hour - WORK_START_HOUR) / (WORK_END_HOUR - WORK_START_HOUR);
     const target = Math.round(total * ratio);
     let status: 'done' | 'current' | 'wait' = 'wait';
-    if (now.getHours() >= hour) status = 'done';
-    else if (now.getHours() === hour - 1 || (now.getHours() < hour && now.getHours() >= hour - 3))
+    const nowH = jstHour(now);
+    if (nowH >= hour) status = 'done';
+    else if (nowH === hour - 1 || (nowH < hour && nowH >= hour - 3))
       status = 'current';
     return { hour, target, status };
   });
@@ -485,11 +488,11 @@ export async function getHourlyChart(date: Date): Promise<HourlyPoint[]> {
   });
   const actualByHour = new Map<number, number>();
   for (const s of sessions) {
-    const h = s.completedAt!.getHours();
+    const h = jstHour(s.completedAt!);
     actualByHour.set(h, (actualByHour.get(h) ?? 0) + 1);
   }
 
-  const nowHour = new Date().getHours();
+  const nowHour = jstHour(new Date());
   const points: HourlyPoint[] = [];
   for (let h = WORK_START_HOUR - 1; h < WORK_END_HOUR; h++) {
     points.push({
@@ -527,7 +530,7 @@ export async function getHourlyProgress(
   });
   const actualByHour = new Map<number, number>();
   for (const s of sessions) {
-    const h = s.completedAt!.getHours();
+    const h = jstHour(s.completedAt!);
     actualByHour.set(h, (actualByHour.get(h) ?? 0) + 1);
   }
 
@@ -597,7 +600,7 @@ export async function getStaffAllocationGrid(date: Date): Promise<{
 
   // サマリ計算
   const now = new Date();
-  const currentSlot = (now.getHours() - SHIFT_START_HOUR) * 2 + (now.getMinutes() >= 30 ? 1 : 0);
+  const currentSlot = (jstHour(now) - SHIFT_START_HOUR) * 2 + (jstMinute(now) >= 30 ? 1 : 0);
   const safeSlot = Math.max(0, Math.min(SLOTS - 1, currentSlot));
 
   const totalsBySlot = new Array(SLOTS).fill(0);

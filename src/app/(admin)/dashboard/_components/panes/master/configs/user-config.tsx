@@ -9,6 +9,7 @@
 
 import type { MasterConfig } from '../master-types';
 import type { ReactNode } from 'react';
+import { jstMdHm } from '@/lib/date-utils';
 
 interface User extends Record<string, unknown> {
   id: string;
@@ -40,10 +41,7 @@ function renderEmailNameCell(r: Record<string, unknown>): ReactNode {
 function formatDateTime(iso: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-function pad(n: number): string {
-  return String(n).padStart(2, '0');
+  return jstMdHm(d);
 }
 
 export const userConfig: MasterConfig<User> = {

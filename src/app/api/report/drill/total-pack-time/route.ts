@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
 import { parsePeriodFromUrl } from '@/lib/report-period';
+import { jstMdHm } from '@/lib/date-utils';
 
 export async function GET(req: Request) {
   const guard = await requireRole('admin', 'manager');
@@ -54,7 +55,7 @@ export async function GET(req: Request) {
     durationSec: s.durationSec ?? 0,
     durationMin: ((s.durationSec ?? 0) / 60).toFixed(1),
     completedAt: s.completedAt
-      ? `${s.completedAt.getMonth() + 1}/${s.completedAt.getDate()} ${String(s.completedAt.getHours()).padStart(2, '0')}:${String(s.completedAt.getMinutes()).padStart(2, '0')}`
+      ? jstMdHm(s.completedAt)
       : '—',
   }));
 

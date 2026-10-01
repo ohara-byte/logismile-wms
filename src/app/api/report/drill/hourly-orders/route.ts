@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
 import { parsePeriodFromUrl } from '@/lib/report-period';
+import { jstHour, jstMdHm, jstWeekday } from '@/lib/date-utils';
 
 export async function GET(req: Request) {
   const guard = await requireRole('admin', 'manager');
@@ -51,7 +52,7 @@ export async function GET(req: Request) {
 
   const filtered = sessions.filter((s) => {
     const d = s.completedAt!;
-    return d.getDay() === weekday && d.getHours() === hour;
+    return jstWeekday(d) === weekday && jstHour(d) === hour;
   });
 
   const items = filtered
@@ -64,7 +65,7 @@ export async function GET(req: Request) {
       itemCount: s.order?._count.items ?? 0,
       staffName: s.staff?.name ?? '—',
       completedAt: s.completedAt
-        ? `${s.completedAt.getMonth() + 1}/${s.completedAt.getDate()} ${String(s.completedAt.getHours()).padStart(2, '0')}:${String(s.completedAt.getMinutes()).padStart(2, '0')}`
+        ? jstMdHm(s.completedAt)
         : '—',
       durationMin: ((s.durationSec ?? 0) / 60).toFixed(1),
     }));

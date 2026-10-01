@@ -36,8 +36,22 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit tests
+      # ★ タイムゾーンを変えて2回まわす（2026-10-01）。
+      #   日付の扱いが実行環境の TZ に依存していると、ここで必ず落ちる。
+      #
+      #   以前は vitest.config.ts が TZ=Asia/Tokyo を固定しており、
+      #   TZ 依存のコードが素通りしていた（report-period.ts の境界計算が該当）。
+      #   本番コンテナの TZ 設定は効いていない場合があるため（CraftSmile ADR-042）、
+      #   「設定が効いていなくても正しい」ことを機械的に担保する。
+      - name: Unit tests (TZ=UTC・TZ 設定が効いていない場合)
         run: npm test
+        env:
+          TZ: UTC
+
+      - name: Unit tests (TZ=Asia/Tokyo・本番で意図している設定)
+        run: npm test
+        env:
+          TZ: Asia/Tokyo
 
       - name: Build
         run: npm run build
