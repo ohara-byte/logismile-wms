@@ -6,7 +6,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { parseDateAsUTC, addDaysUTC } from './date-utils';
+import { parseDateAsUTC, addDaysUTC, jstDayStart, jstDayEnd } from './date-utils';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RANGE_DAYS = 366; // 1 年強。それ以上はクエリ拒否
@@ -111,8 +111,14 @@ export function parsePeriod(
   const fromDate = parseDateAsUTC(fromStr)!;
   const toDateExclusive = addDaysUTC(parseDateAsUTC(toStr)!, 1);
 
-  // @db.Timestamptz 用（JST ローカル日の境界）。従来挙動を維持する。
-  from.setHours(0, 0, 0, 0);
-  to.setHours(23, 59, 59, 999);
-  return { from, to, fromDate, toDateExclusive };
+  // @db.Timestamptz 用（JST 日の境界）。
+  //   ★ setHours() はローカル演算のため、コンテナが UTC で動いていると
+  //     境界が9時間ずれる（レポートが前日の夜ぶんを巻き込む／当日の朝ぶんを落とす）。
+  //     サーバの TZ 設定に依存しないよう +9時間を明示して作る。
+  return {
+    from: jstDayStart(fromDate),
+    to: jstDayEnd(parseDateAsUTC(toStr)!),
+    fromDate,
+    toDateExclusive,
+  };
 }

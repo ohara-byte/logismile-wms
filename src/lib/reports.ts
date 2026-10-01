@@ -10,7 +10,14 @@
  */
 
 import { prisma } from './db';
-import { addDaysUTC, formatDateYmd, jstYmd } from './date-utils';
+import {
+  addDaysUTC,
+  formatDateYmd,
+  jstYmd,
+  jstHour,
+  jstMinute,
+  jstWeekday,
+} from './date-utils';
 import type { PeriodRange } from './report-period';
 import {
   assignedMinutesByGroup,
@@ -302,7 +309,7 @@ export async function groupMhReport(period: PeriodRange) {
   const matrix = new Map<string, Map<number, Cell>>();
   for (const s of sessions) {
     const gId = groupMap.get(s.staffCode) ?? 'UNASSIGNED';
-    const hour = s.completedAt!.getHours();
+    const hour = jstHour(s.completedAt!);
     if (!matrix.has(gId)) matrix.set(gId, new Map());
     const row = matrix.get(gId)!;
     const cur = row.get(hour) ?? { count: 0, sec: 0 };
@@ -414,7 +421,7 @@ export async function heatmapReport(from: Date, to: Date) {
   const counts = new Map<string, number>(); // key = "weekday|hour"
   for (const s of sessions) {
     const d = s.completedAt!;
-    const key = `${d.getDay()}|${d.getHours()}`;
+    const key = `${jstWeekday(d)}|${jstHour(d)}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
 
@@ -440,7 +447,7 @@ export async function heatmapReport(from: Date, to: Date) {
       const cutoffMin = hh * 60 + mm;
       const rushCount = sessions.filter((s) => {
         const d = s.completedAt!;
-        const sessionMin = d.getHours() * 60 + d.getMinutes();
+        const sessionMin = jstHour(d) * 60 + jstMinute(d);
         return cutoffMin - 60 <= sessionMin && sessionMin <= cutoffMin;
       }).length;
       return { carrier: c.name, cutoff: c.cutoff!, rushCount };

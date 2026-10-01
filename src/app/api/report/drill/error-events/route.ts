@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
 import { parsePeriodFromUrl } from '@/lib/report-period';
+import { jstMdHm } from '@/lib/date-utils';
 
 const ERROR_KINDS = ['over_scan', 'not_found', 'already_done'] as const;
 
@@ -60,7 +61,7 @@ export async function GET(req: Request) {
   });
 
   const items = logs.map((l) => ({
-    occurredAt: `${String(l.createdAt.getMonth() + 1).padStart(2, '0')}/${String(l.createdAt.getDate()).padStart(2, '0')} ${String(l.createdAt.getHours()).padStart(2, '0')}:${String(l.createdAt.getMinutes()).padStart(2, '0')}`,
+    occurredAt: jstMdHm(l.createdAt, { pad: true }),
     pkNo: l.session?.order?.pkNo ?? '—',
     destName: l.session?.order?.destName ?? '—',
     staffName: l.session?.staff?.name ?? '—',

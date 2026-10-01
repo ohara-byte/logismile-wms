@@ -98,6 +98,70 @@ export function jstYmd(d: Date): string {
 }
 
 /**
+ * 暦日（UTC 真夜中の Date）→ その日の **JST 00:00:00.000** の瞬間。
+ * `@db.Timestamptz` 列（createdAt / completedAt 等）の範囲指定に使う。
+ *
+ * ★ サーバのタイムゾーン設定に依存しない（+9時間を明示）。
+ *   `setHours(0,0,0,0)` はローカル演算のため、コンテナが UTC で動いていると
+ *   9時間ずれた範囲になる（CraftSmile ADR-042 の同種障害）。
+ */
+export function jstDayStart(dateUtcMidnight: Date): Date {
+  return new Date(dateUtcMidnight.getTime() - JST_OFFSET_MS);
+}
+
+/**
+ * 暦日（UTC 真夜中の Date）→ その日の **JST 23:59:59.999** の瞬間。
+ * `@db.Timestamptz` 列の範囲終端に使う。
+ */
+export function jstDayEnd(dateUtcMidnight: Date): Date {
+  return new Date(dateUtcMidnight.getTime() + 86_400_000 - JST_OFFSET_MS - 1);
+}
+
+/**
+ * 以下は「瞬間（`@db.Timestamptz` 由来の Date）を **JST の時刻として読む**」ための
+ * ヘルパー群。`getHours()` 等のローカル getter は実行環境の TZ 設定で結果が変わり、
+ * コンテナの TZ が効いていないと**9時間ずれる**（ヒートマップの時間帯・進捗の現在時刻・
+ * 終了予定時刻が全部ずれる）。設定に依存させず +9時間を明示して読む。
+ */
+function jstView(d: Date): Date {
+  return new Date(d.getTime() + JST_OFFSET_MS);
+}
+
+/** 瞬間 → JST の「時」(0-23)。 */
+export function jstHour(d: Date): number {
+  return jstView(d).getUTCHours();
+}
+
+/** 瞬間 → JST の「分」(0-59)。 */
+export function jstMinute(d: Date): number {
+  return jstView(d).getUTCMinutes();
+}
+
+/** 瞬間 → JST の曜日（0=日曜）。 */
+export function jstWeekday(d: Date): number {
+  return jstView(d).getUTCDay();
+}
+
+/** 瞬間 → JST の "HH:MM"。 */
+export function jstHm(d: Date): string {
+  const v = jstView(d);
+  return `${String(v.getUTCHours()).padStart(2, '0')}:${String(v.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * 瞬間 → JST の "M/D HH:MM"（一覧の時刻表示用）。
+ * `pad: true` で "MM/DD HH:MM"（0 埋め）。
+ */
+export function jstMdHm(d: Date, opts?: { pad?: boolean }): string {
+  const v = jstView(d);
+  const mo = v.getUTCMonth() + 1;
+  const day = v.getUTCDate();
+  return opts?.pad
+    ? `${String(mo).padStart(2, '0')}/${String(day).padStart(2, '0')} ${jstHm(d)}`
+    : `${mo}/${day} ${jstHm(d)}`;
+}
+
+/**
  * UTC 真夜中の Date を N 日進めて新しい UTC 真夜中 Date を返す。
  */
 export function addDaysUTC(d: Date, days: number): Date {

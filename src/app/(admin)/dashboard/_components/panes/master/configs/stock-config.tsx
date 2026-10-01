@@ -10,6 +10,7 @@
 
 import type { MasterConfig } from '../master-types';
 import type { ReactNode } from 'react';
+import { jstMdHm } from '@/lib/date-utils';
 
 interface Stock extends Record<string, unknown> {
   productCode: string;
@@ -134,7 +135,7 @@ export const stockConfig: MasterConfig<Stock> = {
         const v = r.inspectedAt as string | null;
         if (!v) return '—';
         const d = new Date(v);
-        return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        return jstMdHm(d);
       },
     },
   ],
@@ -165,6 +166,3 @@ export const stockConfig: MasterConfig<Stock> = {
   initialValues: { qty: 0 },
 };
 
-function pad(n: number): string {
-  return String(n).padStart(2, '0');
-}
