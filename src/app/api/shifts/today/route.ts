@@ -33,7 +33,17 @@ export async function GET(req: Request) {
     include: {
       staff: { select: { code: true, name: true, kana: true, groupId: true, defaultShiftPattern: true } },
       pattern: {
-        select: { code: true, name: true, isOff: true, startTime: true, endTime: true },
+        // ★ breakMin（2026-10-02・不具合要望 No.1）：
+        //   昼休憩を抜くかどうかを、固定のパターン一覧ではなくマスタの休憩時間で
+        //   判定するため。H7 がリストから漏れていて実働が1時間長く出ていた。
+        select: {
+          code: true,
+          name: true,
+          isOff: true,
+          startTime: true,
+          endTime: true,
+          breakMin: true,
+        },
       },
     },
     orderBy: { staffCode: 'asc' },

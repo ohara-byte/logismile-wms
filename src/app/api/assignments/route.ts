@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
+import { describeOverlap, findOverlaps } from '@/lib/assignment-overlap';
 import { parseDateAsUTC, normalizeHHMM } from '@/lib/date-utils';
 
 export async function GET(req: Request) {
@@ -86,6 +87,33 @@ export async function PUT(req: Request) {
       { status: 422 },
     );
   }
+  // ★ 2026-10-02（不具合要望 No.4）：同じ担当者の割当が時間で重なっていたら保存しない。
+  //   画面だけの防御では「昨日の割当読込」「シフトから反映」等の経路で重複が入る。
+  //   重なりは必ず誤り（1人が同じ時間に2か所では作業できない）で、
+  //   ダッシュボードの配置人数が多く出て完了予測が早まる実害がある。
+  //   12:00 終了と 12:00 開始のように端が接するだけのものは重なりとしない。
+  const conflicts = findOverlaps(assignments);
+  if (conflicts.length > 0) {
+    const names = await prisma.staff.findMany({
+      where: { code: { in: Array.from(new Set(conflicts.map((c) => c.a.staffCode))) } },
+      select: { code: true, name: true },
+    });
+    const nameByCode = new Map(names.map((n) => [n.code, n.name]));
+    const lines = conflicts
+      .slice(0, 10)
+      .map((c) => describeOverlap(nameByCode.get(c.a.staffCode) ?? c.a.staffCode, c.a, c.b));
+    return NextResponse.json(
+      {
+        error: 'VALIDATION',
+        message:
+          `同じ担当者の割当が重なっています（${conflicts.length}件）。時間を分けてから保存してください。\n` +
+          lines.join('\n') +
+          (conflicts.length > 10 ? `\n…ほか ${conflicts.length - 10} 件` : ''),
+      },
+      { status: 422 },
+    );
+  }
+
   const createdBy = guard.auth.staffCode ?? null;
 
   await prisma.$transaction([
