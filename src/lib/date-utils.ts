@@ -183,7 +183,11 @@ export function addDaysUTC(d: Date, days: number): Date {
  *  - null / "" / "abc" / "25:00" → ""（呼び出し側で不備として扱う）
  */
 export function normalizeHHMM(input: string | null | undefined): string {
-  const s = (input ?? '').trim();
+  // ★ 2026-10-02：全角の数字・コロン（"８：００" / "8：00"）も受け付ける。
+  //   シフトパターンのマスタ入力で全角コロンが混入し、時刻として読めず
+  //   既定値にずれて登録される事故があった（不具合要望 No.3）。
+  //   NFKC で半角に寄せてから解釈する。
+  const s = (input ?? '').normalize('NFKC').trim();
   let h: string | undefined;
   let m: string | undefined;
   const colon = /^(\d{1,2}):(\d{1,2})$/.exec(s);

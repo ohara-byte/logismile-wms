@@ -101,7 +101,7 @@ export function CompletedWarningModal({
               )
             }
           />
-          <Field k="作業者" v={order.staffName ?? '—'} />
+          <Field k="検品者" v={order.staffName ?? '—'} />
           <Field k="点数" v={`${order.itemCount} 点`} />
         </div>
 

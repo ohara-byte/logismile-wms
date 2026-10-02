@@ -24,6 +24,12 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole, resolveActor } from '@/lib/auth/permissions';
 
+/**
+ * staff 権限でも「誰でも読める」伝票ステータス（操作は別途 ownsSession で防御）。
+ * 読めないと現場で状態を判断できず、再検品や問い合わせにつながる。
+ */
+const READABLE_BY_ANY_STAFF = new Set(['pending', 'held', 'inspecting', 'packed', 'shipped']);
+
 export async function GET(
   _req: Request,
   { params }: { params: { pkNo: string } },
@@ -77,21 +83,25 @@ export async function GET(
 
   const isDeleted = order.deletedAt != null;
 
-  // staff 権限の場合は IDOR 防止: 自分が関与しない伝票へのアクセスは制限する。
-  // ただし以下は許可:
+  // staff 権限の場合は IDOR 防止: 自分が関与しない伝票への**操作**を防ぐ。
+  // 読取は、現場が状態を確認できないと業務が止まるため広く許可する:
   //   - pending（未着手）はキューとして誰でも見えてよい
   //   - キャンセル伝票（deleted=true）は「キャンセル警告」表示のため
-  //   - 2026-05-31: held / inspecting も読取可（引き継ぎ確認用）。
-  //     実際の検品操作（scan/hold/complete）は ownsSession で個別に防御されているので
-  //     ここで読取を許しても変更系の IDOR は発生しない。
+  //   - 2026-05-31: held / inspecting も読取可（引き継ぎ確認用）
+  //   - ★ 2026-10-02: packed / shipped（検品済み）も読取可（不具合要望 No.5）。
+  //     検品**中**は他人の伝票でも担当者名・お届け先が見えるのに、検品が終わった
+  //     途端に 403 になるのは一貫しておらず、許可リストへの追加漏れだった。
+  //     現場では「未検品なのか検品済みなのか読み取り不可なのか」区別できず、
+  //     再検品や問い合わせが発生していた。
+  //
+  //     実際の検品操作（scan/hold/complete/force-ok 等）は ownsSession で個別に
+  //     防御されているため、ここで読取を許しても変更系の IDOR は発生しない。
   if (guard.auth.role === 'staff' && !isDeleted) {
-    const isPending = order.status === 'pending';
-    const isHeld = order.status === 'held';
-    const isInspecting = order.status === 'inspecting';
+    const isReadableStatus = READABLE_BY_ANY_STAFF.has(order.status);
     const isOwnSession =
       order.inspSession?.staffCode != null &&
       order.inspSession.staffCode === guard.auth.staffCode;
-    if (!isPending && !isHeld && !isInspecting && !isOwnSession) {
+    if (!isReadableStatus && !isOwnSession) {
       return NextResponse.json(
         { error: 'FORBIDDEN', message: 'この伝票はアクセスできません' },
         { status: 403 },
