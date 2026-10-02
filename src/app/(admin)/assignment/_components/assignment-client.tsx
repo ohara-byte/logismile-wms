@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { TextInput } from '@/components/ui/form-controls';
 import { cn } from '@/lib/cn';
 import { normalizeHHMM } from '@/lib/date-utils';
+import { hhmmToMinutes } from '@/lib/assigned-hours';
 
 interface Group {
   id: string;
@@ -185,7 +186,16 @@ export function AssignmentClient({
 
   function pickerSubmit() {
     if (!picker) return;
-    if (picker.endTime <= picker.startTime) {
+    // ★ 2026-10-02（不具合要望 No.3）：文字列比較をやめ、**時刻として**比較する。
+    //   従来は "17:00" <= "8:00" が成り立ち（文字コード順）、ゼロなしの時刻が
+    //   マスタに入っていると登録できなくなっていた。
+    const pickStart = hhmmToMinutes(picker.startTime);
+    const pickEnd = hhmmToMinutes(picker.endTime);
+    if (pickStart == null || pickEnd == null) {
+      alert('時刻は「HH:MM」で入力してください（例: 08:00）');
+      return;
+    }
+    if (pickEnd <= pickStart) {
       alert('終了時刻は開始時刻より後にしてください');
       return;
     }

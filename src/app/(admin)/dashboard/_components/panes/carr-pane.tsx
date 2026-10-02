@@ -295,43 +295,43 @@ function TableCarrierMatrix({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 overflow-auto bg-surface-base/95 p-4">
       <div className="mx-auto max-w-5xl">
         <div className="mb-3 flex items-center gap-3">
-          <h2 className="text-sm font-bold text-ink-strong">
+          <h2 className="text-[16px] font-bold text-ink-strong">
             📍 テーブルグループ × 配送業者 残件数
           </h2>
-          {data && <span className="text-2xs tabular-nums text-ink-muted">{data.date}</span>}
+          {data && <span className="text-[14px] tabular-nums text-ink-subtle">{data.date}</span>}
           <div className="flex-1" />
           <button
             type="button"
             onClick={onClose}
-            className="rounded border border-surface-border bg-surface-panel px-3 py-1.5 text-xs text-ink hover:bg-surface-raised"
+            className="rounded border border-surface-border bg-surface-panel px-3 py-1.5 text-[16px] text-ink hover:bg-surface-raised"
           >
             閉じる
           </button>
         </div>
 
         {error && (
-          <div className="mb-2 rounded border border-status-error bg-status-error-bg p-2 text-2xs text-status-error">
+          <div className="mb-2 rounded border border-status-error bg-status-error-bg p-2 text-[14px] text-status-error">
             {error}
           </div>
         )}
 
         {!data ? (
-          <div className="py-8 text-center text-2xs text-ink-muted">読み込み中…</div>
+          <div className="py-8 text-center text-[16px] text-ink-subtle">読み込み中…</div>
         ) : (
           <div className="overflow-x-auto rounded border border-surface-border">
-            <table className="w-full text-2xs">
+            <table className="w-full text-[16px]">
               <thead className="border-b border-surface-border bg-surface-base">
                 <tr>
-                  <th className="px-2 py-1.5 text-left text-3xs uppercase text-ink-subtle">
+                  <th className="px-2 py-1.5 text-left text-[16px] font-semibold text-ink-subtle">
                     テーブルグループ
                   </th>
-                  <th className="px-2 py-1.5 text-right text-3xs uppercase text-ink-subtle">
+                  <th className="px-2 py-1.5 text-right text-[16px] font-semibold text-ink-subtle">
                     残計
                   </th>
                   {data.carriers.map((c) => (
                     <th
                       key={c.code}
-                      className="px-2 py-1.5 text-right text-3xs uppercase text-ink-subtle whitespace-nowrap"
+                      className="px-2 py-1.5 text-right text-[16px] font-semibold text-ink-subtle whitespace-nowrap"
                     >
                       {c.short ?? c.name}
                     </th>
@@ -388,7 +388,7 @@ function TableCarrierMatrix({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        <p className="mt-2 text-3xs text-ink-muted">
+        <p className="mt-2 text-[14px] text-ink-subtle">
           残件＝まだ梱包が終わっていない伝票。合計は運送タブのカードと一致します。
           伝票ごとの内訳は伝票一覧でご確認ください。
         </p>

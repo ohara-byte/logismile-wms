@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
 import { maskError } from '@/lib/api-errors';
+import { normalizePatternTimes } from '@/lib/shift-pattern-time';
 
 const Body = z.object({
   code: z.string().min(1).max(10),
@@ -40,8 +41,16 @@ export async function POST(req: Request) {
       { status: 422 },
     );
   }
+
+  // ★ 時刻は必ず "HH:MM"（半角・ゼロ付き2桁）で保存する（不具合要望 No.3）。
+  //   全角コロン・ゼロなし・コロンなしは直して保存し、読めないものだけ拒否する。
+  const times = normalizePatternTimes(parsed.data);
+  if (!times.ok) {
+    return NextResponse.json({ error: 'VALIDATION', message: times.error }, { status: 422 });
+  }
+  const data = { ...parsed.data, startTime: times.startTime, endTime: times.endTime };
   try {
-    const created = await prisma.shiftPattern.create({ data: parsed.data });
+    const created = await prisma.shiftPattern.create({ data });
     return NextResponse.json({ data: created, message: 'OK' });
   } catch (e) {
     return maskError(
