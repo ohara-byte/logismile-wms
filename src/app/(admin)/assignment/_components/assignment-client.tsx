@@ -6,6 +6,8 @@ import { TextInput } from '@/components/ui/form-controls';
 import { cn } from '@/lib/cn';
 import { normalizeHHMM } from '@/lib/date-utils';
 import { hhmmToMinutes } from '@/lib/assigned-hours';
+import { splitByLunchBreak } from '@/lib/lunch-break';
+import { freeSpans, findOverlaps, subtractSpan, overlaps } from '@/lib/assignment-overlap';
 
 interface Group {
   id: string;
@@ -22,6 +24,8 @@ interface StaffShift {
   defaultGroupId: string | null;
   /** Sprint O: 休みフラグ（pattern.isOff） */
   isOff: boolean;
+  /** ★ シフトパターンの休憩分数（不具合要望 No.1）。0 より大きければ昼休憩を抜く */
+  breakMin: number;
 }
 
 type FilterMode = 'working' | 'all' | 'unset' | 'off' | 'assigned';
@@ -52,38 +56,9 @@ const SLOTS = ((HOURS_TO - HOURS_FROM) * 60) / SLOT_MIN; // 20 slots（8:00〜18
 //   既知の休みパターンコードもハードコードしておく。
 const KNOWN_OFF_PATTERNS = new Set(['公休', '有休', '希休', '特休', '欠勤']);
 
-// 2026-07-03: 12:00〜13:00 に昼休憩を自動で挟むシフトパターン（大文字小文字を区別しない）。
-//   勤務時間が 12〜13 時を含む場合のみ、その 1 時間を空けてバーを 2 本に分割する
-//   （午後開始の D6/D7 等は 12〜13 を勤務しないので自然に対象外＝変化なし）。
-const LUNCH_BREAK_PATTERNS = new Set(
-  ['A6', 'A7', 'A8', 'A9', 'B6', 'B7', 'B9', 'D5', 'D6', 'D7', 'G6', 'G7'],
-);
-const LUNCH_START = '12:00';
-const LUNCH_END = '13:00';
-
-/**
- * 対象パターンかつ勤務が 12〜13 時を含む場合、[開始,終了] を昼休憩で分割した時間帯配列を返す。
- * 非対象パターン／休憩帯と重ならない場合はそのまま 1 件。時刻は "HH:MM" に正規化して返す
- * （正規化できない値は原値のまま返し、保存時のガードで不備として検出させる）。
- */
-function splitByLunchBreak(
-  rawStart: string,
-  rawEnd: string,
-  patternCode: string | null | undefined,
-): Array<{ startTime: string; endTime: string }> {
-  const startTime = normalizeHHMM(rawStart);
-  const endTime = normalizeHHMM(rawEnd);
-  if (!startTime || !endTime) return [{ startTime: rawStart, endTime: rawEnd }];
-  if (!LUNCH_BREAK_PATTERNS.has((patternCode ?? '').trim().toUpperCase())) {
-    return [{ startTime, endTime }];
-  }
-  // 勤務が休憩帯と重ならない（午後開始/午前で終業）→ そのまま
-  if (endTime <= LUNCH_START || startTime >= LUNCH_END) return [{ startTime, endTime }];
-  const segs: Array<{ startTime: string; endTime: string }> = [];
-  if (startTime < LUNCH_START) segs.push({ startTime, endTime: LUNCH_START });
-  if (endTime > LUNCH_END) segs.push({ startTime: LUNCH_END, endTime });
-  return segs.length ? segs : [{ startTime, endTime }];
-}
+// 2026-10-02（不具合要望 No.1）：昼休憩を抜く判定を、画面内の固定パターン一覧から
+//   **マスタの休憩時間（breakMin）** に変更した。H7 がリストから漏れており、
+//   実働が1時間長く計算されていた。判定は lib/lunch-break.ts に移し、テストで固定している。
 
 function slotToTime(idx: number): string {
   const total = HOURS_FROM * 60 + idx * SLOT_MIN;
@@ -168,9 +143,20 @@ export function AssignmentClient({
       setForceAssignableSet((prev) => new Set(prev).add(staff.staffCode));
       // alert で押されたあとに picker を開きたいので、setForceAssignableSet 直後に進める
     }
-    // 既定値: シフトの startTime/endTime か、9:00-17:00
-    const defaultStart = staff.startTime ?? '09:00';
-    const defaultEnd = staff.endTime ?? '17:00';
+    // ★ 2026-10-02（不具合要望 No.4）：初期値を「まだ割当の無い時間」にする。
+    //
+    //   従来はシフトの勤務時間をそのまま初期値にしていたため、
+    //   「午後だけ別テーブル」を入れるつもりでも全日が入り、ベースと重なっていた。
+    //   バーが同じ位置に重なるので、現場からは気づけなかった。
+    //
+    //   空きが無ければ勤務時間のまま出し、重なりは送信時に確認する
+    //   （入力できなくしてしまうと、意図した置き換えまで塞いでしまうため）。
+    const shiftStart = staff.startTime ?? '09:00';
+    const shiftEnd = staff.endTime ?? '17:00';
+    const mine = assignments.filter((a) => a.staffCode === staff.staffCode);
+    const free = freeSpans(mine, shiftStart, shiftEnd);
+    const defaultStart = free[0]?.startTime ?? shiftStart;
+    const defaultEnd = free[0]?.endTime ?? shiftEnd;
     const defaultGroup =
       staff.defaultGroupId && groups.some((g) => g.id === staff.defaultGroupId)
         ? staff.defaultGroupId
@@ -203,24 +189,77 @@ export function AssignmentClient({
       alert('グループを選択してください');
       return;
     }
+    // 新規追加：昼休憩を抜いた時間帯（マスタの休憩時間で判定）
+    const breakMin = todayShifts.find((s) => s.staffCode === picker.staffCode)?.breakMin ?? 0;
+    const segs =
+      picker.editIndex !== undefined
+        ? [{ startTime: picker.startTime, endTime: picker.endTime }]
+        : splitByLunchBreak(picker.startTime, picker.endTime, breakMin);
+
+    // ★ 2026-10-02（不具合要望 No.4）：既存の割当と重なるなら、確認してから**置き換える**。
+    //
+    //   現場の操作は「ベースを入れてから、午前または午後だけ別テーブルに差し替える」。
+    //   従来はベースが残って同じ時間に2本重なり、バーが同じ位置に描かれて見えなかった。
+    //   置き換えは**指定した時間のぶんだけ**行い、ベースの残り時間は分割して残す。
+    const conflictIdx: number[] = [];
+    assignments.forEach((a, i) => {
+      if (i === picker.editIndex) return; // 編集中の本人は対象外
+      if (a.staffCode !== picker.staffCode) return;
+      if (segs.some((seg) => overlaps(a, seg))) conflictIdx.push(i);
+    });
+
+    if (conflictIdx.length > 0) {
+      const lines = conflictIdx
+        .map((i) => {
+          const a = assignments[i]!;
+          const name = groups.find((g) => g.id === a.groupId)?.name ?? a.groupId;
+          return `・${a.startTime}〜${a.endTime} の ${name}`;
+        })
+        .join('\n');
+      const newName = groups.find((g) => g.id === picker.groupId)?.name ?? picker.groupId;
+      const ok = window.confirm(
+        `${picker.staffName} さんは、この時間に別の割当があります。\n\n${lines}\n\n` +
+          `重なる時間を ${newName}（${picker.startTime}〜${picker.endTime}）に置き換えますか？\n` +
+          `→ OK で置き換えます。重ならない時間はそのまま残します。`,
+      );
+      if (!ok) return;
+    }
+
     setAssignments((prev) => {
+      let next = [...prev];
+
       if (picker.editIndex !== undefined) {
-        // 既存バーを上書き
-        const next = [...prev];
         next[picker.editIndex] = {
           staffCode: picker.staffCode,
           groupId: picker.groupId,
           startTime: picker.startTime,
           endTime: picker.endTime,
         };
-        return next;
       }
-      // 新規追加：対象パターンかつ 12〜13 時を含むなら昼休憩でバーを分割する
-      const patternCode =
-        todayShifts.find((s) => s.staffCode === picker.staffCode)?.patternCode ?? null;
-      const segs = splitByLunchBreak(picker.startTime, picker.endTime, patternCode);
+
+      // 重なっている既存割当を、重なった時間ぶんだけ削る（残りは分割して残す）
+      if (conflictIdx.length > 0) {
+        const cut = new Set(conflictIdx);
+        const kept: Assignment[] = [];
+        next.forEach((a, i) => {
+          if (!cut.has(i)) {
+            kept.push(a);
+            return;
+          }
+          let rests: Array<{ startTime: string; endTime: string }> = [a];
+          for (const seg of segs) {
+            rests = rests.flatMap((r) => subtractSpan(r, seg));
+          }
+          for (const r of rests) {
+            kept.push({ ...a, startTime: r.startTime, endTime: r.endTime });
+          }
+        });
+        next = kept;
+      }
+
+      if (picker.editIndex !== undefined) return next;
       return [
-        ...prev,
+        ...next,
         ...segs.map((seg) => ({
           staffCode: picker.staffCode,
           groupId: picker.groupId,
@@ -287,6 +326,7 @@ export function AssignmentClient({
         startTime: string | null;
         endTime: string | null;
         isOff: boolean | null;
+        breakMin: number | null;
       };
     }) => ({
       staffCode: s.staffCode,
@@ -294,6 +334,7 @@ export function AssignmentClient({
       patternCode: s.patternCode,
       startTime: s.pattern.startTime,
       endTime: s.pattern.endTime,
+      breakMin: s.pattern.breakMin ?? 0,
       defaultGroupId: s.staff.groupId,
       // 2026-05-20: pattern.isOff に加え、パターンコード名でも休みを判定（防御）
       isOff: !!s.pattern.isOff || KNOWN_OFF_PATTERNS.has(s.patternCode),
@@ -307,6 +348,44 @@ export function AssignmentClient({
       endTime: a.endTime,
     }));
     setAssignments(remoteAssignments);
+
+    // ★ 2026-10-02（不具合要望 No.2）：シフト外ヘルプを保存済み割当から復元する。
+    //
+    //   externalHelpers は画面を開いている間だけの状態だったため、保存して閉じ、
+    //   開き直すとヘルプ要員の行が消えていた（割当は DB に残っているのに見えない）。
+    //   ダッシュボードの人数には入るため、重複追加や消し忘れの原因になっていた。
+    //
+    //   「本日のシフトに居ないのに割当がある人」＝ヘルプ要員として戻す。
+    //   名前は担当者マスタ（stRes）から引く。
+    const shiftCodes = new Set(shifts.map((x) => x.staffCode));
+    const helperCodes = Array.from(
+      new Set(remoteAssignments.map((a) => a.staffCode).filter((c) => !shiftCodes.has(c))),
+    );
+    if (helperCodes.length > 0) {
+      const master: Array<{ code: string; name: string; groupId: string | null }> =
+        stRes.data?.items ?? [];
+      const restored: StaffShift[] = helperCodes.map((code) => {
+        const m = master.find((x) => x.code === code);
+        // その人の割当の範囲を、ヘルプ行の勤務時間として見せる
+        const mine = remoteAssignments.filter((a) => a.staffCode === code);
+        const starts = mine.map((a) => a.startTime).sort();
+        const ends = mine.map((a) => a.endTime).sort();
+        return {
+          staffCode: code,
+          staffName: m?.name ?? code,
+          patternCode: 'HELP',
+          startTime: starts[0] ?? '09:00',
+          endTime: ends[ends.length - 1] ?? '17:00',
+          defaultGroupId: m?.groupId ?? null,
+          isOff: false,
+          // ヘルプはシフトに無く休憩の指定が無い（割当済みの時間をそのまま見せる）
+          breakMin: 0,
+        };
+      });
+      setExternalHelpers(restored);
+    } else {
+      setExternalHelpers([]);
+    }
 
     setBusy(false);
   }
@@ -343,6 +422,25 @@ export function AssignmentClient({
       );
       return;
     }
+    // ★ 2026-10-02（不具合要望 No.4）：同じ担当者の重なりは保存前に止める。
+    //   サーバ側でも同じ検査をしているが、ここで止めれば「誰のどの時間か」を
+    //   画面の言葉で示せる（「昨日の割当読込」で入った重なりもここで気づける）。
+    const conflicts = findOverlaps(cleaned);
+    if (conflicts.length > 0) {
+      setBusy(false);
+      const lines = conflicts.slice(0, 5).map((c) => {
+        const who =
+          todayShifts.find((x) => x.staffCode === c.a.staffCode)?.staffName ?? c.a.staffCode;
+        return `${who}：${c.a.startTime}〜${c.a.endTime} と ${c.b.startTime}〜${c.b.endTime}`;
+      });
+      setStatusMsg(
+        `❌ 同じ担当者の割当が重なっています（${conflicts.length}件）。時間を分けてください。 ` +
+          lines.join(' / ') +
+          (conflicts.length > 5 ? ` ほか${conflicts.length - 5}件` : ''),
+      );
+      return;
+    }
+
     const res = await fetch('/api/assignments', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -394,7 +492,7 @@ export function AssignmentClient({
       if (!s.startTime || !s.endTime) continue;
       const groupId = s.defaultGroupId ?? groups[0].id;
       // 対象パターンは 12:00〜13:00 の昼休憩を空けてバーを分割する
-      for (const seg of splitByLunchBreak(s.startTime, s.endTime, s.patternCode)) {
+      for (const seg of splitByLunchBreak(s.startTime, s.endTime, s.breakMin)) {
         next.push({
           staffCode: s.staffCode,
           groupId,
@@ -599,6 +697,8 @@ export function AssignmentClient({
       patternCode: 'HELP',
       startTime: '09:00',
       endTime: '17:00',
+      // ヘルプ要員はシフトに無いため休憩の指定が無い。昼休憩は抜かない
+      breakMin: 0,
       defaultGroupId: staff.groupId,
       isOff: false,
     };
@@ -1165,6 +1265,7 @@ export function AssignmentClient({
                     endTime: null,
                     defaultGroupId: null,
                     isOff: false,
+                    breakMin: 0,
                   };
                   setPicker(null);
                   markAbsent(targetStaff);
