@@ -32,6 +32,8 @@ export interface ImportResult {
   errors: ImportRowError[];
   /** 2026-05-30: 警告（取込成功・後日修正対象）。例: 12 桁 JAN */
   warnings?: ImportRowWarning[];
+  /** 出荷指示でこの取込が登録したピッキング№（2026-10-08・HUB へ伝票ごとの結果を返すため） */
+  importedPkNos?: string[];
 }
 
 /** 行単位の取込エラー。 */
