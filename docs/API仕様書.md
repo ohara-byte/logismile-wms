@@ -724,6 +724,15 @@ CraftSmile 側はこの値で納品済み数を訂正すること（要求値で
 
 連携契約は `src/lib/__tests__/factory-contract.test.ts` で固定している。
 
+### ★ `POST /api/integration/hub/orders`・`POST /api/integration/hub/products`（2026-10-08 新規）
+
+OENO EC Hub（HUB）からの出荷指示・商品マスタ。契約の正本は `docs/integration/HUB連携契約.md`。
+
+- 認証：HMAC-SHA256（`X-Hub-Signature` / `X-Hub-Timestamp`・`${ts}\n${rawBody}`・±300 秒）＋ `Idempotency-Key` 必須。鍵 `HUB_TO_WMS_SECRET`（32 文字以上）
+- `HUB_INTEGRATION_ENABLED=true` のときだけ有効（既定は 503）
+- CSV 取込（`POST /api/orders/import`）と**同じ登録処理**（`src/lib/integration/thomas-import.ts`）と、同じ取込後の自動引当を通す
+- 応答：200 `{ data: { replay, importId, totalRows, successCount, errorCount, duplicatePkNoCount, unmapCount, unmappedCodes, slips[] } }`（orders）/ 400 / 401 / 422 / 503 / 500
+
 ### ★ `GET /api/report/insp-timeline`（2026-09-17 新規）
 **検品タイムライン**の画面プレビュー（現場依頼）。
 

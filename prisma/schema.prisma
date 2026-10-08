@@ -748,6 +748,22 @@ model ThomasImport {
   @@map("thomas_imports")
 }
 
+/// HUB（OENO EC Hub）からの受信の冪等記録（2026-10-08）。
+/// 同じ Idempotency-Key の再送には、保存済みの応答をそのまま返す（取込をやり直さない）。
+/// 工場連携の冪等キーはプロセス内メモリで再起動で消えるため、こちらは DB に持つ。
+/// 応答は件数とピッキング№・商品コード・メッセージのみ（届け先の氏名・住所は含めない）。
+model HubInboundRequest {
+  id             Int      @id @default(autoincrement())
+  idempotencyKey String   @unique @map("idempotency_key") @db.VarChar(128)
+  /// orders / products
+  endpoint       String   @db.VarChar(30)
+  response       Json
+  receivedAt     DateTime @default(now()) @map("received_at") @db.Timestamptz
+
+  @@index([endpoint, receivedAt])
+  @@map("hub_inbound_requests")
+}
+
 /// 22. アラート管理
 model Alert {
   id         Int       @id @default(autoincrement())
