@@ -1,18 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   PACE_BADGE_EMOJI,
-  isRevisitPattern,
   paceBadge,
   paceBadgeText,
   perHourRate,
-  visitBlockCount,
 } from '../dashboard/work-pace';
-import {
-  UNCLASSIFIED,
-  buildLetterToGroup,
-  groupOfPkNo,
-  tableLetterOf,
-} from '../dashboard/group-map';
 
 /**
  * 作業ペース（要望書「LogiSmile現場向け進捗表示機能の追加」要望③）。
@@ -97,97 +89,5 @@ describe('paceBadgeText', () => {
   });
 });
 
-describe('visitBlockCount / isRevisitPattern', () => {
-  it('★ 午前A・午後B のような一般的な2テーブル勤務は対象（各グループ1ブロック）', () => {
-    // グループAに 9:00-12:00 だけ居た → 1ブロック
-    expect(visitBlockCount([{ start: 540, end: 720 }])).toBe(1);
-    expect(isRevisitPattern([{ start: 540, end: 720 }])).toBe(false);
-  });
-
-  it('★ 同じグループに1日で2回以上戻る「行き来」は集計対象外', () => {
-    // 9:00-12:00 に居て、他へ行き、15:00-17:00 にまた戻った
-    const spans = [
-      { start: 540, end: 720 },
-      { start: 900, end: 1020 },
-    ];
-    expect(visitBlockCount(spans)).toBe(2);
-    expect(isRevisitPattern(spans)).toBe(true);
-  });
-
-  it('隣接・重なりは1つのまとまりとして数える（バーを分けて置いただけ）', () => {
-    expect(
-      visitBlockCount([
-        { start: 540, end: 720 },
-        { start: 720, end: 780 },
-      ]),
-    ).toBe(1);
-    expect(
-      visitBlockCount([
-        { start: 540, end: 720 },
-        { start: 660, end: 780 },
-      ]),
-    ).toBe(1);
-  });
-
-  it('順不同で渡しても結果は同じ', () => {
-    const spans = [
-      { start: 900, end: 1020 },
-      { start: 540, end: 720 },
-    ];
-    expect(visitBlockCount(spans)).toBe(2);
-  });
-
-  it('空・不正な区間は数えない', () => {
-    expect(visitBlockCount([])).toBe(0);
-    expect(visitBlockCount([{ start: 720, end: 540 }])).toBe(0);
-    expect(isRevisitPattern([])).toBe(false);
-  });
-});
-
-/**
- * グループ判定（group-map.ts）— 管理PC と現場端末で同じ規則を使うことを固定する。
- * 片方だけ直すと、同じ伝票が画面ごとに別のグループに見える。
- */
-describe('group-map（伝票 → テーブルグループ）', () => {
-  const groups = [
-    { id: 'ABCSML', tables: ['A', 'B', 'S', 'C', 'M', 'L'] },
-    { id: 'I', tables: ['I'] },
-    { id: 'O', tables: ['O'] },
-    { id: 'RQ', tables: ['R', 'Q'] },
-    { id: 'DOKON-K', tables: ['D', 'E', 'T', 'F', 'V', 'N', 'G', 'P', 'J', 'H', 'U', 'K'] },
-  ];
-
-  it('★ ピッキング№の2文字目でテーブルを判定する（要望書の対応表）', () => {
-    const map = buildLetterToGroup(groups);
-    expect(groupOfPkNo(map, 'SA01208680006')).toBe('ABCSML'); // 2文字目 A
-    expect(groupOfPkNo(map, 'SI01208680006')).toBe('I');
-    expect(groupOfPkNo(map, 'SO01208680006')).toBe('O');
-    expect(groupOfPkNo(map, 'SR01208680006')).toBe('RQ');
-    expect(groupOfPkNo(map, 'SD01208680006')).toBe('DOKON-K');
-  });
-
-  it('小文字でも拾う', () => {
-    const map = buildLetterToGroup(groups);
-    expect(groupOfPkNo(map, 'sa01208680006')).toBe('ABCSML');
-  });
-
-  it('★ 同じ文字が複数グループにあれば先勝ち（マスタの並び順が効く）', () => {
-    const map = buildLetterToGroup([
-      { id: 'K', tables: ['K'] },
-      { id: 'SAS', tables: ['K', 'A'] },
-    ]);
-    expect(map.get('K')).toBe('K');
-  });
-
-  it('該当が無ければ未分類（伝票を取りこぼさない）', () => {
-    const map = buildLetterToGroup(groups);
-    expect(groupOfPkNo(map, 'SZ01208680006')).toBe(UNCLASSIFIED);
-    expect(groupOfPkNo(map, 'S')).toBe(UNCLASSIFIED);
-    expect(groupOfPkNo(map, '')).toBe(UNCLASSIFIED);
-  });
-
-  it('テーブル文字を取り出す', () => {
-    expect(tableLetterOf('SA01208680006')).toBe('A');
-    expect(tableLetterOf('S')).toBe('');
-  });
-});
+// 行き来（同じグループへ1日で2回以上戻る）の判定は scan-pace.test.ts に移した
+// （変更要望 No.2・久保様 2026-10-04。配置バーではなくスキャン実績で見る）。

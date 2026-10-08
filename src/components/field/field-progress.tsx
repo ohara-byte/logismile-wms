@@ -39,6 +39,26 @@ export interface FieldGroup {
   carriers: FieldCarrier[];
 }
 
+type Badge = 'red' | 'yellow' | 'green';
+
+/** 数字を出せない理由（サーバと同じ語）。null なら出せている。 */
+type PaceSkipReason = 'revisit' | 'too_short' | 'too_few' | 'no_scan' | null;
+
+/** 本日スキャンしたテーブル1つぶんの作業ペース（変更要望 No.3・久保様 2026-10-04）。 */
+export interface FieldMeTable {
+  groupId: string;
+  groupName: string;
+  count: number;
+  workedMin: number;
+  perHour: number | null;
+  badge: Badge | null;
+  badgeText: string | null;
+  targetYellowMin: number | null;
+  revisit: boolean;
+  reason: PaceSkipReason;
+  current: boolean;
+}
+
 export interface FieldProgressData {
   date: string;
   overall: { total: number; done: number; remaining: number; rate: number };
@@ -49,11 +69,30 @@ export interface FieldProgressData {
     count: number;
     workedMin: number;
     perHour: number | null;
-    badge: 'red' | 'yellow' | 'green' | null;
+    badge: Badge | null;
     badgeText: string | null;
     targetYellowMin: number | null;
     revisit: boolean;
+    reason: PaceSkipReason;
+    tables: FieldMeTable[];
   };
+}
+
+/**
+ * 作業ペースが「—」になる理由の説明。
+ * 現場が「壊れている」と思わないよう、必ず理由を添える（要望 No.1 / No.2 / No.3）。
+ */
+function skipReasonText(reason: PaceSkipReason): string {
+  switch (reason) {
+    case 'revisit':
+      return '同じテーブルを行き来した日のため集計対象外です';
+    case 'too_short':
+      return '作業時間が30分に満たないため出せません';
+    case 'too_few':
+      return '件数が15件に満たないため出せません';
+    default:
+      return 'まだ検品の記録がありません';
+  }
 }
 
 type Variant = 'tablet' | 'handy';
@@ -317,11 +356,7 @@ function FieldProgressDetail({
               {me.perHour == null ? (
                 <>
                   <div className={`${s.big} font-bold tabular-nums text-ink-subtle`}>—</div>
-                  <div className={`${s.label} text-ink-subtle`}>
-                    {me.revisit
-                      ? '同じテーブルを行き来した日のため集計対象外です'
-                      : 'メンバー割当が未登録のため出せません'}
-                  </div>
+                  <div className={`${s.label} text-ink-subtle`}>{skipReasonText(me.reason)}</div>
                 </>
               ) : (
                 <>
@@ -352,8 +387,57 @@ function FieldProgressDetail({
               )}
             </div>
           </div>
+          {/* ★ 変更要望 No.3（久保様 2026-10-04）：担当のテーブルが終わったら別のテーブルを
+              手伝うため、終業時に「今いるテーブル」1つだけでは自分のペースを確認できない。
+              本日スキャンしたテーブルを件数の多い順に並べる。ハンディは画面が狭いので2つまで。 */}
+          {me.tables.length > 0 && (
+            <div className="mt-3 border-t border-surface-border pt-2">
+              <div className={`mb-1 ${s.label} font-semibold text-ink-soft`}>
+                本日作業したテーブル
+              </div>
+              <ul className="space-y-1">
+                {me.tables.slice(0, variant === 'handy' ? 2 : 5).map((t) => (
+                  <li
+                    key={t.groupId}
+                    className={`flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg px-2 py-1.5 ${
+                      t.current ? 'bg-sky-950/60' : 'bg-surface-base'
+                    }`}
+                  >
+                    <span className={`${s.num} font-bold text-ink-strong`}>{t.groupName}</span>
+                    <span className={`${s.num} tabular-nums text-ink-soft`}>{t.count} 件</span>
+                    {t.perHour == null ? (
+                      <span className={`${s.label} text-ink-subtle`}>
+                        — <span className="font-normal">（{skipReasonText(t.reason)}）</span>
+                      </span>
+                    ) : (
+                      <>
+                        <span className={`${s.num} font-bold tabular-nums text-ink-strong`}>
+                          {t.perHour} 件/時
+                        </span>
+                        {t.targetYellowMin != null && (
+                          <span className={`${s.label} text-ink-subtle`}>
+                            目標 {t.targetYellowMin}
+                          </span>
+                        )}
+                        {t.badge && t.badgeText && (
+                          <span
+                            className={`rounded-full px-2 py-0.5 ${s.label} font-bold ${
+                              BADGE_CLASS[t.badge] ?? ''
+                            }`}
+                          >
+                            {t.badgeText}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <p className={`mt-2 ${s.label} text-ink-subtle`}>
-            ペースは自分の作業を振り返るための目安です（実働時間はメンバー割当の配置時間）。
+            ペースは自分の作業を振り返るための目安です（実働時間はスキャン実績から。
+            昼休憩は自動で引いています）。
           </p>
         </section>
 
