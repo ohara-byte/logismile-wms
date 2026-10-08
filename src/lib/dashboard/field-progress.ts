@@ -13,19 +13,19 @@
  * 引くので、終了予測・段階目標といった重い計算は載せない。
  *
  * ★ グループ判定は group-map.ts を共有する（画面ごとに食い違わせない）。
+ *
+ * ★ 2026-10-08 改訂（変更要望3件・久保様 2026-10-04）。
+ *   作業ペースの実働時間と「行き来」の判定を、**メンバー割当ではなくスキャン実績**に
+ *   改めた（計算は scan-pace.ts）。あわせて、本日スキャンしたテーブルごとのペースを
+ *   `me.tables` に載せる（手伝いに入ったテーブルで 🔴 が出る問題への対応）。
  */
 
 import { prisma } from '../db';
 import { UNCLASSIFIED, buildLetterToGroup, groupOfPkNo } from './group-map';
-import {
-  paceBadge,
-  paceBadgeText,
-  perHourRate,
-  isRevisitPattern,
-  type PaceBadge,
-} from './work-pace';
-import { assignedMinutesByStaff, hhmmToMinutes, type AssignmentBar } from '../assigned-hours';
-import { formatDateYmd, jstYmd } from '../date-utils';
+import { paceBadge, paceBadgeText, type PaceBadge } from './work-pace';
+import { paceByGroup, type PaceSkipReason, type ScanRecord } from './scan-pace';
+import { jstDayAndMinute } from '../assigned-hours';
+import { formatDateYmd, jstDayStart, jstDayEnd } from '../date-utils';
 
 /** 配送業者ごとの残件（テーブルごとに出す。出荷全体の合計ではない）。 */
 export interface CarrierRemaining {
@@ -48,15 +48,42 @@ export interface FieldGroupProgress {
   carriers: CarrierRemaining[];
 }
 
+/**
+ * 本日スキャンしたテーブル1つぶんの作業ペース（変更要望 No.3・久保様 2026-10-04）。
+ *
+ *   > 現場では、担当のテーブルが終わったら別のテーブルを手伝う、という動きがある。
+ *   > 終業時に自分のペースを確認しようとしても、今の画面では確認できない。
+ */
+export interface FieldMeTable {
+  groupId: string;
+  groupName: string;
+  /** このテーブルで完了した伝票の枚数 */
+  count: number;
+  /** 実働分（最初の着手〜最後の完了 − 昼休憩） */
+  workedMin: number;
+  /** 件/時。出せないときは null */
+  perHour: number | null;
+  badge: PaceBadge | null;
+  badgeText: string | null;
+  /** 目標（🟡 の下限）。未設定なら null */
+  targetYellowMin: number | null;
+  /** 同じグループに1日で2回以上戻る「行き来」か */
+  revisit: boolean;
+  /** 数字を出せない理由（画面の「—」の説明に使う） */
+  reason: PaceSkipReason;
+  /** いま作業しているテーブルの行か */
+  current: boolean;
+}
+
 export interface FieldMeProgress {
   /** 直近のスキャン実績から決めた「自分のテーブル」。決まらなければ null */
   groupId: string | null;
   groupName: string | null;
-  /** 本日の処理件数（**伝票枚数**。商品点数ではない） */
+  /** 本日の処理件数（**伝票枚数**。商品点数ではない。テーブルを問わない合計） */
   count: number;
-  /** 実働分（メンバー割当ガントの配置時間。休憩は配置の隙間になる） */
+  /** いま作業しているテーブルの実働分（スキャン実績から。昼休憩は自動控除） */
   workedMin: number;
-  /** 件/時。配置が未登録なら null（「0 件/時」と区別する） */
+  /** いま作業しているテーブルの件/時。出せないときは null（「0 件/時」と区別する） */
   perHour: number | null;
   badge: PaceBadge | null;
   /** 「🟡 標準ペース（20〜24）」。バッジが無ければ null */
@@ -68,6 +95,10 @@ export interface FieldMeProgress {
    * 要望書の受け入れ基準により、この日のこのグループは集計対象外として扱う。
    */
   revisit: boolean;
+  /** 数字を出せない理由（画面の「—」の説明に使う） */
+  reason: PaceSkipReason;
+  /** 本日スキャンしたテーブルごとの作業ペース（件数の多い順） */
+  tables: FieldMeTable[];
 }
 
 export interface FieldProgress {
@@ -92,28 +123,20 @@ const DONE_STATUS = ['packed', 'shipped'];
  *   → **全端末を動的判定で統一**する。固定端末も応援で他テーブルに入ることがあり、
  *     そのとき固定マッピングだと他人のテーブルの進捗を「自分の」と見せてしまう。
  *
- * 判定は「その担当者が**今日**最後に検品した伝票」。
+ * 判定は「その担当者が**今日**最後に着手した伝票」。
  * 今日まだ1件も検品していなければ、端末の配置（`Device.location`）で補う。
  */
 export async function resolveMyGroupId(params: {
-  date: Date;
-  staffCode: string | null;
+  /** その担当者が本日スキャンした伝票（未分類は除いてある） */
+  records: ScanRecord[];
   deviceCode: string | null;
   letterToGroup: Map<string, string>;
 }): Promise<string | null> {
-  const { date, staffCode, deviceCode, letterToGroup } = params;
+  const { records, deviceCode, letterToGroup } = params;
 
-  if (staffCode) {
-    const last = await prisma.inspSession.findFirst({
-      where: { staffCode, startedAt: { gte: startOfDay(date), lte: endOfDay(date) } },
-      orderBy: { startedAt: 'desc' },
-      select: { order: { select: { pkNo: true } } },
-    });
-    if (last?.order?.pkNo) {
-      const gid = groupOfPkNo(letterToGroup, last.order.pkNo);
-      if (gid !== UNCLASSIFIED) return gid;
-    }
-  }
+  let last: ScanRecord | null = null;
+  for (const r of records) if (last == null || r.startMin >= last.startMin) last = r;
+  if (last) return last.groupId;
 
   // まだ今日1件も読んでいない端末（朝いちの待受け画面）。
   //   端末の配置が登録されていればそれを使う。遊撃端末は未設定なので null になる。
@@ -129,17 +152,6 @@ export async function resolveMyGroupId(params: {
     }
   }
   return null;
-}
-
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-function endOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
 }
 
 /**
@@ -250,73 +262,99 @@ async function buildMe(params: {
 }): Promise<FieldMeProgress> {
   const { date, staffCode, deviceCode, letterToGroup, groups } = params;
 
-  const groupId = await resolveMyGroupId({ date, staffCode, deviceCode, letterToGroup });
+  const dayFrom = jstDayStart(date);
+  const dayTo = jstDayEnd(date);
+  const inDay = (d: Date | null | undefined): d is Date =>
+    d != null && d >= dayFrom && d <= dayTo;
+
+  /*
+   * 本日の検品セッション。
+   * 「本日の処理件数」「作業ペース」「行き来の判定」「自分のテーブル」を
+   * この1回で賄う（端末は数秒おきに引くので、問い合わせを増やさない）。
+   *
+   * 着手と完了のどちらかが本日に入っていれば拾う。日またぎは本来起きないが、
+   * 保留した伝票が翌朝に完了することはありうるため、取りこぼさないようにする。
+   */
+  const sessions = staffCode
+    ? await prisma.inspSession.findMany({
+        where: {
+          staffCode,
+          OR: [
+            { startedAt: { gte: dayFrom, lte: dayTo } },
+            { completedAt: { gte: dayFrom, lte: dayTo } },
+          ],
+        },
+        orderBy: { startedAt: 'asc' },
+        select: { startedAt: true, completedAt: true, order: { select: { pkNo: true } } },
+      })
+    : [];
+
+  // ① 本日の処理件数 ＝ 本日完了した伝票（**伝票枚数**。商品点数ではない）。
+  //    テーブルを問わない1日の合計。テーブルごとの件数は `tables` に入れる。
+  const count = sessions.filter((s) => inDay(s.completedAt)).length;
+
+  /*
+   * 作業ペースと行き来の判定に使うスキャン実績（変更要望 No.1 / No.2・久保様 2026-10-04）。
+   *
+   * ★ 2026-09-28 までは分母に**メンバー割当の配置時間**を使っていたが、
+   *   前裁きなど「スキャン記録の残らない作業」や午後の予定まで分母に入り、
+   *   実際より大幅に低い値が出ていた。スキャン実績に改める。
+   *
+   * 本日着手した伝票だけを対象にする。テーブルが決まらない伝票（未分類）は、
+   * どのグループのペースにも足せないため除く。
+   */
+  const records: ScanRecord[] = [];
+  for (const s of sessions) {
+    if (!inDay(s.startedAt)) continue;
+    const gid = groupOfPkNo(letterToGroup, s.order.pkNo);
+    if (gid === UNCLASSIFIED) continue;
+    records.push({
+      groupId: gid,
+      startMin: jstDayAndMinute(s.startedAt).minute,
+      endMin: inDay(s.completedAt) ? jstDayAndMinute(s.completedAt).minute : null,
+    });
+  }
+
+  const groupId = await resolveMyGroupId({ records, deviceCode, letterToGroup });
   const group = groupId ? groups.find((g) => g.id === groupId) : undefined;
 
-  const empty: FieldMeProgress = {
-    groupId: groupId ?? null,
-    groupName: group?.name ?? null,
-    count: 0,
-    workedMin: 0,
-    perHour: null,
-    badge: null,
-    badgeText: null,
-    targetYellowMin: group?.paceYellowMin ?? null,
-    revisit: false,
-  };
-  if (!staffCode) return empty;
+  // テーブルごとの作業ペース（件数の多い順）。
+  const byId = new Map(groups.map((g) => [g.id, g] as const));
+  const tables: FieldMeTable[] = [];
+  for (const p of paceByGroup(records)) {
+    const g = byId.get(p.groupId);
+    if (!g || p.count === 0) continue; // マスタに無いグループ／完了0件の行は出さない
+    const target = { yellowMin: g.paceYellowMin, greenMin: g.paceGreenMin };
+    const badge = paceBadge(p.perHour, target);
+    tables.push({
+      groupId: p.groupId,
+      groupName: g.name,
+      count: p.count,
+      workedMin: p.workedMin,
+      perHour: p.perHour,
+      badge,
+      badgeText: badge ? paceBadgeText(badge, target) : null,
+      targetYellowMin: g.paceYellowMin,
+      revisit: p.revisit,
+      reason: p.reason,
+      current: p.groupId === groupId,
+    });
+  }
 
-  // 本日の処理件数 ＝ 完了した検品セッションの数（**伝票枚数**。商品点数ではない）
-  const sessions = await prisma.inspSession.findMany({
-    where: { staffCode, completedAt: { gte: startOfDay(date), lte: endOfDay(date) } },
-    select: { completedAt: true },
-  });
-  const count = sessions.filter((s) => s.completedAt && jstYmd(s.completedAt) === formatDateYmd(date))
-    .length;
-
-  // 実働分 ＝ メンバー割当ガントの配置時間（休憩は配置の隙間になる）
-  const assignments = await prisma.memberAssignment.findMany({
-    where: { staffCode, date: new Date(`${formatDateYmd(date)}T00:00:00.000Z`) },
-    select: { date: true, staffCode: true, groupId: true, startTime: true, endTime: true },
-  });
-  const bars: AssignmentBar[] = assignments.map((a) => ({
-    dateKey: formatDateYmd(a.date),
-    staffCode: a.staffCode,
-    groupId: a.groupId,
-    startTime: a.startTime,
-    endTime: a.endTime,
-  }));
-  const workedMin = assignedMinutesByStaff(bars).get(staffCode) ?? 0;
-
-  // 「行き来」判定：自分のグループへの配置が1日で2つ以上のまとまりに分かれているか
-  const revisit = groupId
-    ? isRevisitPattern(
-        bars
-          .filter((b) => b.groupId === groupId)
-          .map((b) => ({
-            start: hhmmToMinutes(b.startTime) ?? 0,
-            end: hhmmToMinutes(b.endTime) ?? 0,
-          })),
-      )
-    : false;
-
-  const rate = perHourRate(count, workedMin);
-  const target = {
-    yellowMin: group?.paceYellowMin ?? null,
-    greenMin: group?.paceGreenMin ?? null,
-  };
-  // 行き来の日はペースを出さない（要望書の受け入れ基準）
-  const badge = revisit ? null : paceBadge(rate, target);
+  // ② 作業ペース ＝ いま作業しているテーブルの行。
+  const mine = tables.find((t) => t.groupId === groupId);
 
   return {
     groupId: groupId ?? null,
     groupName: group?.name ?? null,
     count,
-    workedMin,
-    perHour: revisit ? null : rate,
-    badge,
-    badgeText: badge ? paceBadgeText(badge, target) : null,
-    targetYellowMin: target.yellowMin,
-    revisit,
+    workedMin: mine?.workedMin ?? 0,
+    perHour: mine?.perHour ?? null,
+    badge: mine?.badge ?? null,
+    badgeText: mine?.badgeText ?? null,
+    targetYellowMin: group?.paceYellowMin ?? null,
+    revisit: mine?.revisit ?? false,
+    reason: mine?.reason ?? 'no_scan',
+    tables,
   };
 }

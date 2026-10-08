@@ -10,9 +10,10 @@
  * ★ **現場の自己確認用であり、評価目的ではない**（要望書に明記）。
  *   画面の文言もその前提で書くこと。
  *
- * ★ 実働時間は **メンバー割当ガントの配置時間**（MHT）を使う（小原様確定 2026-09-28）。
- *   休憩は配置バーの隙間になるため「休憩を除いた実勤務時間」と一致する。
- *   配置が未登録の日はペースを出さない（0 件/時ではなく「—」）。
+ * ★ 実働時間は **スキャン実績**から出す（変更要望 No.1・久保様 2026-10-04／小原様了承 2026-10-08）。
+ *   2026-09-28 にメンバー割当の配置時間（MHT）と決めたが、前裁きなど
+ *   スキャン記録の残らない作業や午後の予定まで分母に入り、実際より大幅に低く出た。
+ *   計算は `scan-pace.ts` に置く。出せないときは 0 件/時ではなく「—」。
  *
  * ★ 目標値はグループマスタ（`InspectionGroup.paceYellowMin` / `paceGreenMin`）。
  *   コードに固定しない（要望書の指示）。未設定ならバッジを出さない。
@@ -46,7 +47,7 @@ export interface PaceTarget {
  * 件/時。
  *
  * @param count     処理した**伝票枚数**（商品点数ではない）
- * @param workedMin 実働分（休憩を除く＝配置時間）
+ * @param workedMin 実働分（休憩を除く）
  * @returns 小数1桁。実働が 0 以下なら **null**（「0 件/時」と区別する）
  */
 export function perHourRate(count: number, workedMin: number): number | null {
@@ -84,36 +85,10 @@ export function paceBadgeText(badge: PaceBadge, target: PaceTarget): string {
   return `${emoji} ${label}（${range}）`;
 }
 
-/**
- * 掛け持ちの扱い（要望書 受け入れ基準）。
+/* 掛け持ち・行き来（同じグループに1日で2回以上戻る）の判定は、
+ * **スキャン実績**をもとにする `scan-pace.ts` の `revisitGroups()` に移した
+ * （変更要望 No.2・久保様 2026-10-04）。
  *
- *   > 掛け持ち（大半は2テーブルを跨ぐ勤務）は、同じグループへの滞在が1日の中で
- *   > 1つのまとまり（ブロック）であれば通常通り集計される（午前A・午後Bのような
- *   > 一般的な2テーブル勤務も対象）。同じグループに1日で2回以上戻る「行き来」
- *   > パターンの場合のみ、その日のそのグループの数値は集計対象外となる。
- *
- * 配置バー（同じ日・同じ担当者・同じグループ）が**時間的に離れて2本以上**あれば
- * 「行き来」とみなす。隣接・重なりは1つのまとまりとして数える。
- *
- * @param spans 同一グループの配置区間（分）。順不同でよい
- * @returns まとまりの数。2 以上なら集計対象外
+ * 以前はメンバー割当の配置バーで数えていたが、昼休憩で配置が2本に分かれるだけで
+ * 「行き来」と判定され、昼休憩を取る人のほぼ全員でペースが出なくなっていた。
  */
-export function visitBlockCount(spans: Array<{ start: number; end: number }>): number {
-  const valid = spans.filter((s) => s.end > s.start).sort((a, b) => a.start - b.start);
-  let blocks = 0;
-  let curEnd = -1;
-  for (const s of valid) {
-    if (curEnd < 0 || s.start > curEnd) {
-      blocks++;
-      curEnd = s.end;
-    } else if (s.end > curEnd) {
-      curEnd = s.end;
-    }
-  }
-  return blocks;
-}
-
-/** 行き来（同じグループに1日で2回以上戻る）か。 */
-export function isRevisitPattern(spans: Array<{ start: number; end: number }>): boolean {
-  return visitBlockCount(spans) >= 2;
-}
