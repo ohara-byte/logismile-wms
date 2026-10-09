@@ -3,7 +3,7 @@
 - 決定：小原様 2026-10-07〜08（「HUB 起点で連携」「憶測 NG・TDD で正確に」）
 - 相手側の正本：oeno-echub `docs/requirements/33_HUB起点連携_Craftsmile_LogiSmile.md`
 - 判断規則：CraftSmile `docs/decisions/ADR-030`（稼働中の実装を正・**受信側の期待を正**）
-- 契約テスト：`src/lib/__tests__/hub-contract.test.ts`・`hub-handler.test.ts`・`thomas-import.test.ts`
+- 契約テスト：`src/lib/__tests__/hub-contract.test.ts`・`hub-handler.test.ts`・`hub-status.test.ts`・`thomas-import.test.ts`
 
 ## 1. 位置づけ
 
@@ -12,7 +12,7 @@
 | Phase1（田舎主義 API 連携時） | 田舎主義 → HUB → **LogiSmile**（HUB は田舎主義の Thomas 出力を加工せずに中継） |
 | Phase2（HUB が送り状・納品請求を印刷） | HUB → LogiSmile（ピッキング№は HUB が振る） |
 
-**LogiSmile から HUB へは送らない**（小原様「セキュリティ上避けたい」）。梱包状況は HUB が取りに行く（次の段階で追加）。
+**LogiSmile から HUB へは送らない**（小原様「セキュリティ上避けたい」）。梱包状況は HUB が取りに行く（§5・2026-10-09）。
 
 ## 2. 共通
 
@@ -73,7 +73,36 @@ DB に既にあるピッキング№は伝票ごとスキップ（重複）／�
 | `dropped_unmapped` | 未登録商品を含むためスキップ（`missingProductCodes`）。商品を登録して**別の冪等キーで**再送する |
 | `error` | その他（出荷予定日が不正 など・`messages`） |
 
-## 5. 運用上の注意
+## 5. `POST /api/integration/hub/status`（梱包状況・HUB が取りに行く・2026-10-09）
+
+小原様「WMS 出荷状況をリアルに HUB が取得（取りに行く方法で）」「（間隔は）間を取って 3 分」。**読むだけ**（DB に書かない）。
+
+```json
+{ "pkNos": ["SB01245370001", "SB01245370002"] }
+```
+
+- `pkNos` は 1〜1,000 件（文字列 1〜30 文字）。契約に無い項目は 422。重複・前後の空白は除いて引く
+- 認証は §2 と同じ（`Idempotency-Key` も必須）。読むだけなので**冪等キーは保存しない**（再送でも毎回いまの状態を返す）
+
+```json
+{ "data": {
+    "slips": [{ "pkNo": "SB01245370001", "status": "packed", "holdReason": null,
+                "packedAt": "2026-10-09T01:23:00.000Z", "deleted": false, "updatedAt": "2026-10-09T01:23:00.000Z" }],
+    "missing": ["SB01245370002"] },
+  "message": "OK" }
+```
+
+| 項目 | 意味 |
+|---|---|
+| `status` | `shipping_orders.status` そのまま（`pending` 未着手 / `inspecting` 検品中 / `packed` 梱包済 / `shipped` 出荷済 / `held` 保留）。読み替えは HUB が行う |
+| `holdReason` | 保留中だけ返す（保留を解いた後に残る理由は返さない） |
+| `packedAt` | 梱包済・出荷済のときだけ、検品完了の時刻（`insp_sessions.completed_at`）。未検品照合で梱包済にした伝票は `null` |
+| `deleted` | 論理削除された伝票（訂正で新しいピッキング№が出たもの等）。`status` は削除前のまま |
+| `missing` | LogiSmile に無いピッキング№（未登録商品でスキップされた伝票など） |
+
+送付先の氏名・住所は返さない。
+
+## 6. 運用上の注意
 
 - HUB からの API 取込を始めたら、**同じ出荷指示の手動 CSV アップロードはやめる**（後から入れた側が全件「重複」になる）
 - 応答の保存（`hub_inbound_requests`）には件数・ピッキング№・商品コード・メッセージのみが入る（届け先の氏名・住所は入れない）
