@@ -23,6 +23,7 @@ import { prisma } from '@/lib/db';
 import { requireRole } from '@/lib/auth/permissions';
 import { allocateMtoForOrder } from '@/lib/allocation/allocate-on-inspection';
 import { isFactoryApiMode } from '@/lib/integration/factory-mode';
+import { cancelledOrderError } from '@/lib/integration/hub-cancel';
 
 const Body = z.object({
   pkNo: z.string().min(1),
@@ -51,6 +52,15 @@ export async function POST(req: Request) {
       { error: 'FORBIDDEN', message: '検品作業には staff レコードに紐付くアカウントが必要です' },
       { status: 403 },
     );
+  }
+
+  // HUB 当日キャンセル（2026-10-09）: キャンセルされた伝票は検品を始めさせない（論理削除済みでも理由を出す）
+  const cancelled = await prisma.shippingOrder.findFirst({
+    where: { pkNo: parsed.data.pkNo, cancelRequestedAt: { not: null } },
+    select: { pkNo: true, invoiceNo: true, destName: true, cancelReason: true, cancelRequestedAt: true },
+  });
+  if (cancelled?.cancelRequestedAt) {
+    return cancelledOrderError({ ...cancelled, cancelRequestedAt: cancelled.cancelRequestedAt }, 'start');
   }
 
   const order = await prisma.shippingOrder.findFirst({

@@ -3,7 +3,7 @@
 - 決定：小原様 2026-10-07〜08（「HUB 起点で連携」「憶測 NG・TDD で正確に」）
 - 相手側の正本：oeno-echub `docs/requirements/33_HUB起点連携_Craftsmile_LogiSmile.md`
 - 判断規則：CraftSmile `docs/decisions/ADR-030`（稼働中の実装を正・**受信側の期待を正**）
-- 契約テスト：`src/lib/__tests__/hub-contract.test.ts`・`hub-handler.test.ts`・`hub-status.test.ts`・`thomas-import.test.ts`
+- 契約テスト：`src/lib/__tests__/hub-contract.test.ts`・`hub-handler.test.ts`・`hub-status.test.ts`・`hub-cancel.test.ts`・`thomas-import.test.ts`
 
 ## 1. 位置づけ
 
@@ -102,7 +102,33 @@ DB に既にあるピッキング№は伝票ごとスキップ（重複）／�
 
 送付先の氏名・住所は返さない。
 
-## 6. 運用上の注意
+## 6. `POST /api/integration/hub/cancel`（当日キャンセル・2026-10-09）
+
+小原様「キャンセルは callHUB でオペレータがキャンセル処理をしたらそのまま送信予定」「オペレータの 2 重処理は避けたい」
+「WMS へチャット連絡と検品遮断をしたい」「お届先様名も追加」。モック: oeno-echub `mockup/22b_wms_cancel_devices.html`。
+
+```json
+{ "pkNo": "SB01245370231", "reason": "お客様都合（電話）", "operator": "山本" }
+```
+
+- `pkNo`・`reason`（1〜200 文字）必須、`operator`（callHUB でキャンセルした人・30 文字まで）任意。契約に無い項目は 422
+- 認証は §2 と同じ。**同じ冪等キーの再送には保存済みの応答を返す**（連絡事項を 2 回出さない・`hub_inbound_requests` の endpoint=`cancel`）
+
+| result | LogiSmile での扱い |
+|---|---|
+| `cancelled` | 未着手・保留 → キャンセルの印（`cancel_requested_at` / `cancel_reason` / `cancel_by`）＋論理削除（`deleted_by=HUB`・理由「HUB 当日キャンセル: …」）。ピッキング№をスキャンしても検品を始められない |
+| `blocked_inspecting` | 検品中 → 印だけ付ける。次のスキャン・完了の操作で 409 `CANCELLED`（完了できない）。`inspector` に担当と端末 |
+| `packed` | 梱包済・出荷済 → システムでは止めない（印は記録として残す）。`packedAt` に検品完了の時刻 |
+| `already_cancelled` | 既に印がある（別の冪等キーで 2 回送られた） |
+| `not_found` | そのピッキング№が無い |
+
+- `cancelled` / `blocked_inspecting` / `packed` のときは、現場へ**連絡事項**（`notices`・announce・全端末・了解必須・発信者 `HUB`）を出す。見出しは「【当日キャンセル】お届先様名 様 ／ 納品書 … ／ ピッキング№」
+- 応答には `destName`（お届先様名）・`invoiceNo`・`previousStatus`・`noticeId` も返す
+- 検品の完了とキャンセルが同時に来ても食い違わない: キャンセルは「梱包済・出荷済でなく印が無い」とき、完了は「印が無い」ときだけ書く（`hub-cancel-apply.ts`・`inspect/complete`）
+- 端末: 待機画面のスキャン・検品の開始・スキャン・完了で、キャンセルの印がある伝票は赤い警告（`CancelWarningModal`）で止める。お届先様名を大きく出す
+- キャンセルの取り消し（復活）はしない（もう一度出すときは新しく受注）
+
+## 7. 運用上の注意
 
 - HUB からの API 取込を始めたら、**同じ出荷指示の手動 CSV アップロードはやめる**（後から入れた側が全件「重複」になる）
 - 応答の保存（`hub_inbound_requests`）には件数・ピッキング№・商品コード・メッセージのみが入る（届け先の氏名・住所は入れない）

@@ -23,6 +23,7 @@ import { prisma } from '@/lib/db';
 import { requireRole, ownsSession } from '@/lib/auth/permissions';
 import { isAllInspected } from '@/lib/inspection';
 import { runPrintJob } from '@/lib/print-job';
+import { cancelledOrderError } from '@/lib/integration/hub-cancel';
 
 const Body = z.object({
   sessionId: z.string().min(1),
@@ -56,6 +57,10 @@ export async function POST(req: Request) {
           qrPrintFlag: true,
           status: true,
           invoiceNo: true, // ★ サンドイッチ照合の権威値（取込時に基幹 CSV から保存済み）
+          // HUB 当日キャンセル（2026-10-09）: 印が付いていれば完了させない
+          destName: true,
+          cancelRequestedAt: true,
+          cancelReason: true,
           items: {
             select: {
               qty: true,
@@ -83,6 +88,9 @@ export async function POST(req: Request) {
       { error: 'CONFLICT', message: 'セッションは既に完了しています' },
       { status: 409 },
     );
+  }
+  if (session.order.cancelRequestedAt) {
+    return cancelledOrderError({ ...session.order, cancelRequestedAt: session.order.cancelRequestedAt }, 'inspect');
   }
   if (session.order.pkNo !== parsed.data.pkNo) {
     return NextResponse.json(
@@ -152,6 +160,7 @@ export async function POST(req: Request) {
   //   セッション更新を completedAt:null の楽観条件にし、claim できた 1 件のみが
   //   後続（packed 化 / complete ログ / 引当 fulfilled）を実行する。
   const ALREADY = Symbol('already_completed');
+  const CANCELLED = Symbol('hub_cancelled');
   try {
     await prisma.$transaction(async (tx) => {
       const claim = await tx.inspSession.updateMany({
@@ -161,11 +170,15 @@ export async function POST(req: Request) {
       if (claim.count === 0) {
         throw ALREADY; // 別端末が先に完了済み
       }
-      await tx.shippingOrder.update({
-        where: { id: session.order.id },
+      // HUB 当日キャンセルの印が無いときだけ梱包済にする（キャンセルと同時なら、先に書けた方が勝つ・hub-cancel-apply.ts）
+      const packed = await tx.shippingOrder.updateMany({
+        where: { id: session.order.id, cancelRequestedAt: null },
         // invoiceNo は取込値（基幹の権威値）のまま。照合済みなので上書きしない。
         data: { status: 'packed' },
       });
+      if (packed.count === 0) {
+        throw CANCELLED; // セッションの完了も巻き戻る
+      }
       await tx.inspLog.create({
         data: {
           sessionId: session.id,
@@ -182,6 +195,13 @@ export async function POST(req: Request) {
       });
     });
   } catch (e) {
+    if (e === CANCELLED) {
+      const o = await prisma.shippingOrder.findUnique({
+        where: { id: session.order.id },
+        select: { pkNo: true, invoiceNo: true, destName: true, cancelReason: true, cancelRequestedAt: true },
+      });
+      return cancelledOrderError({ ...o!, cancelRequestedAt: o?.cancelRequestedAt ?? new Date() }, 'inspect');
+    }
     if (e === ALREADY) {
       return NextResponse.json(
         { error: 'CONFLICT', message: 'この伝票は既に完了処理されました' },

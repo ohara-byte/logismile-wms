@@ -638,6 +638,11 @@ model ShippingOrder {
   deletedAt    DateTime? @map("deleted_at") @db.Timestamptz
   deletedBy    String?   @map("deleted_by") @db.VarChar(10)
   deleteReason String?   @map("delete_reason") @db.Text
+  /// HUB 当日キャンセル（2026-10-09）。印が付いた伝票は検品の開始・スキャン・完了で止める（hub-cancel.ts）
+  cancelRequestedAt DateTime? @map("cancel_requested_at") @db.Timestamptz
+  cancelReason      String?   @map("cancel_reason") @db.Text
+  /// callHUB でキャンセルした人（表示用）
+  cancelBy          String?   @map("cancel_by") @db.VarChar(30)
   /// 未検品照合タブ用（A-12）: 'none' | 'barcode' | 'visual'
   matchStatus  String    @default("none") @map("match_status") @db.VarChar(10)
   matchedAt    DateTime? @map("matched_at") @db.Timestamptz
@@ -755,7 +760,7 @@ model ThomasImport {
 model HubInboundRequest {
   id             Int      @id @default(autoincrement())
   idempotencyKey String   @unique @map("idempotency_key") @db.VarChar(128)
-  /// orders / products
+  /// orders / products / cancel
   endpoint       String   @db.VarChar(30)
   response       Json
   receivedAt     DateTime @default(now()) @map("received_at") @db.Timestamptz
