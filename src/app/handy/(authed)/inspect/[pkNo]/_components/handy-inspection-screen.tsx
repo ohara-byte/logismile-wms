@@ -14,6 +14,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/cn';
 import { NoticesModal } from '@/components/inspection/notices-modal';
+import { CancelWarningModal, cancelInfoFrom } from '@/components/inspection/cancel-warning-modal';
 import { FinalCheckModal } from '@/components/inspection/final-check-modal';
 import { PrintConfirmModal } from '@/components/inspection/print-confirm-modal';
 import { ForceOkModal } from '@/components/inspection/force-ok-modal';
@@ -100,6 +101,19 @@ function sortInspectionItems(items: InspectionItem[]): InspectionItem[] {
 
 export function HandyInspectionScreen({ order: initialOrder, employee }: Props) {
   const router = useRouter();
+  /**
+   * HUB 当日キャンセル（2026-10-09）: 検品の API が 409 CANCELLED を返したら、赤い警告で止めて待機画面へ戻す。
+   * 開始・スキャン・完了のどれで止まっても同じ。fetch の代わりにこれを使う。
+   */
+  const [hubCancel, setHubCancel] = useState<ReturnType<typeof cancelInfoFrom>>(null);
+  const inspectFetch = useCallback(async (url: string, init?: RequestInit) => {
+    const res = await fetch(url, init);
+    if (res.status === 409) {
+      const j = await res.clone().json().catch(() => null);
+      if (j?.error === 'CANCELLED' && j.data) setHubCancel(cancelInfoFrom(j.data));
+    }
+    return res;
+  }, []);
   const [order, setOrder] = useState(initialOrder);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -202,7 +216,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
   // セッション開始（D-2: 起動時 NoshiConfirmation 撤廃）
   useEffect(() => {
     if (sessionId || completed) return;
-    fetch('/api/inspect/start', {
+    inspectFetch('/api/inspect/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pkNo: order.pkNo }),
@@ -213,7 +227,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
         else setErrorMsg(j.message ?? 'セッション開始に失敗');
       })
       .catch((e) => setErrorMsg(String(e)));
-  }, [order.pkNo, sessionId, completed]);
+  }, [order.pkNo, sessionId, completed, inspectFetch]);
 
   // モーダル閉じたらフォーカス回復
   useEffect(() => {
@@ -395,7 +409,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
 
     try {
       const t0 = Date.now();
-      const res = await fetch('/api/inspect/scan', {
+      const res = await inspectFetch('/api/inspect/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, scanValue: value, qty: pendQ ?? 1 }),
@@ -497,7 +511,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     if (!sessionId) return;
     setBusy(true);
     try {
-      const res = await fetch('/api/inspect/scan', {
+      const res = await inspectFetch('/api/inspect/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -585,7 +599,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     setBusy(true);
     setErrorMsg(null);
     try {
-      const res = await fetch('/api/inspect/complete', {
+      const res = await inspectFetch('/api/inspect/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -693,7 +707,7 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
     setBusy(true);
     try {
       const t0 = Date.now();
-      const res = await fetch('/api/inspect/scan', {
+      const res = await inspectFetch('/api/inspect/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -876,6 +890,8 @@ export function HandyInspectionScreen({ order: initialOrder, employee }: Props) 
       )}
 
       {/* モーダル */}
+      {/* HUB 当日キャンセル（2026-10-09）: 開始・スキャン・完了で止まったら赤い警告 → 待機画面へ */}
+      <CancelWarningModal open={hubCancel !== null} order={hubCancel} onClose={() => { setHubCancel(null); router.push('/handy'); }} />
       {showNotices && (
         <NoticesModal variant="handy-launch" onClose={() => setShowNotices(false)} />
       )}

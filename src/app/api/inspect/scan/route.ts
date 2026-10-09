@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireRole, ownsSession } from '@/lib/auth/permissions';
 import { judgeScan, stripPkPrefix } from '@/lib/inspection';
+import { cancelledOrderError } from '@/lib/integration/hub-cancel';
 
 const Body = z.object({
   sessionId: z.string().min(1),
@@ -67,6 +68,10 @@ export async function POST(req: Request) {
       { error: 'CONFLICT', message: 'セッションは既に完了しています' },
       { status: 409 },
     );
+  }
+  // HUB 当日キャンセル（2026-10-09）: 検品の途中でキャンセルされたら、次のスキャンで止める
+  if (session.order.cancelRequestedAt) {
+    return cancelledOrderError({ ...session.order, cancelRequestedAt: session.order.cancelRequestedAt }, 'inspect');
   }
 
   // ラッピング代替バーコード（2026-06-23）：ピッキング№コア（pkNoの先頭英字除去）と数字バーコードを照合。

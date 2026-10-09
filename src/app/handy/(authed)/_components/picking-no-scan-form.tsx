@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { HeldResumeModal } from '@/components/inspection/held-resume-modal';
 import { CompletedWarningModal } from '@/components/inspection/completed-warning-modal';
-import { CancelWarningModal } from '@/components/inspection/cancel-warning-modal';
+import { CancelWarningModal, cancelInfoFrom } from '@/components/inspection/cancel-warning-modal';
 import { TakeoverConfirmModal } from '@/components/inspection/takeover-confirm-modal';
 import { ReprintModal } from '@/components/inspection/reprint-modal';
 import { NoticesModal } from '@/components/inspection/notices-modal';
@@ -38,6 +38,9 @@ interface ScannedOrder {
   deletedAt?: string | null;
   deletedBy?: string | null;
   deleteReason?: string | null;
+  /** HUB 当日キャンセル（2026-10-09）。検品中・梱包済でキャンセルされた伝票は削除されずに印だけ付く */
+  cancelRequestedAt?: string | null;
+  cancelReason?: string | null;
   items: Array<{ qty: number; scannedQty: number; forceOk: boolean }>;
   inspSession: {
     completedAt: string | null;
@@ -139,7 +142,8 @@ export function PickingNoScanForm({ currentStaffCode }: Props = {}) {
       const order: ScannedOrder = j.data;
 
       // 2026-05-22: キャンセル伝票（論理削除済）は赤背景モーダルで前面表示
-      if (order.deleted) {
+      // HUB 当日キャンセル（印あり）も同じ赤い警告で止める（2026-10-09）
+      if (order.deleted || order.cancelRequestedAt) {
         setCancelOrder(order);
         return;
       }
@@ -329,18 +333,7 @@ export function PickingNoScanForm({ currentStaffCode }: Props = {}) {
       {/* キャンセル伝票 警告モーダル（赤背景） */}
       <CancelWarningModal
         open={cancelOrder !== null}
-        order={
-          cancelOrder
-            ? {
-                pkNo: cancelOrder.pkNo,
-                invoiceNo: cancelOrder.invoiceNo,
-                destName: cancelOrder.destName,
-                deletedAt: cancelOrder.deletedAt ?? null,
-                deletedBy: cancelOrder.deletedBy ?? null,
-                deleteReason: cancelOrder.deleteReason ?? null,
-              }
-            : null
-        }
+        order={cancelOrder ? cancelInfoFrom(cancelOrder) : null}
         onClose={() => {
           setCancelOrder(null);
           setPkNo('');

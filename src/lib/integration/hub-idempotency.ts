@@ -13,7 +13,7 @@ export async function findSavedHubResponse(idempotencyKey: string): Promise<unkn
   return row ? row.response : null;
 }
 
-export async function saveHubResponse(idempotencyKey: string, endpoint: HubImportKind, response: unknown): Promise<void> {
+export async function saveHubResponse(idempotencyKey: string, endpoint: HubImportKind | 'cancel', response: unknown): Promise<void> {
   try {
     await prisma.hubInboundRequest.create({
       data: { idempotencyKey, endpoint, response: response as Prisma.InputJsonValue },
