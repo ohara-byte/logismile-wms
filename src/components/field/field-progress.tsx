@@ -41,21 +41,19 @@ export interface FieldGroup {
 
 type Badge = 'red' | 'yellow' | 'green';
 
-/** 数字を出せない理由（サーバと同じ語）。null なら出せている。 */
-type PaceSkipReason = 'revisit' | 'too_short' | 'too_few' | 'no_scan' | null;
-
-/** 本日スキャンしたテーブル1つぶんの作業ペース（変更要望 No.3・久保様 2026-10-04）。 */
+/**
+ * 数字を出せるテーブル1行
+ * （変更要望「作業ペースを『テーブル別』の表示に一本化する」久保様 2026-10-10 REQ-4）。
+ */
 export interface FieldMeTable {
   groupId: string;
   groupName: string;
   count: number;
   workedMin: number;
-  perHour: number | null;
+  perHour: number;
   badge: Badge | null;
   badgeText: string | null;
   targetYellowMin: number | null;
-  revisit: boolean;
-  reason: PaceSkipReason;
   current: boolean;
 }
 
@@ -66,34 +64,21 @@ export interface FieldProgressData {
   me: {
     groupId: string | null;
     groupName: string | null;
-    count: number;
-    workedMin: number;
-    perHour: number | null;
-    badge: Badge | null;
-    badgeText: string | null;
-    targetYellowMin: number | null;
-    revisit: boolean;
-    reason: PaceSkipReason;
+    /** ① 本日の処理件数（全テーブルの合計） */
+    totalCount: number;
+    /** 数字を出せるテーブル（作業時間の長い順） */
     tables: FieldMeTable[];
+    /** 数字を出せなかったテーブルの件数の合計 */
+    otherCount: number;
   };
 }
 
 /**
- * 作業ペースが「—」になる理由の説明。
- * 現場が「壊れている」と思わないよう、必ず理由を添える（要望 No.1 / No.2 / No.3）。
+ * テーブル別の行の上限。
+ * ハンディは画面が狭いので絞る（変更要望 2026-10-10 REQ-1「目安は2〜3行」）。
+ * 上限を超えた行の件数は「その他のテーブル」に足して、合計が ① と一致するようにする。
  */
-function skipReasonText(reason: PaceSkipReason): string {
-  switch (reason) {
-    case 'revisit':
-      return '同じテーブルを行き来した日のため集計対象外です';
-    case 'too_short':
-      return '作業時間が30分に満たないため出せません';
-    case 'too_few':
-      return '件数が15件に満たないため出せません';
-    default:
-      return 'まだ検品の記録がありません';
-  }
-}
+const MAX_TABLE_ROWS: Record<Variant, number> = { tablet: 5, handy: 3 };
 
 type Variant = 'tablet' | 'handy';
 
@@ -304,6 +289,17 @@ function FieldProgressDetail({
   onClose: () => void;
 }) {
   const s = DETAIL[variant];
+
+  /*
+   * 表示する行とその他の件数（変更要望 2026-10-10 REQ-1）。
+   *
+   * サーバは「数字を出せるテーブル」を全部返す。端末ごとの行数上限はここで掛け、
+   * **溢れた行の件数は「その他」に足し戻す**。表示した行＋その他 ＝ ①本日の処理件数。
+   */
+  const shownTables = data.me.tables.slice(0, MAX_TABLE_ROWS[variant]);
+  const otherCount =
+    data.me.otherCount +
+    data.me.tables.slice(MAX_TABLE_ROWS[variant]).reduce((n, t) => n + t.count, 0);
   const { me } = data;
 
   return (
@@ -334,7 +330,12 @@ function FieldProgressDetail({
           </div>
         </section>
 
-        {/* ③ 自分の件数・作業ペース */}
+        {/* ③ 個人進捗 ＝ ①本日の処理件数 ＋ テーブル別の作業ペース
+            （変更要望「作業ペースを『テーブル別』の表示に一本化する」久保様 2026-10-10）。
+
+            以前は上段に「今いるテーブル」1つのペースを出していたが、最後に短い手伝いを
+            すると上段が「—」になり、主なテーブルの数字は下段にしか出なかった。
+            上段の②を廃止し、テーブル別の行に一本化する。 */}
         <section className="rounded-xl border border-surface-border bg-surface-panel p-3">
           <div className="mb-2 flex items-baseline justify-between">
             <span className={`${s.head} font-bold text-ink-strong`}>個人進捗（本日）</span>
@@ -344,59 +345,23 @@ function FieldProgressDetail({
               </span>
             )}
           </div>
-          <div className="flex gap-4">
-            <div className="min-w-0 flex-1">
-              <div className={`${s.label} font-semibold text-ink-soft`}>① 本日の処理件数</div>
-              <div className={`${s.big} font-bold tabular-nums text-sky-300`}>
-                {me.count.toLocaleString()} <span className={`${s.num} font-normal`}>件</span>
-              </div>
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className={`${s.label} font-semibold text-ink-soft`}>② 作業ペース</div>
-              {me.perHour == null ? (
-                <>
-                  <div className={`${s.big} font-bold tabular-nums text-ink-subtle`}>—</div>
-                  <div className={`${s.label} text-ink-subtle`}>{skipReasonText(me.reason)}</div>
-                </>
-              ) : (
-                <>
-                  {/* ★ 2026-10-02（要望書 ②変更点2）：「目標」が数値の下に小さく出て
-                      埋もれていたため、数値の**真横**にバッジとして並べる。 */}
-                  <div className="flex flex-wrap items-baseline gap-2">
-                    <span className={`${s.big} font-bold tabular-nums text-ink-strong`}>
-                      {me.perHour} <span className={`${s.num} font-normal`}>件/時</span>
-                    </span>
-                    {me.targetYellowMin != null && (
-                      <span
-                        className={`shrink-0 rounded-full border border-surface-border-strong bg-surface-base px-2 py-0.5 ${s.label} font-semibold text-ink-soft`}
-                      >
-                        目標 {me.targetYellowMin}件/時
-                      </span>
-                    )}
-                  </div>
-                  {me.badge && me.badgeText && (
-                    <span
-                      className={`mt-1.5 inline-block rounded-full px-2.5 py-1 ${s.label} font-bold ${
-                        BADGE_CLASS[me.badge] ?? ''
-                      }`}
-                    >
-                      {me.badgeText}
-                    </span>
-                  )}
-                </>
-              )}
-            </div>
+
+          <div className={`${s.label} font-semibold text-ink-soft`}>① 本日の処理件数</div>
+          <div className={`${s.big} font-bold tabular-nums text-sky-300`}>
+            {me.totalCount.toLocaleString()} <span className={`${s.num} font-normal`}>件</span>
           </div>
-          {/* ★ 変更要望 No.3（久保様 2026-10-04）：担当のテーブルが終わったら別のテーブルを
-              手伝うため、終業時に「今いるテーブル」1つだけでは自分のペースを確認できない。
-              本日スキャンしたテーブルを件数の多い順に並べる。ハンディは画面が狭いので2つまで。 */}
-          {me.tables.length > 0 && (
-            <div className="mt-3 border-t border-surface-border pt-2">
-              <div className={`mb-1 ${s.label} font-semibold text-ink-soft`}>
-                本日作業したテーブル
-              </div>
+
+          <div className="mt-3 border-t border-surface-border pt-2">
+            <div className={`mb-1 ${s.label} font-semibold text-ink-soft`}>
+              ② テーブル別の作業ペース
+            </div>
+            {shownTables.length === 0 ? (
+              <p className={`${s.label} text-ink-subtle`}>
+                まだ数字を出せる作業がありません。1つのテーブルで15件・30分以上になると表示されます。
+              </p>
+            ) : (
               <ul className="space-y-1">
-                {me.tables.slice(0, variant === 'handy' ? 2 : 5).map((t) => (
+                {shownTables.map((t) => (
                   <li
                     key={t.groupId}
                     className={`flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg px-2 py-1.5 ${
@@ -405,38 +370,37 @@ function FieldProgressDetail({
                   >
                     <span className={`${s.num} font-bold text-ink-strong`}>{t.groupName}</span>
                     <span className={`${s.num} tabular-nums text-ink-soft`}>{t.count} 件</span>
-                    {t.perHour == null ? (
-                      <span className={`${s.label} text-ink-subtle`}>
-                        — <span className="font-normal">（{skipReasonText(t.reason)}）</span>
+                    <span className={`${s.num} font-bold tabular-nums text-ink-strong`}>
+                      {t.perHour} 件/時
+                    </span>
+                    {t.targetYellowMin != null && (
+                      <span className={`${s.label} text-ink-subtle`}>目標 {t.targetYellowMin}</span>
+                    )}
+                    {t.badge && t.badgeText && (
+                      <span
+                        className={`rounded-full px-2 py-0.5 ${s.label} font-bold ${
+                          BADGE_CLASS[t.badge] ?? ''
+                        }`}
+                      >
+                        {t.badgeText}
                       </span>
-                    ) : (
-                      <>
-                        <span className={`${s.num} font-bold tabular-nums text-ink-strong`}>
-                          {t.perHour} 件/時
-                        </span>
-                        {t.targetYellowMin != null && (
-                          <span className={`${s.label} text-ink-subtle`}>
-                            目標 {t.targetYellowMin}
-                          </span>
-                        )}
-                        {t.badge && t.badgeText && (
-                          <span
-                            className={`rounded-full px-2 py-0.5 ${s.label} font-bold ${
-                              BADGE_CLASS[t.badge] ?? ''
-                            }`}
-                          >
-                            {t.badgeText}
-                          </span>
-                        )}
-                      </>
                     )}
                   </li>
                 ))}
+                {otherCount > 0 && (
+                  <li
+                    className={`flex items-baseline gap-x-2 rounded-lg bg-surface-base px-2 py-1.5 ${s.num} text-ink-soft`}
+                  >
+                    <span className="font-semibold">その他のテーブル</span>
+                    <span className="tabular-nums">{otherCount} 件</span>
+                  </li>
+                )}
               </ul>
-            </div>
-          )}
+            )}
+          </div>
+
           <p className={`mt-2 ${s.label} text-ink-subtle`}>
-            ペースは自分の作業を振り返るための目安です（実働時間はスキャン実績から。
+            ペースは自分の作業を振り返るための目安です（作業時間はスキャン実績から。
             昼休憩は自動で引いています）。
           </p>
         </section>
