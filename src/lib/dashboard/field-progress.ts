@@ -15,15 +15,18 @@
  * ★ グループ判定は group-map.ts を共有する（画面ごとに食い違わせない）。
  *
  * ★ 2026-10-08 改訂（変更要望3件・久保様 2026-10-04）。
- *   作業ペースの実働時間と「行き来」の判定を、**メンバー割当ではなくスキャン実績**に
- *   改めた（計算は scan-pace.ts）。あわせて、本日スキャンしたテーブルごとのペースを
- *   `me.tables` に載せる（手伝いに入ったテーブルで 🔴 が出る問題への対応）。
+ *   作業ペースの実働時間を、**メンバー割当ではなくスキャン実績**に改めた
+ *   （計算は scan-pace.ts）。
+ *
+ * ★ 2026-10-11 改訂（変更要望「作業ペースを『テーブル別』の表示に一本化する」久保様 2026-10-10）。
+ *   「今いるテーブル1つ」の作業ペース（旧 me.perHour / badge / revisit）を廃止し、
+ *   **テーブル別の行（me.tables）と「その他のテーブル」（me.otherCount）** に一本化した。
  */
 
 import { prisma } from '../db';
 import { UNCLASSIFIED, buildLetterToGroup, groupOfPkNo } from './group-map';
 import { paceBadge, paceBadgeText, type PaceBadge } from './work-pace';
-import { paceByGroup, type PaceSkipReason, type ScanRecord } from './scan-pace';
+import { paceByGroup, type ScanRecord } from './scan-pace';
 import { jstDayAndMinute } from '../assigned-hours';
 import { formatDateYmd, jstDayStart, jstDayEnd } from '../date-utils';
 
@@ -49,28 +52,25 @@ export interface FieldGroupProgress {
 }
 
 /**
- * 本日スキャンしたテーブル1つぶんの作業ペース（変更要望 No.3・久保様 2026-10-04）。
+ * 数字を出せるテーブル1つぶんの作業ペース
+ * （変更要望「作業ペースを『テーブル別』の表示に一本化する」久保様 2026-10-10 REQ-4）。
  *
- *   > 現場では、担当のテーブルが終わったら別のテーブルを手伝う、という動きがある。
- *   > 終業時に自分のペースを確認しようとしても、今の画面では確認できない。
+ * ここに載るのは**表示条件を満たした行だけ**（15件以上かつ作業時間30分以上）。
+ * 満たさないテーブルの件数は `FieldMeProgress.otherCount` にまとめる。
  */
 export interface FieldMeTable {
   groupId: string;
   groupName: string;
   /** このテーブルで完了した伝票の枚数 */
   count: number;
-  /** 実働分（最初の着手〜最後の完了 − 昼休憩） */
+  /** 作業時間（塊ごとの時間の合計 − 昼休憩） */
   workedMin: number;
-  /** 件/時。出せないときは null */
-  perHour: number | null;
+  /** 件/時 */
+  perHour: number;
   badge: PaceBadge | null;
   badgeText: string | null;
   /** 目標（🟡 の下限）。未設定なら null */
   targetYellowMin: number | null;
-  /** 同じグループに1日で2回以上戻る「行き来」か */
-  revisit: boolean;
-  /** 数字を出せない理由（画面の「—」の説明に使う） */
-  reason: PaceSkipReason;
   /** いま作業しているテーブルの行か */
   current: boolean;
 }
@@ -79,26 +79,15 @@ export interface FieldMeProgress {
   /** 直近のスキャン実績から決めた「自分のテーブル」。決まらなければ null */
   groupId: string | null;
   groupName: string | null;
-  /** 本日の処理件数（**伝票枚数**。商品点数ではない。テーブルを問わない合計） */
-  count: number;
-  /** いま作業しているテーブルの実働分（スキャン実績から。昼休憩は自動控除） */
-  workedMin: number;
-  /** いま作業しているテーブルの件/時。出せないときは null（「0 件/時」と区別する） */
-  perHour: number | null;
-  badge: PaceBadge | null;
-  /** 「🟡 標準ペース（20〜24）」。バッジが無ければ null */
-  badgeText: string | null;
-  /** 目標（🟡 の下限）。未設定なら null */
-  targetYellowMin: number | null;
-  /**
-   * 同じグループに1日で2回以上戻る「行き来」パターン。
-   * 要望書の受け入れ基準により、この日のこのグループは集計対象外として扱う。
-   */
-  revisit: boolean;
-  /** 数字を出せない理由（画面の「—」の説明に使う） */
-  reason: PaceSkipReason;
-  /** 本日スキャンしたテーブルごとの作業ペース（件数の多い順） */
+  /** ① 本日の処理件数（**伝票枚数**。商品点数ではない。全テーブルの合計） */
+  totalCount: number;
+  /** 数字を出せるテーブル（作業時間の長い順） */
   tables: FieldMeTable[];
+  /**
+   * 「その他のテーブル」の件数。
+   * `tables` に出なかったテーブルの合計で、`tables` の件数との和が `totalCount` に一致する。
+   */
+  otherCount: number;
 }
 
 export interface FieldProgress {
@@ -291,7 +280,7 @@ async function buildMe(params: {
 
   // ① 本日の処理件数 ＝ 本日完了した伝票（**伝票枚数**。商品点数ではない）。
   //    テーブルを問わない1日の合計。テーブルごとの件数は `tables` に入れる。
-  const count = sessions.filter((s) => inDay(s.completedAt)).length;
+  const totalCount = sessions.filter((s) => inDay(s.completedAt)).length;
 
   /*
    * 作業ペースと行き来の判定に使うスキャン実績（変更要望 No.1 / No.2・久保様 2026-10-04）。
@@ -318,14 +307,23 @@ async function buildMe(params: {
   const groupId = await resolveMyGroupId({ records, deviceCode, letterToGroup });
   const group = groupId ? groups.find((g) => g.id === groupId) : undefined;
 
-  // テーブルごとの作業ペース（件数の多い順）。
+  /*
+   * テーブル別の作業ペース（変更要望 2026-10-10 REQ-1）。
+   *
+   * 数字を出せるのは「15件以上かつ作業時間30分以上」のテーブルだけ。
+   * 出さなかったテーブルの件数は「その他のテーブル」にまとめ、
+   * **表示した行の件数との和が ①本日の処理件数 と一致する**ようにする。
+   * ①は未分類の伝票も数えているため、差し引きで求める。
+   */
   const byId = new Map(groups.map((g) => [g.id, g] as const));
   const tables: FieldMeTable[] = [];
+  let shownCount = 0;
   for (const p of paceByGroup(records)) {
     const g = byId.get(p.groupId);
-    if (!g || p.count === 0) continue; // マスタに無いグループ／完了0件の行は出さない
+    if (!g || !p.shown || p.perHour == null) continue;
     const target = { yellowMin: g.paceYellowMin, greenMin: g.paceGreenMin };
     const badge = paceBadge(p.perHour, target);
+    shownCount += p.count;
     tables.push({
       groupId: p.groupId,
       groupName: g.name,
@@ -335,26 +333,15 @@ async function buildMe(params: {
       badge,
       badgeText: badge ? paceBadgeText(badge, target) : null,
       targetYellowMin: g.paceYellowMin,
-      revisit: p.revisit,
-      reason: p.reason,
       current: p.groupId === groupId,
     });
   }
 
-  // ② 作業ペース ＝ いま作業しているテーブルの行。
-  const mine = tables.find((t) => t.groupId === groupId);
-
   return {
     groupId: groupId ?? null,
     groupName: group?.name ?? null,
-    count,
-    workedMin: mine?.workedMin ?? 0,
-    perHour: mine?.perHour ?? null,
-    badge: mine?.badge ?? null,
-    badgeText: mine?.badgeText ?? null,
-    targetYellowMin: group?.paceYellowMin ?? null,
-    revisit: mine?.revisit ?? false,
-    reason: mine?.reason ?? 'no_scan',
+    totalCount,
     tables,
+    otherCount: Math.max(0, totalCount - shownCount),
   };
 }

@@ -16,6 +16,15 @@
  *   2. 昼休憩で割当が2本に分かれる人が「同じテーブルを行き来した」と判定され、
  *      昼休憩を取る人のほぼ全員でペースが出なかった。
  *
+ * ★ 2026-10-10 改訂（変更要望「個人進捗の作業ペースを『テーブル別』の表示に一本化する」）。
+ *
+ *   - 作業時間を「最初の着手〜最後の完了」から、**塊（ブロック）ごとの時間の合計**に改めた。
+ *     間に挟んだ別のテーブルの時間が混ざらなくなる。
+ *   - その結果「同じテーブルを行き来した日は集計対象外」という扱いが**不要になった**ので
+ *     やめた。2026-10-01〜10-10 の実績では、15件以上スキャンした 75人日のうち
+ *     **23人日（約3割）** が短い手伝いのせいで主なテーブルの成績を見られなかった。
+ *     （有本さん 10/10：同梱を 09:21〜14:43 に 128件こなした日が「集計対象外」）
+ *
  * 分子（件）は**伝票枚数**。商品点数ではない（要望書 2026-09-27 から変わらず）。
  *
  * ★ 現場の自己確認用であり、評価目的ではない。数字が出せないときに
@@ -52,20 +61,31 @@ export interface ScanRecord {
   endMin: number | null;
 }
 
-/** 数字を出せない理由。null なら出せている。 */
-export type PaceSkipReason = 'revisit' | 'too_short' | 'too_few' | 'no_scan' | null;
+/**
+ * 塊（ブロック）＝ スキャンを着手時刻の順に並べたとき、同じテーブルが連続している範囲。
+ *
+ * 時間は「塊の最初の伝票の着手 〜 塊の最後の伝票の完了」。
+ * 完了していない伝票（保留中）は、終わりを決める材料にしない。
+ */
+export interface GroupBlock {
+  groupId: string;
+  from: number;
+  /** 完了した伝票が1枚も無い塊は null（時間を持たない） */
+  to: number | null;
+  /** この塊で完了した伝票の枚数 */
+  count: number;
+}
 
 export interface GroupPace {
   groupId: string;
   /** 完了した伝票の枚数 */
   count: number;
-  /** 実働分（最初の着手〜最後の完了 − 昼休憩） */
+  /** 作業時間（塊ごとの時間の合計 − 昼休憩） */
   workedMin: number;
-  /** 件/時（小数1桁）。出せないときは null */
+  /** 件/時（小数1桁）。表示条件を満たさないときは null */
   perHour: number | null;
-  /** 同じグループに1日で2回以上戻ったか */
-  revisit: boolean;
-  reason: PaceSkipReason;
+  /** 表示条件（15件以上かつ30分以上）を満たすか */
+  shown: boolean;
 }
 
 /** 区間の重なり（分）。 */
@@ -109,19 +129,18 @@ export function lunchGap(records: ScanRecord[]): { from: number; to: number } | 
 }
 
 /**
- * 「行き来」したグループ（要望 No.2）。
+ * スキャンを**着手時刻の順**に並べ、同じテーブルが連続している範囲（塊）に切る。
  *
- * その人が本日スキャンした伝票を**着手時刻の順**に並べ、グループが続いている
- * ひとまとまりを1ブロックと数える。同じグループが2ブロック以上に現れたら行き来。
- *
- *   同梱 同梱 同梱                   → 同梱 1ブロック（昼休憩を挟んでも1つ）
- *   同梱 同梱 ABCSML 同梱            → 同梱 2ブロック＝行き来
- *   ABCSML…（午前） I…（午後）        → それぞれ1ブロック（通常の2テーブル勤務）
+ *   同梱 同梱 同梱                 → 同梱の塊が1つ
+ *   同梱 同梱 ABCSML 同梱          → 同梱の塊が2つ ＋ ABCSML の塊が1つ
  *
  * 並べ替えを完了時刻にしないのは、保留した伝票の完了が数時間後になり、
- * 実際には連続していた作業が飛び飛びに見えるため（要望 No.2）。
+ * 実際には連続していた作業が飛び飛びに見えるため（変更要望 2026-10-04 No.2）。
+ *
+ * 着手〜完了が数時間に及ぶ伝票（保留など）があると、その塊の時間は伸びる。
+ * 現場と合意済みの扱い（変更要望 2026-10-10 REQ-2）。
  */
-export function revisitGroups(records: ScanRecord[]): Set<string> {
+export function blocksOf(records: ScanRecord[]): GroupBlock[] {
   const sorted = [...records].sort((a, b) => {
     if (a.startMin !== b.startMin) return a.startMin - b.startMin;
     const ae = a.endMin ?? Number.MAX_SAFE_INTEGER;
@@ -130,70 +149,56 @@ export function revisitGroups(records: ScanRecord[]): Set<string> {
     return a.groupId.localeCompare(b.groupId);
   });
 
-  const blocks = new Map<string, number>();
-  let prev: string | null = null;
+  const blocks: GroupBlock[] = [];
+  let cur: GroupBlock | null = null;
   for (const r of sorted) {
-    if (r.groupId !== prev) blocks.set(r.groupId, (blocks.get(r.groupId) ?? 0) + 1);
-    prev = r.groupId;
+    if (cur == null || cur.groupId !== r.groupId) {
+      cur = { groupId: r.groupId, from: r.startMin, to: null, count: 0 };
+      blocks.push(cur);
+    }
+    if (r.endMin != null && r.endMin >= r.startMin) {
+      cur.count++;
+      if (cur.to == null || r.endMin > cur.to) cur.to = r.endMin;
+    }
   }
-
-  const out = new Set<string>();
-  for (const [gid, n] of blocks) if (n >= 2) out.add(gid);
-  return out;
+  return blocks;
 }
 
 /**
- * グループごとの作業ペース。**件数の多い順**に返す（要望 No.3 の並び順）。
+ * テーブルごとの作業ペース。**作業時間の長い順**に返す（変更要望 2026-10-10 REQ-1）。
  *
- * 実働分 ＝ そのグループで数えた伝票の「最初の着手 〜 最後の完了」− 昼休憩。
- * 完了していない伝票（保留中・作業中）は、分子にも分母にも入れない。
+ *   作業時間 ＝ そのテーブルの全ての塊の時間を足した合計 − 昼休憩の控除
+ *   件/時     ＝ 件数 ÷ 作業時間 × 60
+ *
+ * 間に挟んだ別のテーブルの時間は入らない（塊の時間だけを足すため）。
+ * 表示条件（15件以上かつ30分以上）を満たさない行は `shown: false` で返す。
+ * 呼び出し側はそれを「その他のテーブル」にまとめる。
  */
 export function paceByGroup(records: ScanRecord[]): GroupPace[] {
   const gap = lunchGap(records);
-  const revisited = revisitGroups(records);
 
-  const byGroup = new Map<string, ScanRecord[]>();
-  for (const r of records) {
-    const list = byGroup.get(r.groupId);
-    if (list) list.push(r);
-    else byGroup.set(r.groupId, [r]);
+  const count = new Map<string, number>();
+  const worked = new Map<string, number>();
+  for (const b of blocksOf(records)) {
+    count.set(b.groupId, (count.get(b.groupId) ?? 0) + b.count);
+    if (b.to == null) continue;
+    // 昼休憩は塊ごとに控除する（休憩をまたぐ塊だけが引かれる）
+    const breakMin = gap ? overlapMin(b.from, b.to, gap.from, gap.to) : 0;
+    worked.set(b.groupId, (worked.get(b.groupId) ?? 0) + Math.max(0, b.to - b.from - breakMin));
   }
 
   const out: GroupPace[] = [];
-  for (const [groupId, items] of byGroup) {
-    const done = items.filter(
-      (r): r is ScanRecord & { endMin: number } => r.endMin != null && r.endMin >= r.startMin,
-    );
-    const revisit = revisited.has(groupId);
-    const count = done.length;
-
-    if (count === 0) {
-      out.push({ groupId, count: 0, workedMin: 0, perHour: null, revisit, reason: 'no_scan' });
-      continue;
-    }
-
-    const from = Math.min(...done.map((r) => r.startMin));
-    const to = Math.max(...done.map((r) => r.endMin));
-    const breakMin = gap ? overlapMin(from, to, gap.from, gap.to) : 0;
-    const workedMin = Math.max(0, to - from - breakMin);
-
-    const reason: PaceSkipReason = revisit
-      ? 'revisit'
-      : workedMin < MIN_WORKED_MIN
-        ? 'too_short'
-        : count < MIN_COUNT
-          ? 'too_few'
-          : null;
-
+  for (const [groupId, n] of count) {
+    const workedMin = worked.get(groupId) ?? 0;
+    const shown = n >= MIN_COUNT && workedMin >= MIN_WORKED_MIN;
     out.push({
       groupId,
-      count,
+      count: n,
       workedMin,
-      perHour: reason ? null : perHourRate(count, workedMin),
-      revisit,
-      reason,
+      perHour: shown ? perHourRate(n, workedMin) : null,
+      shown,
     });
   }
 
-  return out.sort((a, b) => b.count - a.count || a.groupId.localeCompare(b.groupId));
+  return out.sort((a, b) => b.workedMin - a.workedMin || a.groupId.localeCompare(b.groupId));
 }
