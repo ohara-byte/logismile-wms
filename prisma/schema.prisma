@@ -85,7 +85,10 @@ model StockMovement {
   type         String    @db.VarChar(20)
   qtyDelta     Int       @map("qty_delta")
   /// 関連エンティティ種別（'order' / 'instruction' / 'session' / null）
-  refType      String?   @map("ref_type") @db.VarChar(20)
+  /// ★ 2026-10-23 VarChar(20) → (40)。工場納品の訂正が書く 'factory_delivery_correction'
+  ///   （27文字）が入らず、訂正 API が**毎回 500** になっていた（取り戻しが一度も通らなかった）。
+  ///   設定画面の在庫再計算 'allocated_qty_recompute'（23文字）も同じ理由で書けなかった。
+  refType      String?   @map("ref_type") @db.VarChar(40)
   refId        String?   @map("ref_id") @db.VarChar(40)
   note         String?   @db.Text
   createdBy    String?   @map("created_by") @db.VarChar(10)

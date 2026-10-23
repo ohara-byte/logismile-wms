@@ -1,0 +1,12 @@
+-- stock_movements.ref_type を VARCHAR(20) → VARCHAR(40) に広げる（2026-10-23）。
+--
+-- 工場納品の訂正（POST /api/integration/factory/delivery/correction）が書く
+-- ref_type = 'factory_delivery_correction' は 27 文字あり、
+--   ERROR: value too long for type character varying(20)
+-- で**毎回**失敗していた（CraftSmile 側では「WMS 500：納品訂正の処理中に内部エラー」）。
+-- 設定画面の在庫再計算 'allocated_qty_recompute'（23文字）も同じ理由で書けなかった。
+--
+-- ★ IF EXISTS を付ける：stocks / stock_movements は過去に migration を経ずに作られており、
+--   migration だけから作った空の DB にはこの表が無い。そこで本 migration が止まらないようにする。
+--   長さを広げるだけなので、既存行の書き換えは起きない（PostgreSQL は varchar の拡張で表を作り直さない）。
+ALTER TABLE IF EXISTS "stock_movements" ALTER COLUMN "ref_type" TYPE VARCHAR(40);
