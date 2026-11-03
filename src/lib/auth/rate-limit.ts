@@ -39,6 +39,47 @@ const DEFAULT_OPTS: RateLimitOptions = {
   maxAttempts: 5,
 };
 
+/*
+ * ★ タブレット／ハンディのログイン（社員番号のみ）の制限値（小原様承認 2026-11-03）。
+ *
+ * 発端（2026-11-03 11:30 頃・現場報告）：未ログインの端末すべてで、どの社員番号でも
+ * 「試行回数を超過しました」になり、待つと直った。以前にも繰り返していた。
+ *
+ * 原因：IP ごとの制限が「5分に5回で15分ロック」だった。倉庫の端末は VPS から見ると
+ * **全台が同じ1つの IP**（拠点のグローバル IP）に見えるため、現場の誰かの入力ミスが
+ * 全員ぶん合算され、5回で**全端末がまとめて**15分止まっていた。
+ *
+ * このログインは社内ネットワークからしか開けない（INTRANET_CIDR_LIST）ので、
+ * IP ごとの制限が守っているのは「社内からの大量の総当たり」だけ。入力ミス数回で
+ * 現場全体を止めないよう大きく緩め、総当たりだけを止める値にする。
+ */
+
+/** 社員番号ごと：同じ番号で5分に5回失敗したら5分止める。 */
+export const EMPLOYEE_LOGIN_LIMIT: RateLimitOptions = {
+  windowSec: 5 * 60,
+  lockoutSec: 5 * 60,
+  maxAttempts: 5,
+};
+
+/** 拠点（IP）ごと：拠点全体で5分に30回失敗したら5分止める（入力ミス数回では止めない）。 */
+export const SITE_LOGIN_LIMIT: RateLimitOptions = {
+  windowSec: 5 * 60,
+  lockoutSec: 5 * 60,
+  maxAttempts: 30,
+};
+
+/**
+ * ロック中の案内文。
+ * 拠点全体のロックを「自分の社員番号が悪い」と誤解させない（2026-11-03 現場報告）。
+ */
+export function loginLockMessage(scope: 'site' | 'employee', retryAfterSec: number): string {
+  const min = Math.max(1, Math.ceil(retryAfterSec / 60));
+  const unlock = '管理者は管理PCの「設定 → ログイン強制解除」ですぐに解除できます。';
+  return scope === 'site'
+    ? `この拠点からのログイン失敗が続いたため、ログインを一時停止しています（社員番号の誤りではありません）。${min} 分後に再試行してください。${unlock}`
+    : `この社員番号でログイン失敗が続いたため、一時停止しています。${min} 分後に再試行してください。${unlock}`;
+}
+
 /** 失敗を 1 つ計上。返り値の `locked` がロックアウト判定。 */
 export function recordFailure(
   key: string,

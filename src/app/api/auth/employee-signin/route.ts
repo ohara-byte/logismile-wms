@@ -21,7 +21,14 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { setEmployeeSession, type EmployeeRole } from '@/lib/auth/employee-session';
 import { clientIpFromHeaders, isIntranetIp } from '@/lib/auth/intranet';
-import { isLocked, recordFailure, clearFailures } from '@/lib/auth/rate-limit';
+import {
+  isLocked,
+  recordFailure,
+  clearFailures,
+  loginLockMessage,
+  EMPLOYEE_LOGIN_LIMIT,
+  SITE_LOGIN_LIMIT,
+} from '@/lib/auth/rate-limit';
 
 const Body = z.object({
   emp_code: z.string().min(1, 'emp_code は必須です'),
@@ -69,7 +76,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error: 'TOO_MANY_REQUESTS',
-          message: `試行回数を超過しました。${Math.ceil(retry / 60)} 分後に再試行してください`,
+          // 拠点全体のロックか、その社員番号だけのロックかで案内を分ける（2026-11-03）
+          message: loginLockMessage(ipLock.locked ? 'site' : 'employee', retry),
         },
         { status: 429, headers: { 'Retry-After': String(retry) } },
       );
@@ -81,8 +89,8 @@ export async function POST(req: NextRequest) {
       select: { code: true, empCode: true, name: true, role: true, active: true, groupId: true },
     });
     if (!staff || !staff.active) {
-      recordFailure(empKey);
-      recordFailure(ipKey);
+      recordFailure(empKey, EMPLOYEE_LOGIN_LIMIT);
+      recordFailure(ipKey, SITE_LOGIN_LIMIT);
       return NextResponse.json(
         { error: 'UNAUTHORIZED', message: '社員番号または端末コードが無効です' },
         { status: 401 },
@@ -102,8 +110,8 @@ export async function POST(req: NextRequest) {
       },
     });
     if (!device || !device.active) {
-      recordFailure(empKey);
-      recordFailure(ipKey);
+      recordFailure(empKey, EMPLOYEE_LOGIN_LIMIT);
+      recordFailure(ipKey, SITE_LOGIN_LIMIT);
       // 入力値を反射しない（XSS / 列挙対策）
       return NextResponse.json(
         { error: 'UNAUTHORIZED', message: '社員番号または端末コードが無効です' },
